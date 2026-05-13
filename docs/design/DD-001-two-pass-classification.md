@@ -4,6 +4,8 @@
 **Author**: bby
 **Date**: 2026-05-13
 
+中文版：[../zh-CN/design/DD-001-two-pass-classification.md](../zh-CN/design/DD-001-two-pass-classification.md)
+
 ## Problem
 
 The card content for an actively-worked session lags the actual state

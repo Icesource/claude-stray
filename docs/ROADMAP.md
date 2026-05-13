@@ -1,5 +1,7 @@
 # Roadmap
 
+中文版：[zh-CN/ROADMAP.md](zh-CN/ROADMAP.md)
+
 Planned but not yet implemented. Captured here so the design decisions
 behind them aren't lost between sessions.
 

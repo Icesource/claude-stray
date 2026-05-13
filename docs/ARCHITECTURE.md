@@ -1,5 +1,7 @@
 # Architecture
 
+中文版：[zh-CN/ARCHITECTURE.md](zh-CN/ARCHITECTURE.md)
+
 How `claude-code-worktree` actually works as of commit `9f01447`.
 
 ## 30-second pitch

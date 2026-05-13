@@ -1,5 +1,7 @@
 # Design docs
 
+中文版：[../zh-CN/design/README.md](../zh-CN/design/README.md)
+
 Each non-trivial change gets a numbered design doc here BEFORE the code
 lands. See [../CONTRIBUTING.md](../CONTRIBUTING.md#design-docs-dd-nnn)
 for when to write one.

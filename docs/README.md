@@ -4,6 +4,8 @@ Internal documentation. User-facing install/usage lives in the top-level
 [`README.md`](../README.md). The Chinese mirror of the user README is
 [README.zh-CN.md](README.zh-CN.md).
 
+中文版本：[zh-CN/](zh-CN/README.md)
+
 | Doc | What it's for |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | How the system actually works: pipeline stages, cache file shapes, concurrency, invariants |

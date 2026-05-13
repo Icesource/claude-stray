@@ -1,5 +1,7 @@
 # Contributing
 
+中文版：[zh-CN/CONTRIBUTING.md](zh-CN/CONTRIBUTING.md)
+
 Conventions for changes in this repo. Aimed at future-me, not strangers.
 
 ## Doc conventions

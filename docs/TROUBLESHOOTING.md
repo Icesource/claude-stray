@@ -1,5 +1,7 @@
 # Troubleshooting
 
+中文版：[zh-CN/TROUBLESHOOTING.md](zh-CN/TROUBLESHOOTING.md)
+
 Decision trees for the failure modes we've actually seen. First stop:
 
 ```bash
