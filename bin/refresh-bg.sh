@@ -2,8 +2,13 @@
 # Fire-and-forget wrapper for refresh.sh (claude-code-worktree).
 # Returns immediately so it never blocks the Stop/SessionStart hook.
 #
-# Concurrency is handled inside refresh.sh itself (mkdir-based lock), so
-# this wrapper just forks and detaches.
+# Also captures the current session's terminal location (Zellij pane id,
+# cwd, etc.) into cache/session_locations.json — used by the HTML UI to
+# jump back to the right pane via P5's mindmap --serve helper.
+#
+# Concurrency for refresh.sh is handled inside refresh.sh itself
+# (mkdir-based lock), so this wrapper just records location and detaches
+# the refresh fork.
 
 set -u
 
@@ -17,6 +22,11 @@ else
 fi
 
 mkdir -p "$(dirname "$LOG")"
+
+# Hooks pipe a JSON payload on stdin (session_id, cwd, etc.). We must
+# consume it BEFORE detaching, since after fork the FD may close.
+# record-location.py reads stdin with a small timeout and is non-fatal.
+python3 "$REPO_ROOT/bin/record-location.py" 2>>"$LOG" || true
 
 (
   echo "[$(date -Iseconds)] refresh-bg invoked" >> "$LOG"

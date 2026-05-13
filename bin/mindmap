@@ -3,14 +3,105 @@
 # to render the cached mindmap with zero model involvement.
 #
 # Flags:
-#   --refresh   Force a full cache refresh before rendering.
+#   --refresh, -r    Force a full cache refresh before rendering.
+#   --html           Regenerate cache/mindmap.html, do NOT print or open.
+#   --open, -o       Regenerate cache/mindmap.html and open it in browser.
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 
-if [ "${1:-}" = "--refresh" ] || [ "${1:-}" = "-r" ]; then
+DO_REFRESH=0
+DO_HTML=0
+DO_OPEN=0
+DO_TREE=0
+DO_SERVE=0
+DO_DIAGNOSE=0
+NO_OPEN=0
+DIAG_ARG=""
+
+# Pre-scan for --diagnose so we can capture its positional arg
+while [ $# -gt 0 ]; do
+  arg="$1"
+  case "$arg" in
+    --refresh|-r) DO_REFRESH=1; shift ;;
+    --html)       DO_HTML=1; shift ;;
+    --open|-o)    DO_OPEN=1; shift ;;
+    --tree)       DO_TREE=1; shift ;;
+    --serve|-s)   DO_SERVE=1; shift ;;
+    --no-open)    NO_OPEN=1; shift ;;
+    --diagnose|--diag)
+      DO_DIAGNOSE=1
+      shift
+      # Optional session id as next non-flag arg
+      if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then
+        DIAG_ARG="$1"; shift
+      fi
+      ;;
+    -h|--help)
+      cat <<EOF
+Usage: mindmap [--refresh] [--serve | --open | --html | --tree | --diagnose]
+
+Without flags: render the cached mindmap to stdout as an ANSI tree.
+
+  --refresh, -r       Refresh cache (calls Claude) before rendering.
+  --serve, -s         RECOMMENDED. Start a local server on 127.0.0.1:9876,
+                      serve the HTML dashboard, and act as the Zellij jump
+                      helper. Auto-opens the browser unless --no-open.
+  --open, -o          Regenerate HTML files and open via file:// (no server,
+                      falls back to File System Access for writes).
+  --tree              Open the markmap tree view (cache/mindmap-tree.html).
+  --html              Regenerate HTML files only, do not open anything.
+  --no-open           With --serve: don't auto-open the browser.
+  --diagnose [SID]    Show why a session may not be in the mindmap.
+                      Without SID, picks the most recently active session.
+EOF
+      exit 0
+      ;;
+    *)
+      echo "Unknown flag: $arg" >&2
+      echo "Try: mindmap --help" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$DO_DIAGNOSE" -eq 1 ]; then
+  if [ -n "$DIAG_ARG" ]; then
+    exec python3 "$REPO_ROOT/bin/diagnose.py" "$DIAG_ARG"
+  else
+    exec python3 "$REPO_ROOT/bin/diagnose.py"
+  fi
+fi
+
+if [ "$DO_SERVE" -eq 1 ]; then
+  if [ "$NO_OPEN" -eq 1 ]; then
+    exec python3 "$REPO_ROOT/bin/serve.py" --no-open
+  else
+    exec python3 "$REPO_ROOT/bin/serve.py"
+  fi
+fi
+
+if [ "$DO_REFRESH" -eq 1 ]; then
   CLAUDE_WORKTREE_FORCE=1 bash "$REPO_ROOT/bin/refresh.sh" >&2
+fi
+
+if [ "$DO_HTML" -eq 1 ] || [ "$DO_OPEN" -eq 1 ] || [ "$DO_TREE" -eq 1 ]; then
+  # Always regenerate both so they're in sync.
+  python3 "$REPO_ROOT/bin/render-html.py"
+  python3 "$REPO_ROOT/bin/render-tree.py"
+  TARGET="$REPO_ROOT/cache/mindmap.html"
+  [ "$DO_TREE" -eq 1 ] && TARGET="$REPO_ROOT/cache/mindmap-tree.html"
+  if [ "$DO_OPEN" -eq 1 ] || [ "$DO_TREE" -eq 1 ]; then
+    if command -v open >/dev/null 2>&1; then
+      open "$TARGET"
+    elif command -v xdg-open >/dev/null 2>&1; then
+      xdg-open "$TARGET"
+    else
+      echo "No browser opener found. File at: $TARGET" >&2
+    fi
+  fi
+  exit 0
 fi
 
 exec python3 "$REPO_ROOT/bin/render.py"
