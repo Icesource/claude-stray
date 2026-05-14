@@ -45,7 +45,18 @@ output, with restricted modifications (see rule §5).**
           "tasks": [{"title": "<≤80 chars>", "done": true|false}],
           "sessions": ["<full UUID>", ...],
           "linked_cwds": [],
-          "last_activity_at": "<max over its sessions>"
+          "last_activity_at": "<max over its sessions>",
+          "artifacts": [                          // omit key if empty
+            {
+              "type": "cr|mr|pr|issue|branch|commit|tag|deployment|doc|other",
+              "title": "<≤60 chars or null>",
+              "ref_id": "<platform id or null>",
+              "url": "<canonical URL>",
+              "status": "<see Layer 1 enum>",
+              "last_mentioned_at": "<ISO or null>"
+            }
+          ],
+          "blockers": ["<≤80 chars>", ...]        // omit key if empty
         }
       ]
     }
@@ -97,6 +108,8 @@ You must NOT change (must be byte-identical to PRIOR):
 - `sessions[]`
 - `linked_cwds[]`
 - `id`
+- `artifacts[]` (whole array, byte-identical)
+- `blockers[]` (whole array, byte-identical)
 
 No "small polish". No "I'll just clean up the wording." This rule is
 absolute.
@@ -130,6 +143,49 @@ For initiatives that DO have a hot session:
   initiative `done`. If any session says `paused` or `abandoned`, lean
   `paused` unless another session is `active`. Otherwise `active`.
 
+## §7a — Aggregate artifacts (hot initiatives only)
+
+For an initiative with at least one hot session, build `artifacts[]` as
+the union of:
+
+1. The artifacts already in PRIOR.initiative.artifacts (if any), and
+2. The `artifacts:` frontmatter from every HOT session belonging to
+   this initiative.
+
+Dedup rules:
+
+- **Primary key is `url`.** If two entries have the same URL, they're
+  the same artifact. Merge into one.
+- **Status: most-recent-wins.** When merging, use the `status` from
+  whichever source has the more recent `last_mentioned_at`. If a hot
+  session shows the same URL with `status: merged` but PRIOR shows
+  `pending`, the new status is `merged`.
+- **Title/ref_id**: prefer non-null, then prefer the most recent
+  mention.
+- **last_mentioned_at**: max of all sources.
+- **Cap 20 entries** per initiative. If exceeded, drop the oldest
+  `last_mentioned_at` first.
+- **Order**: sort by status priority (pending|open > approved > merged
+  > closed > unknown), then by `last_mentioned_at` desc.
+
+If both PRIOR and hot sessions yield zero artifacts, omit the
+`artifacts` key entirely (do NOT emit `[]`).
+
+## §7b — Aggregate blockers (hot initiatives only)
+
+For an initiative with at least one hot session, build `blockers[]` as
+the union of `blockers:` from every HOT session belonging to it.
+
+- **Dedup**: identical or near-identical strings count once. If two
+  blockers differ only by capitalization/whitespace, treat as same.
+- **Resolved blockers**: if the **single most recent** hot session in
+  this initiative does NOT mention a blocker (string match) AND that
+  session's `# 当前状态` mentions resolution ("CI 通过 / approved / 已
+  merge"), DROP that blocker. Otherwise keep it.
+- **Cap 8 entries**. Drop the longest strings first.
+
+If empty, omit the `blockers` key.
+
 # Output language
 
 All natural-language fields (`name`, `summary`, `progress`,
@@ -145,8 +201,10 @@ are always English/raw.
 2. For each initiative in PRIOR, decide hot vs cold (any of its
    sessions appear in HOT_SUMMARIES?).
    - Hot → you may update `progress`, refresh tasks (done monotone),
-     update status from hot session signal, add new sessions if any.
+     update status from hot session signal, aggregate `artifacts[]`
+     per §7a and `blockers[]` per §7b, add new sessions if any.
    - Cold → apply §5 mechanically. Touch only `status` (decay rule).
+     `artifacts[]` and `blockers[]` stay byte-identical.
 3. **Discover new initiatives** from HOT_SUMMARIES whose
    `session_id` is not in any existing initiative's `sessions[]`.
    For each, create a new initiative with a stable slug-style `id`.
@@ -164,6 +222,10 @@ For your output, verify each of:
 - [ ] Every hot session_id (from HOT_SUMMARIES) appears in some
       initiative's `sessions[]`.
 - [ ] No task done state flipped from `true` to `false` vs PRIOR.
-- [ ] Cold initiatives' name/summary/progress/tasks unchanged.
+- [ ] Cold initiatives' name/summary/progress/tasks/artifacts/blockers
+      unchanged.
+- [ ] All `artifacts[].url` values are non-empty strings (no nulls).
+- [ ] No duplicate `artifacts[]` entries (same URL) within one initiative.
+- [ ] `blockers[]` strings are short (≤ 80 chars each) and deduped.
 
 If any check fails, fix and retry. **Never emit broken output**.

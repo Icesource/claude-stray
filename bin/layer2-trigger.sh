@@ -12,8 +12,14 @@
 # while every trigger is guaranteed to be reflected in some run's
 # output. No cooldown, no lost work.
 #
-# Lock path:   cache/.locks/layer2.lock      (flock -nx fd 9)
+# Lock path:   cache/.locks/layer2.lock.d/   (atomic mkdir; portable, no flock)
 # Pending:     cache/.locks/layer2.pending   (touch marker)
+# Stale lock:  if lock.d/ is older than $STALE_SECS, force-remove first
+#
+# Why mkdir-based locking and not flock(1):
+#   `flock` is util-linux and absent from stock macOS. Bash on macOS would
+#   silently fail this script (exit 127 from flock) and Layer 2 would
+#   never run. mkdir(2) is atomic on POSIX, available everywhere.
 #
 # Exit codes:
 #   0  ran one or more classify.py; or another instance is doing it
@@ -24,8 +30,9 @@ set -u
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CACHE_DIR="$REPO_ROOT/cache"
 LOCKS_DIR="$CACHE_DIR/.locks"
-LOCK_FILE="$LOCKS_DIR/layer2.lock"
+LOCK_DIR_PATH="$LOCKS_DIR/layer2.lock.d"
 PENDING_FILE="$LOCKS_DIR/layer2.pending"
+STALE_SECS=900  # 15 min — classify avg 100s; if lock older than this it's a zombie
 
 mkdir -p "$LOCKS_DIR"
 
@@ -37,15 +44,26 @@ else
 fi
 mkdir -p "$(dirname "$LOG")"
 
-# Try to acquire the Layer 2 lock non-blocking.
-exec 9>"$LOCK_FILE"
-if ! flock -n 9 2>/dev/null; then
+# Stale-lock cleanup. If a previous run was killed -9 the lockdir lingers
+# and blocks all future runs. Use `find -mtime` since `stat` is non-portable.
+if [ -d "$LOCK_DIR_PATH" ]; then
+  if find "$LOCK_DIR_PATH" -maxdepth 0 -mmin +$((STALE_SECS / 60)) 2>/dev/null | grep -q .; then
+    echo "[layer2-trigger] $(date -Iseconds) clearing stale lock (>${STALE_SECS}s)" >> "$LOG"
+    rmdir "$LOCK_DIR_PATH" 2>/dev/null || true
+  fi
+fi
+
+# Atomic acquire: mkdir succeeds iff dir doesn't already exist.
+if ! mkdir "$LOCK_DIR_PATH" 2>/dev/null; then
   # Another instance is running. Mark that more work arrived; that
   # instance will see it after its current classify.py finishes.
   touch "$PENDING_FILE"
   echo "[layer2-trigger] $(date -Iseconds) busy → pending marker set" >> "$LOG"
   exit 0
 fi
+
+# Release the lock on any exit path (normal, signal, errexit).
+trap 'rmdir "$LOCK_DIR_PATH" 2>/dev/null || true' EXIT INT TERM
 
 # We own the lock. Loop until the pending marker is no longer set
 # after a complete classify.py run.
@@ -76,6 +94,6 @@ while :; do
   break
 done
 
-# flock auto-releases on exec close.
+# Lock released by EXIT trap.
 echo "[layer2-trigger] done ($runs runs, rc=$rc)" >> "$LOG"
 exit $rc

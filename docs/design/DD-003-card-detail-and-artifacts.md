@@ -330,9 +330,48 @@ displayed status = (
 
 ---
 
-## 7. UI design (Modal)
+## 7. UI design
 
-### 7.1 Layout
+UI is in two layers:
+
+- **Card surface** — at-a-glance badges/preview line. No click needed.
+- **Modal** — click the card to expand into full artifact/blocker/decision
+  detail.
+
+### 7.0 Card surface — badges + top-blocker preview
+
+After the status badge in the card header, append:
+
+```
+● HSF EagleEye trace IP null investigation  [paused]  23h ago
+  🚨 3 blockers  ·  🔗 1 pending CR
+```
+
+Rules:
+
+| Badge | Shown when | Form |
+|---|---|---|
+| `🚨 N blockers` | `blockers.length > 0` | small red chip, N = count |
+| `🔗 N pending` | count of `artifacts` with `status ∈ {pending, open, unknown}` AND `type ∈ {cr, mr, pr, issue}` > 0 | small blue chip |
+| `✅ N merged` | optional, hidden by default (no longer needs attention) | gray, opt-in |
+
+**Additionally**: under the card's **progress** paragraph, add one line of
+"**top-blocker preview**" (when any blocker exists):
+
+```
+Progress: …(existing content)
+
+⚠ Blocker (top 1): waiting on CI to pass
+```
+
+Show only `blockers[0]` (highest priority). Clicking the badge or this
+line → open modal and scroll to the corresponding section (intra-modal
+URL anchor).
+
+Rationale: the card is a status-summary surface. Blockers are more urgent
+than next-step text and deserve equal visual weight with status/age.
+
+### 7.1 Modal layout
 
 Clicking the card's empty area → centered modal (semi-transparent
 overlay + rounded 600px wide, max-height 80vh, scrollable):

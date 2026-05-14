@@ -101,6 +101,29 @@ LOCALE = {
         "empty_no_data": "(还没有数据，请运行 mindmap --refresh)",
         "ws_collapsed": "▶",
         "ws_expanded": "▼",
+        "blocker_chip": "{} 卡点",
+        "pending_chip": "{} 待处理",
+        "blocker_top_label": "卡点",
+        "modal_blockers": "卡点",
+        "modal_artifacts": "产出 / 链接",
+        "modal_no_blockers": "（无卡点）",
+        "modal_no_artifacts": "（无 artifact）",
+        "modal_open_external": "外链",
+        "modal_close": "关闭",
+        "modal_status_pending": "待处理",
+        "modal_status_open": "进行中",
+        "modal_status_approved": "已批准",
+        "modal_status_merged": "已合并",
+        "modal_status_closed": "已关闭",
+        "modal_status_released": "已发布",
+        "modal_status_unknown": "未知",
+        "modal_status_active": "活跃",
+        "modal_status_stale": "陈旧",
+        "modal_status_pushed": "已推送",
+        "modal_status_local": "本地",
+        "modal_status_live": "上线中",
+        "modal_status_rolled_back": "已回滚",
+        "modal_status_wontfix": "wontfix",
     },
     "en": {
         "page_title": "Claude Code Worktree",
@@ -171,6 +194,29 @@ LOCALE = {
         "empty_no_data": "(no data yet — run mindmap --refresh)",
         "ws_collapsed": "▶",
         "ws_expanded": "▼",
+        "blocker_chip": "{} blockers",
+        "pending_chip": "{} pending",
+        "blocker_top_label": "Blocker",
+        "modal_blockers": "Blockers",
+        "modal_artifacts": "Artifacts",
+        "modal_no_blockers": "(no blockers)",
+        "modal_no_artifacts": "(no artifacts)",
+        "modal_open_external": "open",
+        "modal_close": "Close",
+        "modal_status_pending": "pending",
+        "modal_status_open": "open",
+        "modal_status_approved": "approved",
+        "modal_status_merged": "merged",
+        "modal_status_closed": "closed",
+        "modal_status_released": "released",
+        "modal_status_unknown": "unknown",
+        "modal_status_active": "active",
+        "modal_status_stale": "stale",
+        "modal_status_pushed": "pushed",
+        "modal_status_local": "local",
+        "modal_status_live": "live",
+        "modal_status_rolled_back": "rolled back",
+        "modal_status_wontfix": "wontfix",
     },
 }
 
@@ -550,6 +596,92 @@ article.card.archived { opacity: 0.7; }
 .status-badge.paused { background: var(--amber-bg); color: var(--amber); }
 .status-badge.done { background: var(--slate-bg); color: var(--slate); }
 .status-badge.archived { background: var(--slate-bg); color: var(--text-mute); }
+.status-badge.blocker { background: var(--red-bg); color: var(--red); cursor: pointer; }
+.status-badge.pending { background: #dbeafe; color: var(--accent); cursor: pointer; }
+.status-badge.blocker:hover, .status-badge.pending:hover { filter: brightness(0.95); }
+
+.blocker-preview {
+  margin: 6px 0 0; padding: 6px 10px;
+  background: var(--red-bg); color: var(--red);
+  border-radius: 4px; font-size: 12px; line-height: 1.4;
+  cursor: pointer;
+}
+.blocker-preview:hover { filter: brightness(0.96); }
+.blocker-preview .lbl { font-weight: 600; margin-right: 6px; }
+
+.card.has-modal-target { cursor: pointer; }
+.card.has-modal-target:hover { border-color: var(--border-hover); }
+
+/* Detail modal */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: flex-start; justify-content: center;
+  z-index: 1000;
+  padding: 8vh 16px;
+}
+.modal {
+  background: white; border-radius: 8px;
+  max-width: 720px; width: 100%; max-height: 84vh;
+  overflow: auto;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.modal-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.modal-head h2 { flex: 1; margin: 0; font-size: 18px; line-height: 1.3; }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 22px; color: var(--text-mute); padding: 2px 6px;
+  line-height: 1; border-radius: 4px;
+}
+.modal-close:hover { color: var(--text-dim); background: var(--bg); }
+.modal-section { margin-bottom: 18px; }
+.modal-section:last-child { margin-bottom: 0; }
+.modal-section h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-mute); margin: 0 0 8px; font-weight: 600;
+}
+.modal-section ul { margin: 0; padding: 0; list-style: none; }
+.modal-section ul.modal-blockers-list li {
+  padding: 6px 10px; margin-bottom: 4px;
+  background: var(--red-bg); color: var(--red);
+  border-radius: 4px; font-size: 13px;
+}
+.modal-section ul.modal-artifacts-list li {
+  padding: 8px 10px; margin-bottom: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; font-size: 13px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.modal-section ul.modal-artifacts-list li .art-type {
+  font-size: 10px; padding: 2px 6px; border-radius: 3px;
+  background: var(--slate-bg); color: var(--text-dim);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.modal-section ul.modal-artifacts-list li .art-status {
+  font-size: 11px; padding: 2px 6px; border-radius: 3px;
+  background: var(--slate-bg); color: var(--slate);
+}
+.modal-section ul.modal-artifacts-list li .art-status.pending,
+.modal-section ul.modal-artifacts-list li .art-status.open { background: #dbeafe; color: var(--accent); }
+.modal-section ul.modal-artifacts-list li .art-status.approved,
+.modal-section ul.modal-artifacts-list li .art-status.active,
+.modal-section ul.modal-artifacts-list li .art-status.live { background: var(--amber-bg); color: var(--amber); }
+.modal-section ul.modal-artifacts-list li .art-status.merged,
+.modal-section ul.modal-artifacts-list li .art-status.released,
+.modal-section ul.modal-artifacts-list li .art-status.pushed { background: var(--green-bg); color: var(--green); }
+.modal-section ul.modal-artifacts-list li .art-title {
+  flex: 1; word-break: break-word; color: var(--text-dim);
+}
+.modal-section ul.modal-artifacts-list li a.art-link {
+  color: var(--accent); text-decoration: none; font-size: 12px;
+  padding: 2px 6px; border: 1px solid var(--border);
+  border-radius: 3px;
+}
+.modal-section ul.modal-artifacts-list li a.art-link:hover {
+  background: var(--bg); border-color: var(--accent);
+}
+.modal-section p.modal-empty { margin: 0; color: var(--text-mute); font-size: 12px; }
 
 .card-meta {
   display: flex; gap: 12px; flex-wrap: wrap;
@@ -1084,11 +1216,21 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // Head
     const head = document.createElement('div');
     head.className = 'card-head';
-    head.innerHTML =
+    const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+    const artifacts = Array.isArray(init.artifacts) ? init.artifacts : [];
+    const pendingArts = artifacts.filter(a => a && ['pending', 'open', 'unknown'].indexOf(a.status) !== -1 && ['cr', 'mr', 'pr', 'issue'].indexOf(a.type) !== -1);
+    let headHtml =
       '<span class="status-dot ' + status + '"></span>' +
       '<h3>' + esc(init.name) + '</h3>' +
       '<span class="status-badge ' + status + '">' + esc(I18N['status_' + status] || status) + '</span>' +
       '<span class="status-badge">' + esc(humanizeAge(init.last_activity_at)) + '</span>';
+    if (blockers.length) {
+      headHtml += '<span class="status-badge blocker" data-open-modal="blockers" title="' + esc(blockers[0]) + '">🚨 ' + esc(I18N.blocker_chip.replace('{}', blockers.length)) + '</span>';
+    }
+    if (pendingArts.length) {
+      headHtml += '<span class="status-badge pending" data-open-modal="artifacts" title="' + esc(pendingArts.map(a => a.title || a.url).slice(0,3).join(' / ')) + '">🔗 ' + esc(I18N.pending_chip.replace('{}', pendingArts.length)) + '</span>';
+    }
+    head.innerHTML = headHtml;
     card.appendChild(head);
 
     // Meta
@@ -1107,6 +1249,14 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // Progress
     if (init.progress) {
       card.appendChild(buildSection(I18N.progress, '<p class="body">' + esc(init.progress) + '</p>'));
+    }
+    // Top blocker preview (under progress)
+    if (blockers.length) {
+      const bp = document.createElement('div');
+      bp.className = 'blocker-preview';
+      bp.setAttribute('data-open-modal', 'blockers');
+      bp.innerHTML = '⚠ <span class="lbl">' + esc(I18N.blocker_top_label) + ':</span>' + esc(blockers[0]);
+      card.appendChild(bp);
     }
 
     // Tasks
@@ -1223,7 +1373,116 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     foot.appendChild(db);
     card.appendChild(foot);
 
+    // Make card clickable: anywhere on the card (except interactive descendants)
+    // opens the detail modal. The badge/preview also have data-open-modal hints
+    // that scroll the modal to the right section.
+    if (blockers.length || artifacts.length) {
+      card.classList.add('has-modal-target');
+      card.addEventListener('click', (ev) => {
+        // Ignore clicks on interactive elements
+        const t = ev.target;
+        if (!t) return;
+        if (t.closest('button, a, input, .task-del, .sess-btn, ul.tasks-list, ul.sessions-list, .expand-toggle, footer.card-actions')) {
+          return;
+        }
+        const focusKey = t.closest('[data-open-modal]')?.getAttribute('data-open-modal') || null;
+        openDetailModal(initId, focusKey);
+      });
+    }
+
     return card;
+  }
+
+  // -- Detail modal ------------------------------------------------------
+
+  function openDetailModal(initId, focusSection) {
+    const eff = effective(initId);
+    if (!eff) return;
+    const init = eff.init;
+    const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+    const artifacts = Array.isArray(init.artifacts) ? init.artifacts : [];
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (ev) => { if (ev.target === overlay) closeDetailModal(); });
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    overlay.appendChild(modal);
+
+    // Head
+    const head = document.createElement('div');
+    head.className = 'modal-head';
+    head.innerHTML =
+      '<h2>' + esc(init.name) + '</h2>' +
+      '<button class="modal-close" title="' + esc(I18N.modal_close) + '">✕</button>';
+    head.querySelector('.modal-close').addEventListener('click', closeDetailModal);
+    modal.appendChild(head);
+
+    // Blockers section
+    const bSec = document.createElement('div');
+    bSec.className = 'modal-section';
+    bSec.id = 'modal-sec-blockers';
+    let bHtml = '<h3>' + esc(I18N.modal_blockers) + ' (' + blockers.length + ')</h3>';
+    if (blockers.length) {
+      bHtml += '<ul class="modal-blockers-list">';
+      for (const b of blockers) bHtml += '<li>⚠ ' + esc(b) + '</li>';
+      bHtml += '</ul>';
+    } else {
+      bHtml += '<p class="modal-empty">' + esc(I18N.modal_no_blockers) + '</p>';
+    }
+    bSec.innerHTML = bHtml;
+    modal.appendChild(bSec);
+
+    // Artifacts section
+    const aSec = document.createElement('div');
+    aSec.className = 'modal-section';
+    aSec.id = 'modal-sec-artifacts';
+    let aHtml = '<h3>' + esc(I18N.modal_artifacts) + ' (' + artifacts.length + ')</h3>';
+    if (artifacts.length) {
+      // Sort: pending/open first, then approved, then merged/closed
+      const order = { pending: 0, open: 0, unknown: 1, approved: 2, active: 2, live: 2, merged: 3, released: 3, pushed: 3, closed: 4, wontfix: 4, 'rolled-back': 4, stale: 4, local: 4 };
+      const sorted = artifacts.slice().sort((x, y) => (order[x.status] ?? 5) - (order[y.status] ?? 5));
+      aHtml += '<ul class="modal-artifacts-list">';
+      for (const a of sorted) {
+        const statusLabel = I18N['modal_status_' + (a.status || 'unknown').replace('-', '_')] || a.status || '?';
+        const statusCls = (a.status || 'unknown').replace(/[^a-z]/g, '');
+        const title = a.title || a.ref_id || a.url;
+        const safeUrl = (a.url || '').replace(/"/g, '&quot;');
+        aHtml +=
+          '<li>' +
+            '<span class="art-type">' + esc(a.type || '?') + '</span>' +
+            '<span class="art-status ' + esc(statusCls) + '">' + esc(statusLabel) + '</span>' +
+            '<span class="art-title">' + esc(title) + '</span>' +
+            (a.url ? '<a class="art-link" target="_blank" rel="noopener" href="' + safeUrl + '">' + esc(I18N.modal_open_external) + ' ↗</a>' : '') +
+          '</li>';
+      }
+      aHtml += '</ul>';
+    } else {
+      aHtml += '<p class="modal-empty">' + esc(I18N.modal_no_artifacts) + '</p>';
+    }
+    aSec.innerHTML = aHtml;
+    modal.appendChild(aSec);
+
+    document.body.appendChild(overlay);
+    // Esc to close
+    document.addEventListener('keydown', modalKeyHandler);
+
+    // Optional scroll to a specific section
+    if (focusSection === 'artifacts') {
+      modal.querySelector('#modal-sec-artifacts')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    } else if (focusSection === 'blockers') {
+      modal.querySelector('#modal-sec-blockers')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+    }
+  }
+
+  function closeDetailModal() {
+    document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
+    document.removeEventListener('keydown', modalKeyHandler);
+  }
+
+  function modalKeyHandler(ev) {
+    if (ev.key === 'Escape') closeDetailModal();
   }
 
   function buildSection(label, innerHtml) {
@@ -1647,7 +1906,7 @@ def render_html(data: dict, L: dict, lang: str) -> str:
             "initiatives": [],
         }
         for i in (w.get("initiatives") or []):
-            ws_copy["initiatives"].append({
+            init_slim = {
                 "id": i.get("id"),
                 "name": i.get("name"),
                 "status": i.get("status"),
@@ -1657,7 +1916,12 @@ def render_html(data: dict, L: dict, lang: str) -> str:
                 "sessions": i.get("sessions") or [],
                 "linked_cwds": i.get("linked_cwds") or [],
                 "last_activity_at": i.get("last_activity_at"),
-            })
+            }
+            if i.get("artifacts"):
+                init_slim["artifacts"] = i["artifacts"]
+            if i.get("blockers"):
+                init_slim["blockers"] = i["blockers"]
+            ws_copy["initiatives"].append(init_slim)
         workspaces.append(ws_copy)
     slim = {
         "schema_version": data.get("schema_version", 2),

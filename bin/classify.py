@@ -54,6 +54,16 @@ PROMPT_FILE = REPO_ROOT / "prompts" / "classify-cross-session.md"
 
 # Hot/cold threshold (configurable via env)
 HOT_HOURS = int(os.environ.get("CLAUDE_WORKTREE_HOT_HOURS", "48"))
+# Hard cap on how many hot summaries we feed Haiku in one call. Haiku-4.5
+# has 200K context; ~1KB per summary + 30KB of instructions + slim PRIOR
+# means ~150 summaries is the safe ceiling. If you have more, take the
+# most-recently-active ones; older "still hot" sessions are continued
+# via PRIOR_MINDMAP on the next run.
+MAX_HOT = int(os.environ.get("CLAUDE_WORKTREE_MAX_HOT", "120"))
+# Minimum user_turns for a summary to be a hot input. Single-turn sessions
+# are usually automation noise (despite is_automation filtering some out)
+# and rarely add real signal. Set to 1 to disable filtering.
+MIN_TURNS = int(os.environ.get("CLAUDE_WORKTREE_MIN_TURNS", "2"))
 
 # claude -p settings (mirror refresh.sh)
 CLAUDE_TIMEOUT_SECS = int(os.environ.get("CLAUDE_WORKTREE_TIMEOUT", "600"))
@@ -79,26 +89,42 @@ def now_utc_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def parse_frontmatter(text: str) -> tuple[dict, str]:
-    """Parse leading YAML frontmatter. Returns (dict, body)."""
+def parse_frontmatter(text: str) -> tuple[dict, str, str]:
+    """Parse leading YAML frontmatter. Returns (flat_dict, body, raw_fm).
+
+    flat_dict has only top-level scalar `key: value` entries (last_activity_at,
+    status_guess, etc) — enough for hot/cold sorting. Nested fields like
+    artifacts:/blockers: are NOT parsed into the dict but ARE preserved in
+    raw_fm so we can re-emit them verbatim for the AI prompt.
+    """
     if not text.startswith("---"):
-        return {}, text
-    # Find the closing --- on its own line.
+        return {}, text, ""
     m = re.search(r"^---\s*$", text[3:], flags=re.MULTILINE)
     if not m:
-        return {}, text
+        return {}, text, ""
     fm_text = text[3:3 + m.start()].strip()
     body = text[3 + m.end():].lstrip("\n")
-    fm = {}
+    fm: dict[str, str] = {}
+    # Flat scalar fields only. Stop matching once a nested key starts
+    # (e.g. `artifacts:` with list items beneath).
     for line in fm_text.splitlines():
-        if ":" in line:
+        if line and not line[0].isspace() and ":" in line:
             k, _, v = line.partition(":")
-            fm[k.strip()] = v.strip()
-    return fm, body
+            v = v.strip()
+            # If value is empty, this is a nested key (list/dict follows).
+            # Skip; raw_fm has the full structure for prompt purposes.
+            if not v:
+                continue
+            # Strip simple quotes for YAML scalars
+            if (v.startswith('"') and v.endswith('"')) or \
+               (v.startswith("'") and v.endswith("'")):
+                v = v[1:-1]
+            fm[k.strip()] = v
+    return fm, body, fm_text
 
 
-def collect_summaries() -> list[tuple[str, dict, str]]:
-    """Return [(sid, frontmatter, body)] for all summary files."""
+def collect_summaries() -> list[tuple[str, dict, str, str]]:
+    """Return [(sid, flat_fm, body, raw_fm_text)] for all summary files."""
     if not SUMMARIES_DIR.is_dir():
         return []
     out = []
@@ -107,8 +133,8 @@ def collect_summaries() -> list[tuple[str, dict, str]]:
             text = md.read_text(encoding="utf-8")
         except OSError:
             continue
-        fm, body = parse_frontmatter(text)
-        out.append((md.stem, fm, body))
+        fm, body, raw_fm = parse_frontmatter(text)
+        out.append((md.stem, fm, body, raw_fm))
     return out
 
 
@@ -283,6 +309,10 @@ def slim_prior(prior: dict | None) -> dict | None:
                         "sessions": i.get("sessions", []),
                         "linked_cwds": i.get("linked_cwds", []),
                         "last_activity_at": i.get("last_activity_at"),
+                        **({"artifacts": i["artifacts"]}
+                            if i.get("artifacts") else {}),
+                        **({"blockers": i["blockers"]}
+                            if i.get("blockers") else {}),
                     }
                     for i in (w.get("initiatives") or [])
                 ],
@@ -292,7 +322,7 @@ def slim_prior(prior: dict | None) -> dict | None:
     }
 
 
-def build_prompt(hot: list[tuple[str, dict, str]],
+def build_prompt(hot: list[tuple[str, dict, str, str]],
                  prior_slim: dict | None,
                  deleted_ids: list[str],
                  lang: str) -> str:
@@ -322,13 +352,13 @@ def build_prompt(hot: list[tuple[str, dict, str]],
     parts.append("")
 
     parts.append(f'<hot_summaries count="{len(hot)}">')
-    for sid, fm, body in hot:
+    for sid, _fm, body, raw_fm in hot:
         # Re-emit the whole summary file (frontmatter + body) so AI sees the
-        # exact structure Layer 1 wrote.
+        # exact structure Layer 1 wrote — including nested `artifacts:` /
+        # `blockers:` YAML that our flat parser dropped.
         parts.append(f'<summary sid="{sid}">')
         parts.append("---")
-        for k, v in fm.items():
-            parts.append(f"{k}: {v}")
+        parts.append(raw_fm.rstrip())
         parts.append("---")
         parts.append(body.rstrip())
         parts.append("</summary>")
@@ -434,10 +464,17 @@ def enforce_cold_and_done_monotone(new_mm: dict, prior: dict,
             is_cold = not (prior_sessions & hot_sids_set)
 
             if is_cold:
-                # §5: restore every field except status + last_activity_at
+                # §5: restore every field except status + last_activity_at.
+                # artifacts/blockers are also restricted (they only update
+                # when a hot session contributes).
                 for field in ("name", "summary", "progress", "tasks",
-                              "sessions", "linked_cwds"):
+                              "sessions", "linked_cwds",
+                              "artifacts", "blockers"):
                     if field not in prior_init:
+                        # PRIOR doesn't have this field → strip from output
+                        if field in init:
+                            init.pop(field)
+                            repairs += 1
                         continue
                     if init.get(field) != prior_init.get(field):
                         init[field] = prior_init.get(field)
@@ -589,11 +626,40 @@ def main() -> int:
     # ---- 2. Hot summaries ----
     all_summaries = collect_summaries()
     now = datetime.now(timezone.utc)
-    hot = [(sid, fm, body) for sid, fm, body in all_summaries if is_hot(fm, now)]
+    hot = [(sid, fm, body, raw_fm)
+           for sid, fm, body, raw_fm in all_summaries if is_hot(fm, now)]
     cold_count = len(all_summaries) - len(hot)
+    hot_total = len(hot)
+
+    # Filter low-signal sessions: 1-turn (likely automation noise).
+    if MIN_TURNS > 1:
+        def has_enough_turns(fm):
+            try:
+                return int(fm.get("user_turns", "0") or "0") >= MIN_TURNS
+            except (TypeError, ValueError):
+                return True
+        hot = [tup for tup in hot if has_enough_turns(tup[1])]
+        filtered_thin = hot_total - len(hot)
+    else:
+        filtered_thin = 0
+
+    # Cap: keep most-recently-active MAX_HOT. Older "still hot" sessions are
+    # carried by PRIOR_MINDMAP. Sort by last_activity_at desc.
+    def sort_key(tup):
+        return tup[1].get("last_activity_at") or ""
+    hot.sort(key=sort_key, reverse=True)
+    capped = len(hot) > MAX_HOT
+    if capped:
+        hot = hot[:MAX_HOT]
 
     print(f"[classify] summaries: {len(all_summaries)} total, "
-          f"{len(hot)} hot (last {HOT_HOURS}h), {cold_count} cold")
+          f"{hot_total} hot (last {HOT_HOURS}h), {cold_count} cold")
+    if filtered_thin:
+        print(f"[classify] filtered {filtered_thin} thin sessions "
+              f"(user_turns<{MIN_TURNS})")
+    if capped:
+        print(f"[classify] capped to {MAX_HOT} most-recent hot summaries "
+              f"(env CLAUDE_WORKTREE_MAX_HOT to override)")
     if not hot and (prior_slim is None or not prior_slim.get("workspaces")):
         print("[classify] nothing to classify (no hot summaries, no prior)",
               file=sys.stderr)
@@ -637,7 +703,7 @@ def main() -> int:
         return 1
 
     new_mm["generated_at"] = now_utc_iso()
-    hot_sids = [s for s, _, _ in hot]
+    hot_sids = [s for s, _, _, _ in hot]
     repaired = repair_short_session_ids(new_mm, hot_sids)
     if repaired:
         print(f"[classify] repaired {repaired} truncated session_ids")

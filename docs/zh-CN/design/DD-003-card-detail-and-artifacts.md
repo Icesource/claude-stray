@@ -320,9 +320,46 @@ CR #27369464  pending  [view↗]  [✓ mark merged] [✗ dismiss]
 
 ---
 
-## 7. UI 设计（Modal）
+## 7. UI 设计
 
-### 7.1 布局
+UI 分两层：
+
+- **卡片外表（card surface）**——一眼可见的徽章/简讯，无需点击
+- **Modal**——点击卡片打开，看全部 artifact / blocker / 决策 / files / sessions
+
+### 7.0 卡片外表 — 徽章 + 卡点简讯
+
+卡片头部在状态徽章后追加：
+
+```
+● HSF EagleEye 链路追踪服务端 IP 为空问题排查  [已暂停]  23小时前
+  🚨 3 卡点  ·  🔗 1 个 CR pending
+```
+
+规则：
+
+| 徽章 | 显示条件 | 形式 |
+|---|---|---|
+| `🚨 N 卡点` | `blockers.length > 0` | 红色小 chip，N 为数量 |
+| `🔗 N pending` | `artifacts` 里有 `status in {pending, open, unknown}` 且 `type in {cr, mr, pr, issue}` 的数 > 0 | 蓝色小 chip |
+| `✅ N merged` | 仅当用户期望看（默认隐藏，因为不再需要关注） | 灰色，可选 |
+
+**额外**：在卡片**进度（progress）**段下方，加一行 **"top blocker 摘要"**
+（如果有 blocker）：
+
+```
+进度：…（已有内容）
+
+⚠ 卡点（top 1）：等 CI 通过
+```
+
+只显示 blockers[0]（最高优先级的）。点击徽章或这一行 → 打开 modal 跳
+到对应段落（modal 内 url 锚点）。
+
+理由：卡片本就是状态汇总器，blockers 比 next step 更紧迫，应该和
+status/age 同等可见度。
+
+### 7.1 Modal 布局
 
 点击卡片任何空白处 → 弹出居中 modal（半透明遮罩 + 圆角 600px 宽，max-
 height 80vh，超出滚动）：

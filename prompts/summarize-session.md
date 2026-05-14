@@ -35,6 +35,16 @@ last_activity_at: <copy verbatim>
 user_turns: <copy verbatim>
 updated_at: <copy from context.now>
 status_guess: active | paused | done | abandoned
+artifacts:                                # see Rule 10. omit key if none.
+  - type: cr                              # cr|mr|pr|issue|branch|commit|tag|deployment|doc|other
+    title: HSF EagleEye 链路追踪修复       # ≤ 60 chars, omit if none
+    ref_id: "27369464"                    # platform-specific id, optional
+    url: https://aone.alibaba-inc.com/code/g/...?cr=27369464
+    status: pending                       # see Rule 10 enum table
+    last_mentioned_at: 2026-05-13T15:10:00Z   # ISO; omit if uncertain
+blockers:                                 # see Rule 11. omit key if none.
+  - 等 CodeOwner 评审通过
+  - CI 失败：unit test 红
 ---
 
 # 目标
@@ -126,3 +136,79 @@ explicit confirmation), `[ ]` for outstanding ones. Each ≤ 60 chars.
    tool work but the user gave little narrative, derive the goal from
    `tools` + `edits` signals. Don't write "(无)" just because turns
    are sparse on text.
+
+10. **artifacts: extract concrete deliverable references.** A session
+    often produces or references CRs, merge requests, GitHub PRs,
+    issues, branches, commit SHAs, deploy/release tags, or doc links
+    that the user will want to follow up on. Walk `<turns>` and pull
+    every distinct one out.
+
+    URL/pattern recognition (highest signal):
+
+    | type | URL hint or pattern |
+    |---|---|
+    | `cr` | `aone.alibaba-inc.com/.../codereview/...`, `?cr=<id>`, `code.aone.alibaba.../cr/<id>` |
+    | `mr` | `gitlab.*/-/merge_requests/<id>`, `gitlab.alibaba-inc.com/.../merge_requests/<id>` |
+    | `pr` | `github.com/<org>/<repo>/pull/<id>` |
+    | `issue` | `github.com/<org>/<repo>/issues/<id>`, `aone.alibaba-inc.com/.../task/<id>`, JIRA-style `[A-Z]+-\d+` |
+    | `branch` | `git checkout <name>`, `branch=<name>` mentioned in plan or PR url |
+    | `commit` | 7-40 hex SHA followed by " (commit)" / " 提交" |
+    | `tag` | `v\d+\.\d+\.\d+` mentioned as a release |
+    | `deployment` | "上线 / 灰度 / publish / deploy" + a target env |
+    | `doc` | `yuque.com/...`, `confluence/...`, `notion.so/...`, internal wiki URL |
+    | `other` | anything else worth tracking (e.g. a forum thread) |
+
+    `status` enum by type:
+
+    | type | possible status values |
+    |---|---|
+    | cr/mr/pr | `pending` (awaiting review), `approved`, `merged`, `closed`, `unknown` |
+    | issue | `open`, `closed`, `wontfix`, `unknown` |
+    | branch | `active`, `merged`, `stale`, `unknown` |
+    | commit | `pushed`, `local`, `unknown` |
+    | tag | `released`, `unknown` |
+    | deployment | `pending`, `live`, `rolled-back`, `unknown` |
+    | doc/other | `unknown` |
+
+    Hard rules for artifacts:
+    - **At least `type`, `url`, `status` per entry.** title/ref_id are
+      nice-to-have. If you don't have a URL, prefer NOT to emit the
+      entry — strings alone aren't useful for follow-up.
+    - **`status` from latest turn that talks about it.** If user said
+      "CR passed review" 5 turns ago and nothing newer, status is
+      `approved` (not `merged`). Don't infer further than evidence.
+    - **De-duplicate by url.** Same URL appearing 3 times = one entry.
+    - **`last_mentioned_at`** = ISO timestamp of the turn that most
+      recently referenced this artifact. Omit the key if uncertain.
+    - **No invention.** Don't emit a CR entry because "CR 评审" was
+      mentioned without a number. Only concrete URLs/IDs count.
+    - **Cap 12 entries per session.** Drop the lowest-signal ones if
+      you somehow exceed.
+
+    If the session truly has zero trackable artifacts, omit the
+    `artifacts:` key entirely (do NOT write `artifacts: []` — yaml
+    libs choke).
+
+11. **blockers: capture what's actively holding the user back.** A
+    blocker is a specific external dependency or open question that
+    prevents the work from progressing AS OF THE LATEST TURN.
+
+    Format: short free-text strings, one per blocker, ≤ 80 chars.
+    Examples that count:
+    - 等 CodeOwner @bowen 评审
+    - 等 CI 红：HSFEagleEyeIntegrationTest 跑不过
+    - 等 dev_test_a 环境恢复（运维处理中）
+    - 待 user 给 prod cluster 访问权限
+
+    Hard rules for blockers:
+    - **External signal.** "等 X 通过 / 等 X 回复 / 等 X 恢复" pattern.
+      Internal todos like "我还要写测试" are NOT blockers (those go in
+      `# 下一步` or `# 待解决`).
+    - **Most-recent-turn wins.** If the user said "CI 终于过了" later,
+      remove the "等 CI" blocker.
+    - **Concrete who/what.** "等评审" → 写明等谁 / 哪个 CR。
+    - **De-duplicate.** Same blocker mentioned multiple times = one
+      string.
+    - **Cap 5 entries.**
+
+    If no blockers, omit the `blockers:` key entirely.
