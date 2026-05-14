@@ -9,7 +9,8 @@
 
 | ID | 标题 | 状态 |
 |---|---|---|
-| [DD-001](DD-001-two-pass-classification.md) | 两段式分类：用每 session AI 摘要替代硬压缩 | Proposed |
+| [DD-001](DD-001-two-pass-classification.md) | 两段式分类：用每 session AI 摘要替代硬压缩 | Superseded by DD-002 |
+| [DD-002](DD-002-ai-pipeline-redesign.md) | AI Pipeline 重设计（三层 + 冷热 + dirty tracking + coalesce） | **Proposed** |
 
 ## 模板
 

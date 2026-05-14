@@ -1,8 +1,14 @@
 # DD-001: Two-pass classification — per-session AI summaries replace hard compression
 
-**Status**: Proposed
+**Status**: **Superseded by [DD-002](DD-002-ai-pipeline-redesign.md)**
 **Author**: bby
 **Date**: 2026-05-13
+
+> ⚠️ This document has been superseded by
+> [DD-002](DD-002-ai-pipeline-redesign.md). DD-002 is the unified
+> design built on DD-001 + subsequent discussion. It adds hot/cold
+> stratification, mtime dirty tracking, concurrency model, file
+> layout, and end-to-end walkthroughs. This doc remains for history.
 
 中文版：[../zh-CN/design/DD-001-two-pass-classification.md](../zh-CN/design/DD-001-two-pass-classification.md)
 

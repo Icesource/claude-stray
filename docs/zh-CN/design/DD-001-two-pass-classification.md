@@ -1,8 +1,12 @@
 # DD-001: 两段式分类——用每 session AI 摘要替代硬压缩
 
-**Status**: Proposed
+**Status**: **Superseded by [DD-002](DD-002-ai-pipeline-redesign.md)**
 **Author**: bby
 **Date**: 2026-05-13
+
+> ⚠️ 这份文档已被 [DD-002](DD-002-ai-pipeline-redesign.md) 取代。
+> DD-002 是基于 DD-001 + 后续讨论的完整设计，含冷热分层、dirty
+> tracking、并发模型、文件目录、端到端走查。本文保留作历史记录。
 
 英文原版：[../../design/DD-001-two-pass-classification.md](../../design/DD-001-two-pass-classification.md)
 
