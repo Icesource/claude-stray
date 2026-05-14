@@ -17,8 +17,10 @@ DO_OPEN=0
 DO_TREE=0
 DO_SERVE=0
 DO_DIAGNOSE=0
+DO_COST=0
 NO_OPEN=0
 DIAG_ARG=""
+COST_ARG=""
 
 # Pre-scan for --diagnose so we can capture its positional arg
 while [ $# -gt 0 ]; do
@@ -38,6 +40,14 @@ while [ $# -gt 0 ]; do
         DIAG_ARG="$1"; shift
       fi
       ;;
+    --cost)
+      DO_COST=1
+      shift
+      # Optional subcommand: today | week | month | all | log | json
+      if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then
+        COST_ARG="$1"; shift
+      fi
+      ;;
     -h|--help)
       cat <<EOF
 Usage: mindmap [--refresh] [--serve | --open | --html | --tree | --diagnose]
@@ -55,6 +65,9 @@ Without flags: render the cached mindmap to stdout as an ANSI tree.
   --no-open           With --serve: don't auto-open the browser.
   --diagnose [SID]    Show why a session may not be in the mindmap.
                       Without SID, picks the most recently active session.
+  --cost [PERIOD]     Show AI call counts and costs.
+                      PERIOD: today | week | month | all | log | json.
+                      Default (no arg): today + last 7 days table.
 EOF
       exit 0
       ;;
@@ -71,6 +84,14 @@ if [ "$DO_DIAGNOSE" -eq 1 ]; then
     exec python3 "$REPO_ROOT/bin/diagnose.py" "$DIAG_ARG"
   else
     exec python3 "$REPO_ROOT/bin/diagnose.py"
+  fi
+fi
+
+if [ "$DO_COST" -eq 1 ]; then
+  if [ -n "$COST_ARG" ]; then
+    exec python3 "$REPO_ROOT/bin/cost.py" "$COST_ARG"
+  else
+    exec python3 "$REPO_ROOT/bin/cost.py"
   fi
 fi
 

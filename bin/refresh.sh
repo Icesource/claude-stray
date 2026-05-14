@@ -324,6 +324,13 @@ if ! perl -e 'alarm shift @ARGV; exec @ARGV' "$CLAUDE_TIMEOUT_SECS" \
   t_elapsed=$(( $(date +%s) - t_start ))
   echo "[refresh] claude -p failed or timed out after ${t_elapsed}s (rc=$rc), abandoning" >&2
   echo "[refresh]   prompt=${prompt_kb}KB  sessions=$n_sessions" >&2
+  # Log the failure to the cost log so day-by-day stats reflect dropped calls.
+  python3 -c "
+import sys
+sys.path.insert(0, '$REPO_ROOT/bin')
+from _cost_log import log_cost
+log_cost(layer='classify', envelope=None, duration_s=$t_elapsed, ok=False)
+" 2>/dev/null || true
   exit 1
 fi
 t_elapsed=$(( $(date +%s) - t_start ))
@@ -331,12 +338,23 @@ t_elapsed=$(( $(date +%s) - t_start ))
 # Extract the text result and usage stats from JSON envelope, then parse
 # the mindmap JSON from the model's text output. Also produce a diff
 # against the prior mindmap so the log clearly shows what AI changed.
-python3 - "$CACHE_DIR/_raw_output.json" "$OUTPUT_FILE" "$prompt_kb" "$t_elapsed" <<'PY'
+# REPO_ROOT is passed as $5 so the heredoc can import bin/_cost_log.py.
+python3 - "$CACHE_DIR/_raw_output.json" "$OUTPUT_FILE" "$prompt_kb" "$t_elapsed" "$REPO_ROOT" <<'PY'
 import json, re, sys
+from pathlib import Path
 
 envelope = json.load(open(sys.argv[1]))
 prompt_kb = sys.argv[3]
 elapsed = sys.argv[4]
+repo_root = Path(sys.argv[5])
+
+# Append a cost record for this call. Non-fatal if logging fails.
+try:
+    sys.path.insert(0, str(repo_root / "bin"))
+    from _cost_log import log_cost
+    log_cost(layer="classify", envelope=envelope, duration_s=float(elapsed), ok=True)
+except Exception as e:
+    print(f"[refresh] cost-log failed: {e}", file=sys.stderr)
 
 # --- Log usage stats --------------------------------------------------------
 usage = envelope.get("usage", {})
