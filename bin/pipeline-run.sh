@@ -79,14 +79,26 @@ python3 "$REPO_ROOT/bin/extract.py" || {
 DIRTY_SIDS_FILE=$(mktemp -t pipeline-dirty-XXXXXX)
 trap "rm -f $DIRTY_SIDS_FILE" EXIT
 
-python3 - "$SESSIONS_DIR" "$SUMMARIES_DIR" "$SID" "$BACKFILL" > "$DIRTY_SIDS_FILE" <<'PY'
-import json, os, sys
+# MAX_BATCH caps a single --all-dirty / --backfill sweep so a long-idle
+# install that has hundreds of dirty sessions doesn't tie up the
+# pipeline (and Haiku spend) for hours in one shot. Backfill uses a
+# higher cap because the user explicitly opted in. The rest get picked
+# up on subsequent sweeps. --sid is never capped — it's already one.
+MAX_BATCH_REFRESH=${CLAUDE_WORKTREE_MAX_BATCH_REFRESH:-40}
+MAX_BATCH_BACKFILL=${CLAUDE_WORKTREE_MAX_BATCH_BACKFILL:-200}
+
+python3 - "$SESSIONS_DIR" "$SUMMARIES_DIR" "$SID" "$BACKFILL" \
+         "$MAX_BATCH_REFRESH" "$MAX_BATCH_BACKFILL" \
+         > "$DIRTY_SIDS_FILE" <<'PY'
+import json, sys
 from pathlib import Path
 
 sessions_dir = Path(sys.argv[1])
 summaries_dir = Path(sys.argv[2])
 restrict_sid = sys.argv[3] or None
 backfill = sys.argv[4] == "1"
+max_batch_refresh = int(sys.argv[5])
+max_batch_backfill = int(sys.argv[6])
 
 if not sessions_dir.exists():
     sys.exit(0)
@@ -99,6 +111,7 @@ if restrict_sid:
 else:
     candidates = list(sessions_dir.glob("*.json"))
 
+dirty = []  # (last_activity_at, sid)
 for sj in candidates:
     sid = sj.stem
     try:
@@ -111,7 +124,21 @@ for sj in candidates:
         continue
     sm = summaries_dir / f"{sid}.md"
     if backfill or not sm.exists() or sj.stat().st_mtime > sm.stat().st_mtime:
-        print(sid)
+        # Most-recent-first: prefer fresh work over historical backfill,
+        # so the dashboard catches up to current reality first.
+        dirty.append((d.get("last_activity_at") or "", sid))
+
+dirty.sort(reverse=True)
+
+if not restrict_sid:
+    cap = max_batch_backfill if backfill else max_batch_refresh
+    if len(dirty) > cap:
+        print(f"# {len(dirty)} dirty; capping to {cap} (env CLAUDE_WORKTREE_MAX_BATCH_REFRESH)",
+              file=sys.stderr)
+        dirty = dirty[:cap]
+
+for _, sid in dirty:
+    print(sid)
 PY
 
 DIRTY_COUNT=$(wc -l < "$DIRTY_SIDS_FILE" | tr -d '[:space:]')

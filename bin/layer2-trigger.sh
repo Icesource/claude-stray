@@ -32,7 +32,15 @@ CACHE_DIR="$REPO_ROOT/cache"
 LOCKS_DIR="$CACHE_DIR/.locks"
 LOCK_DIR_PATH="$LOCKS_DIR/layer2.lock.d"
 PENDING_FILE="$LOCKS_DIR/layer2.pending"
-STALE_SECS=900  # 15 min — classify avg 100s; if lock older than this it's a zombie
+# Stale-lock threshold. The lock-holder also touches the lockdir mtime
+# before each classify iteration (heartbeat), so this is the maximum
+# time a SINGLE classify.py run is allowed to take without being
+# considered hung. classify averages ~100s; bursts of pending-set →
+# rerun can stretch one iteration to a few minutes (waiting on AI
+# response). Bumped from 15min to 30min to leave generous headroom and
+# avoid the 2026-05-15 race where a long catch-up burst ate its own
+# lock and let a second classify run concurrently.
+STALE_SECS=1800  # 30 min
 
 mkdir -p "$LOCKS_DIR"
 
@@ -74,6 +82,11 @@ while :; do
   # observed afterwards.
   rm -f "$PENDING_FILE"
   runs=$((runs + 1))
+
+  # Heartbeat: refresh the lockdir mtime so the stale-lock cleanup
+  # in concurrent layer2-trigger.sh invocations doesn't conclude that
+  # we're hung just because our coalesce loop has been busy a while.
+  touch "$LOCK_DIR_PATH" 2>/dev/null || true
 
   echo "[layer2-trigger] $(date -Iseconds) classify run #$runs" >> "$LOG"
   python3 "$REPO_ROOT/bin/classify.py" >> "$LOG" 2>&1

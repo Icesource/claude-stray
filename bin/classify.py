@@ -689,7 +689,14 @@ def aggregate_and_archive_tasks(new_mm: dict, prior: dict,
             sessions = init.get("sessions") or []
             hot_in_init = [s for s in sessions if s in hot_tasks_by_sid]
             if not hot_in_init:
-                # Cold — leave tasks alone (§5) and don't touch archive
+                # Cold — §5 says tasks/artifacts/blockers are byte-identical
+                # to PRIOR. We do NOT change content, but we DO enrich each
+                # task with a stable `id` if missing (legacy data migration).
+                # This is content-preserving: same title → same slug, no
+                # other fields touched, no archive write.
+                for t in (init.get("tasks") or []):
+                    if t.get("title") and not t.get("id"):
+                        t["id"] = slugify_task_title(t["title"])
                 continue
             n_inits += 1
 
