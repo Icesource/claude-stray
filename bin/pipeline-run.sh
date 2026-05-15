@@ -18,11 +18,19 @@
 #
 # Args:
 #   --sid <session_id>      Restrict Layer 1 to just this session
-#   --all-dirty             Sweep all dirty sessions (also default if
-#                           no --sid given)
-#   --backfill              Force re-summarize every session
+#                           (canonical hook-driven path)
+#   --all-dirty             Sweep dirty sessions whose last_activity_at
+#                           is within HOT_HOURS (default 48h). Cold
+#                           dirty sessions are intentionally left as-is;
+#                           they'll refresh lazily when the user next
+#                           talks in them. See the Python heredoc below
+#                           for the design rationale.
+#   --backfill              Force re-summarize EVERY session (hot OR
+#                           cold). One-shot opt-in, e.g. first install
+#                           on a long-running CC user. Expensive.
 #   --force-classify        Always trigger Layer 2 at the end, even if
-#                           Layer 1 wrote nothing new
+#                           Layer 1 wrote nothing new (used by the UI
+#                           "🔄 refresh" button).
 
 set -u
 
@@ -79,29 +87,59 @@ python3 "$REPO_ROOT/bin/extract.py" || {
 DIRTY_SIDS_FILE=$(mktemp -t pipeline-dirty-XXXXXX)
 trap "rm -f $DIRTY_SIDS_FILE" EXIT
 
-# MAX_BATCH caps a single --all-dirty / --backfill sweep so a long-idle
-# install that has hundreds of dirty sessions doesn't tie up the
-# pipeline (and Haiku spend) for hours in one shot. Backfill uses a
-# higher cap because the user explicitly opted in. The rest get picked
-# up on subsequent sweeps. --sid is never capped — it's already one.
+# Design notes for --all-dirty (lazy refresh, per user discussion 2026-05-15):
+#
+# Stop hook is the canonical refresh path: when you talk in a session,
+# its hook fires `pipeline-run.sh --sid <X>` and only that session gets
+# summarized. Sessions you never touch don't need to be summarized —
+# they have no new content, and Layer 2's cold-immutability rule means
+# they wouldn't affect the dashboard even if summarized.
+#
+# So --all-dirty has narrow legitimate use: catching the small set of
+# RECENTLY active sessions whose hook somehow didn't run (rare). It is
+# explicitly NOT meant to retroactively summarize months of cold work.
+#
+# Filter: only sessions whose last_activity_at is within HOT_HOURS
+# (default 48h, matches classify.py). Cold dirty sessions stay dirty
+# forever and that's fine. If the user revisits a cold session it
+# becomes hot via its own Stop hook and gets summarized then.
+#
+# --backfill ignores this filter (it's the explicit "I want everything"
+# opt-in, e.g., first install of a long-running CC user).
+#
+# MAX_BATCH is a safety belt: even within the hot window, if for some
+# reason 100 sessions are hot-dirty, we cap to avoid runaway. With
+# normal usage the dirty hot queue is 0-5 entries.
+HOT_HOURS=${CLAUDE_WORKTREE_HOT_HOURS:-48}
 MAX_BATCH_REFRESH=${CLAUDE_WORKTREE_MAX_BATCH_REFRESH:-40}
 MAX_BATCH_BACKFILL=${CLAUDE_WORKTREE_MAX_BATCH_BACKFILL:-200}
 
 python3 - "$SESSIONS_DIR" "$SUMMARIES_DIR" "$SID" "$BACKFILL" \
-         "$MAX_BATCH_REFRESH" "$MAX_BATCH_BACKFILL" \
+         "$HOT_HOURS" "$MAX_BATCH_REFRESH" "$MAX_BATCH_BACKFILL" \
          > "$DIRTY_SIDS_FILE" <<'PY'
 import json, sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sessions_dir = Path(sys.argv[1])
 summaries_dir = Path(sys.argv[2])
 restrict_sid = sys.argv[3] or None
 backfill = sys.argv[4] == "1"
-max_batch_refresh = int(sys.argv[5])
-max_batch_backfill = int(sys.argv[6])
+hot_hours = int(sys.argv[5])
+max_batch_refresh = int(sys.argv[6])
+max_batch_backfill = int(sys.argv[7])
 
 if not sessions_dir.exists():
     sys.exit(0)
+
+hot_cutoff = datetime.now(timezone.utc) - timedelta(hours=hot_hours)
+
+def is_hot(la_str: str) -> bool:
+    if not la_str: return False
+    try:
+        return datetime.fromisoformat(la_str.replace("Z", "+00:00")) >= hot_cutoff
+    except ValueError:
+        return False
 
 candidates = []
 if restrict_sid:
@@ -111,7 +149,8 @@ if restrict_sid:
 else:
     candidates = list(sessions_dir.glob("*.json"))
 
-dirty = []  # (last_activity_at, sid)
+dirty = []          # (last_activity_at, sid) for hot dirty
+skipped_cold = 0
 for sj in candidates:
     sid = sj.stem
     try:
@@ -123,19 +162,28 @@ for sj in candidates:
     if (d.get("user_message_count", 0) or 0) < 1:
         continue
     sm = summaries_dir / f"{sid}.md"
-    if backfill or not sm.exists() or sj.stat().st_mtime > sm.stat().st_mtime:
-        # Most-recent-first: prefer fresh work over historical backfill,
-        # so the dashboard catches up to current reality first.
-        dirty.append((d.get("last_activity_at") or "", sid))
+    is_dirty = backfill or not sm.exists() or sj.stat().st_mtime > sm.stat().st_mtime
+    if not is_dirty:
+        continue
+    la = d.get("last_activity_at") or ""
+    # --sid (single-session, hook-driven) bypasses the hot filter — the
+    # caller already knows it's the session of interest.
+    if restrict_sid or backfill or is_hot(la):
+        dirty.append((la, sid))
+    else:
+        skipped_cold += 1
 
 dirty.sort(reverse=True)
 
 if not restrict_sid:
     cap = max_batch_backfill if backfill else max_batch_refresh
     if len(dirty) > cap:
-        print(f"# {len(dirty)} dirty; capping to {cap} (env CLAUDE_WORKTREE_MAX_BATCH_REFRESH)",
-              file=sys.stderr)
+        print(f"# {len(dirty)} dirty; capping to {cap}", file=sys.stderr)
         dirty = dirty[:cap]
+
+if skipped_cold:
+    print(f"# skipped {skipped_cold} cold dirty session(s) (lazy: they refresh on next Stop hook)",
+          file=sys.stderr)
 
 for _, sid in dirty:
     print(sid)
