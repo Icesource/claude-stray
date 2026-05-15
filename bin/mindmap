@@ -125,12 +125,8 @@ if [ "$DO_SERVE" -eq 1 ]; then
 fi
 
 if [ "$DO_REFRESH" -eq 1 ]; then
-  if [ "${CLAUDE_WORKTREE_LEGACY_PIPELINE:-}" = "1" ]; then
-    CLAUDE_WORKTREE_FORCE=1 bash "$REPO_ROOT/bin/refresh.sh" >&2
-  else
-    # New pipeline: sweep dirty, force a Layer 2 run at the end
-    bash "$REPO_ROOT/bin/pipeline-run.sh" --all-dirty --force-classify >&2
-  fi
+  # Sweep dirty + force a Layer 2 run at the end
+  bash "$REPO_ROOT/bin/pipeline-run.sh" --all-dirty --force-classify >&2
 fi
 
 if [ "$DO_HTML" -eq 1 ] || [ "$DO_OPEN" -eq 1 ] || [ "$DO_TREE" -eq 1 ]; then

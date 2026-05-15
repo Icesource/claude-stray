@@ -392,6 +392,24 @@ def summarize_one(sid: str, *, force: bool = False, dry_run: bool = False) -> in
                 lines = lines[:-1]
             out = "\n".join(lines)
 
+        # Repair: Haiku occasionally emits ``` as the YAML frontmatter
+        # close-fence instead of ---, because the prompt's example block
+        # happens to be wrapped in a markdown code fence. If the output
+        # starts with --- and the first ``` line appears BEFORE any other
+        # --- line, swap that ``` for --- so parse_frontmatter works.
+        if out.startswith("---\n"):
+            lines = out.split("\n")
+            for i in range(1, len(lines)):
+                s = lines[i].rstrip()
+                if s == "---":
+                    break          # already correct
+                if s == "```":
+                    lines[i] = "---"
+                    out = "\n".join(lines)
+                    print(f"[summarize] repaired stray ``` fence in {sid} "
+                          f"output", file=sys.stderr)
+                    break
+
         # Basic sanity: should start with frontmatter
         if not out.startswith("---"):
             print(f"[summarize] WARN: output for {sid} doesn't start with "

@@ -186,6 +186,37 @@ the union of `blockers:` from every HOT session belonging to it.
 
 If empty, omit the `blockers` key.
 
+## §7c — Aggregate tasks (hot initiatives only)
+
+For an initiative with at least one hot session, rebuild `tasks[]` as
+the union of:
+
+- PRIOR initiative's `tasks[]` (all of it; carry forward)
+- Every hot session's `tasks:` frontmatter entries
+
+Each task has the shape `{id, title, done}` plus internal-tracking
+fields (`first_seen_at`, `last_seen_at`, `done_at`) that classify.py
+manages — emit `{id, title, done}` and let the post-process handle the
+rest.
+
+- **Identity by `id`**, which is a slug of `title` (deterministic).
+  PRIOR tasks already have ids; for tasks coming straight from hot
+  summaries, emit just `{title, done}` — classify.py post-process
+  generates the slug.
+- **Reuse exact titles** when describing the same conceptual task
+  across rounds. The slug is `title`-derived; reworded titles produce
+  duplicates.
+- **`done` is monotone** (already enforced by §4): true wins forever.
+- **Cap to 20 visible tasks**. classify.py post-process performs the
+  final cap + archive write; you should still emit up to 20 yourself
+  (prefer not-done, then most-recently-done). Extra entries are not an
+  error — post-process trims them — but emitting tight output reduces
+  token waste.
+- **Don't invent tasks** that aren't in PRIOR or any hot summary.
+
+If neither PRIOR nor any hot summary has tasks for this initiative,
+omit the `tasks` key entirely (do NOT emit `[]`).
+
 # Output language
 
 All natural-language fields (`name`, `summary`, `progress`,
@@ -200,9 +231,9 @@ are always English/raw.
    Skip none.
 2. For each initiative in PRIOR, decide hot vs cold (any of its
    sessions appear in HOT_SUMMARIES?).
-   - Hot → you may update `progress`, refresh tasks (done monotone),
-     update status from hot session signal, aggregate `artifacts[]`
-     per §7a and `blockers[]` per §7b, add new sessions if any.
+   - Hot → you may update `progress`, refresh status from hot session
+     signal, aggregate `artifacts[]` per §7a, `blockers[]` per §7b,
+     and `tasks[]` per §7c. Add new sessions if any.
    - Cold → apply §5 mechanically. Touch only `status` (decay rule).
      `artifacts[]` and `blockers[]` stay byte-identical.
 3. **Discover new initiatives** from HOT_SUMMARIES whose
@@ -227,5 +258,8 @@ For your output, verify each of:
 - [ ] All `artifacts[].url` values are non-empty strings (no nulls).
 - [ ] No duplicate `artifacts[]` entries (same URL) within one initiative.
 - [ ] `blockers[]` strings are short (≤ 80 chars each) and deduped.
+- [ ] `tasks[]` items came from PRIOR or a hot summary (no inventions);
+      no two entries share the same `id`; same `title` reused for the
+      same conceptual task across rounds.
 
 If any check fails, fix and retry. **Never emit broken output**.

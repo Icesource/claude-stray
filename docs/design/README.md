@@ -17,6 +17,7 @@ for when to write one.
 | [DD-005](DD-005-lifecycle.md) | Lifecycle / opt-in operation model (pause/resume, serve-only mode) | **Proposed** |
 | [DD-006](DD-006-card-derived-ai-features.md) | Card-derived AI features (weekly report, next-steps, tips, wellness) | **Proposed** |
 | [DD-007](DD-007-agent-auto-runner.md) | Card-driven AI agent auto-runner | **Idea-stage, needs POC** |
+| [DD-008](DD-008-task-aggregation-and-archive.md) | Task aggregation, dedup by slug, cap + archive | Implemented |
 
 ## Template
 

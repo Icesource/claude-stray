@@ -46,11 +46,17 @@ CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
+TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
 MINDMAP_FILE = CACHE_DIR / "mindmap.json"
 DELETED_FILE = CACHE_DIR / "deleted_ids.json"
 OVERRIDES_FILE = CACHE_DIR / "user_overrides.json"
 CONFIG_FILE = CACHE_DIR / "config.json"
 PROMPT_FILE = REPO_ROOT / "prompts" / "classify-cross-session.md"
+
+# Cap on the number of tasks shown directly on an initiative card.
+# Overflow tasks (oldest done first) spill to cache/task_archive/<id>.json
+# per DD-008.
+MAX_VISIBLE_TASKS = int(os.environ.get("CLAUDE_WORKTREE_MAX_VISIBLE_TASKS", "20"))
 
 # Hot/cold threshold (configurable via env)
 HOT_HOURS = int(os.environ.get("CLAUDE_WORKTREE_HOT_HOURS", "48"))
@@ -96,10 +102,14 @@ def parse_frontmatter(text: str) -> tuple[dict, str, str]:
     status_guess, etc) — enough for hot/cold sorting. Nested fields like
     artifacts:/blockers: are NOT parsed into the dict but ARE preserved in
     raw_fm so we can re-emit them verbatim for the AI prompt.
+
+    Tolerates AI drift: accepts either `---` or ```` ``` ```` as the
+    closing fence, because Haiku occasionally emits the latter when the
+    prompt happens to wrap the example template in a code fence.
     """
     if not text.startswith("---"):
         return {}, text, ""
-    m = re.search(r"^---\s*$", text[3:], flags=re.MULTILINE)
+    m = re.search(r"^(?:---|```)\s*$", text[3:], flags=re.MULTILINE)
     if not m:
         return {}, text, ""
     fm_text = text[3:3 + m.start()].strip()
@@ -121,6 +131,98 @@ def parse_frontmatter(text: str) -> tuple[dict, str, str]:
                 v = v[1:-1]
             fm[k.strip()] = v
     return fm, body, fm_text
+
+
+_SLUG_NONWORD = re.compile(r"[^\w]+", flags=re.UNICODE)
+_SLUG_DASHES = re.compile(r"-+")
+
+
+def slugify_task_title(title: str, max_len: int = 64) -> str:
+    """Stable slug derived from a task title (DD-008 §3.1).
+
+    Deterministic: equal titles → equal slugs. Slight rewordings produce
+    different slugs (v1 limitation; classify prompt instructs AI to
+    reuse exact titles).
+    """
+    s = (title or "").strip().lower()
+    s = _SLUG_NONWORD.sub("-", s)
+    s = _SLUG_DASHES.sub("-", s).strip("-")
+    s = (s or "task")[:max_len].rstrip("-")
+    return s or "task"
+
+
+def parse_tasks_from_fm(raw_fm: str) -> list[dict]:
+    """Extract the `tasks:` block from raw frontmatter text.
+
+    Expected shape (per prompts/summarize-session.md Rule 12):
+
+        tasks:
+          - title: <text>
+            done: true | false
+          - title: <text>
+            done: false
+
+    Returns [{"title": str, "done": bool}, ...] — empty list if no
+    `tasks:` key or it's malformed. Deliberately tolerant: skips
+    entries missing a title.
+    """
+    if not raw_fm or "tasks:" not in raw_fm:
+        return []
+    lines = raw_fm.splitlines()
+    out: list[dict] = []
+    in_block = False
+    cur: dict | None = None
+    for line in lines:
+        stripped = line.rstrip()
+        # Top-level key starts at column 0
+        if stripped and not line[0].isspace():
+            if in_block:
+                # Hit the next top-level key — stop
+                if cur and cur.get("title"):
+                    out.append(cur)
+                break
+            if stripped.startswith("tasks:"):
+                in_block = True
+            continue
+        if not in_block:
+            continue
+        # Inside the tasks: block
+        s = stripped.lstrip()
+        if s.startswith("- "):
+            if cur and cur.get("title"):
+                out.append(cur)
+            cur = {}
+            rest = s[2:].strip()
+            if rest.startswith("title:"):
+                cur["title"] = _yaml_scalar(rest[len("title:"):].strip())
+            elif rest.startswith("done:"):
+                cur["done"] = _yaml_bool(rest[len("done:"):].strip())
+        elif s.startswith("title:") and cur is not None:
+            cur["title"] = _yaml_scalar(s[len("title:"):].strip())
+        elif s.startswith("done:") and cur is not None:
+            cur["done"] = _yaml_bool(s[len("done:"):].strip())
+    if in_block and cur and cur.get("title"):
+        out.append(cur)
+    # Normalize: every task has a title and a done flag (default false)
+    norm: list[dict] = []
+    for t in out:
+        title = (t.get("title") or "").strip()
+        if not title:
+            continue
+        norm.append({"title": title, "done": bool(t.get("done"))})
+    return norm
+
+
+def _yaml_scalar(s: str) -> str:
+    if not s:
+        return s
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        return s[1:-1]
+    return s
+
+
+def _yaml_bool(s: str) -> bool:
+    return s.strip().lower() in ("true", "yes", "on", "1")
 
 
 def collect_summaries() -> list[tuple[str, dict, str, str]]:
@@ -508,6 +610,179 @@ def enforce_cold_and_done_monotone(new_mm: dict, prior: dict,
     return repairs
 
 
+def _safe_init_id_for_filename(init_id: str) -> str:
+    """Make init_id safe for use as a filename."""
+    return re.sub(r"[^\w\-]", "_", init_id or "unknown")[:120]
+
+
+def load_task_archive(init_id: str) -> list[dict]:
+    """Read the per-initiative task archive (DD-008 §3.5). Returns the
+    list of task records, or [] if no archive yet."""
+    if not TASK_ARCHIVE_DIR.is_dir():
+        return []
+    p = TASK_ARCHIVE_DIR / f"{_safe_init_id_for_filename(init_id)}.json"
+    if not p.exists():
+        return []
+    try:
+        d = json.loads(p.read_text())
+        return d.get("tasks") or []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_task_archive(init_id: str, tasks: list[dict]) -> None:
+    """Atomically write the per-initiative task archive."""
+    TASK_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    p = TASK_ARCHIVE_DIR / f"{_safe_init_id_for_filename(init_id)}.json"
+    payload = {
+        "initiative_id": init_id,
+        "updated_at": now_utc_iso(),
+        "tasks": tasks,
+    }
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    tmp.replace(p)
+
+
+def aggregate_and_archive_tasks(new_mm: dict, prior: dict,
+                                 hot_summaries: list) -> tuple[int, int]:
+    """Per DD-008 §3.3/§3.4: rebuild each hot initiative's tasks[].
+
+    For each hot initiative:
+      1. Load existing task archive.
+      2. Merge candidates from three sources (PRIOR, AI output, hot
+         summaries' frontmatter) by slugified-title id.
+      3. Done-monotone: any source with done=true wins forever.
+      4. Sort: not-done by first_seen_at desc, then done by done_at
+         desc.
+      5. Cap visible at MAX_VISIBLE_TASKS (always keep all not-done).
+      6. Persist the full ordered list to cache/task_archive/<id>.json.
+      7. Set `initiative.tasks` = visible slice and
+         `initiative.tasks_archived_count` = overflow count.
+
+    Cold initiatives are not touched here (§5 already keeps them
+    byte-identical; their archive files also stay untouched).
+
+    Returns (n_initiatives_processed, total_archived_count) for logging.
+    """
+    now_iso = now_utc_iso()
+
+    # Map hot sid → tasks list parsed from frontmatter
+    hot_tasks_by_sid: dict[str, list[dict]] = {}
+    for sid, _fm, _body, raw_fm in hot_summaries:
+        hot_tasks_by_sid[sid] = parse_tasks_from_fm(raw_fm)
+
+    # PRIOR initiative lookup
+    prior_by_id: dict[str, dict] = {}
+    for w in (prior.get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            prior_by_id[i.get("id")] = i
+
+    n_inits = 0
+    total_archived = 0
+
+    for ws in new_mm.get("workspaces") or []:
+        for init in (ws.get("initiatives") or []):
+            init_id = init.get("id")
+            if not init_id:
+                continue
+            sessions = init.get("sessions") or []
+            hot_in_init = [s for s in sessions if s in hot_tasks_by_sid]
+            if not hot_in_init:
+                # Cold — leave tasks alone (§5) and don't touch archive
+                continue
+            n_inits += 1
+
+            # Start the merged map from the existing archive
+            merged: dict[str, dict] = {}
+            for t in load_task_archive(init_id):
+                tid = t.get("id")
+                if tid:
+                    merged[tid] = dict(t)
+
+            # Build the candidate stream
+            candidates: list[dict] = []
+            for t in (prior_by_id.get(init_id, {}).get("tasks") or []):
+                if t.get("title"):
+                    candidates.append({
+                        "title": t["title"],
+                        "done": bool(t.get("done")),
+                        "sid": None,
+                    })
+            for t in (init.get("tasks") or []):
+                if t.get("title"):
+                    candidates.append({
+                        "title": t["title"],
+                        "done": bool(t.get("done")),
+                        "sid": None,
+                    })
+            for sid in hot_in_init:
+                for t in hot_tasks_by_sid.get(sid, []):
+                    candidates.append({
+                        "title": t["title"],
+                        "done": bool(t.get("done")),
+                        "sid": sid,
+                    })
+
+            # Fold candidates into the merged map (slug = id)
+            for c in candidates:
+                slug = slugify_task_title(c["title"])
+                cur = merged.get(slug)
+                if cur is None:
+                    merged[slug] = {
+                        "id": slug,
+                        "title": c["title"],
+                        "done": c["done"],
+                        "first_seen_at": now_iso,
+                        "last_seen_at": now_iso,
+                        "done_at": now_iso if c["done"] else None,
+                        "sessions": [c["sid"]] if c["sid"] else [],
+                    }
+                else:
+                    cur["title"] = c["title"]  # latest wording wins
+                    cur["last_seen_at"] = now_iso
+                    if c["done"] and not cur.get("done"):
+                        cur["done"] = True
+                        cur["done_at"] = now_iso
+                    if c["sid"]:
+                        sl = cur.setdefault("sessions", [])
+                        if c["sid"] not in sl:
+                            sl.append(c["sid"])
+
+            all_tasks = list(merged.values())
+
+            not_done = sorted(
+                [t for t in all_tasks if not t.get("done")],
+                key=lambda t: t.get("first_seen_at") or "",
+                reverse=True,
+            )
+            done_tasks = sorted(
+                [t for t in all_tasks if t.get("done")],
+                key=lambda t: t.get("done_at") or t.get("last_seen_at") or "",
+                reverse=True,
+            )
+            ordered_all = not_done + done_tasks
+
+            # Cap: always keep all not-done; fill rest with most-recent done
+            remaining = max(0, MAX_VISIBLE_TASKS - len(not_done))
+            visible = not_done + done_tasks[:remaining]
+            if len(visible) > MAX_VISIBLE_TASKS:
+                visible = visible[:MAX_VISIBLE_TASKS]
+
+            archived_count = len(ordered_all) - len(visible)
+            total_archived += archived_count
+
+            init["tasks"] = [
+                {"id": t["id"], "title": t["title"], "done": t["done"]}
+                for t in visible
+            ]
+            init["tasks_archived_count"] = archived_count
+
+            save_task_archive(init_id, ordered_all)
+
+    return n_inits, total_archived
+
+
 def repair_short_session_ids(mindmap: dict, hot_sids: list[str]) -> int:
     """If AI emitted 8-char prefixes instead of full UUIDs, restore via
     exact-prefix match against the hot sids we know."""
@@ -715,6 +990,14 @@ def main() -> int:
     rule_repairs = enforce_cold_and_done_monotone(new_mm, prior, hot_sids)
     if rule_repairs:
         print(f"[classify] enforced cold/done-monotone rules: {rule_repairs} repairs")
+
+    # DD-008 §3.4: rebuild hot initiatives' tasks[] from PRIOR + hot
+    # summaries' frontmatter + AI output; dedup by slug; cap at
+    # MAX_VISIBLE_TASKS; spill overflow to cache/task_archive/.
+    task_inits, task_archived = aggregate_and_archive_tasks(new_mm, prior, hot)
+    if task_inits:
+        print(f"[classify] tasks: rebuilt for {task_inits} hot initiative(s); "
+              f"{task_archived} task(s) overflowed to archive")
 
     # ---- 6. Write + diff + log ----
     atomic_write_json(output_path, new_mm)

@@ -9,6 +9,8 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   GET  /cache/...         -> serves files from cache/ (json data, etc.)
   GET  /ping              -> health check + capabilities
   GET  /api/data          -> current mindmap.json + locations + overrides
+  GET  /api/task-history  -> per-initiative full task archive (DD-008)
+                             query: ?init_id=<initiative-id>
   POST /api/save          -> persist user overrides (task toggles, archive, delete)
   POST /api/refresh       -> trigger background AI refresh
   POST /focus             -> body {pane, session?} -> zellij focus-pane-id
@@ -33,7 +35,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / "cache"
@@ -47,6 +49,7 @@ ARCHIVE_DIR = CACHE_DIR / "archive"
 RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
+TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
 
 PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
@@ -186,6 +189,23 @@ class Handler(BaseHTTPRequestHandler):
                             })
             data["archived"] = archived
             return self._reply(200, data)
+        if path == "/api/task-history":
+            # Per-initiative task archive (DD-008). Read-only.
+            qs = parse_qs(urlparse(self.path).query)
+            init_id = (qs.get("init_id") or [""])[0]
+            if not init_id:
+                return self._reply(400, {"error": "missing init_id"})
+            # Resolve the same safe-filename derivation that classify.py uses.
+            import re as _re
+            safe = _re.sub(r"[^\w\-]", "_", init_id)[:120]
+            p = TASK_ARCHIVE_DIR / f"{safe}.json"
+            if not p.exists():
+                return self._reply(404, {"error": "no archive for this initiative"})
+            try:
+                rec = json.loads(p.read_text())
+            except Exception as e:
+                return self._reply(500, {"error": f"archive corrupt: {e}"})
+            return self._reply(200, rec)
         # Static file passthrough from cache/ (limited to known whitelist below)
         if path.startswith("/cache/"):
             rel = path[len("/cache/"):]
@@ -348,7 +368,7 @@ def serve(open_browser: bool = True):
         print(f"[serve] endpoints:")
         print(f"        GET  /            (mindmap dashboard)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
-        print(f"        GET  /ping        /api/data")
+        print(f"        GET  /ping        /api/data    /api/task-history?init_id=<id>")
         print(f"        POST /api/save    /api/refresh  /focus  /newpane")
         print(f"[serve] Ctrl-C to stop.\n")
 

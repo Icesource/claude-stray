@@ -23,9 +23,10 @@ files were touched, what tools were used, how active the session is).
 
 # Output format
 
-Exactly one YAML frontmatter block, then seven H1 sections in this
-order. Do NOT skip a section even if empty — write "(无)" (zh) or
-"(none)" (en) instead.
+Exactly one YAML frontmatter block (delimited by `---` lines — never
+use ```` ``` ```` for the frontmatter fence; that breaks downstream
+parsers) followed by six H1 sections in this order. Do NOT skip a
+section even if empty — write "(无)" (zh) or "(none)" (en) instead.
 
 ```
 ---
@@ -45,6 +46,11 @@ artifacts:                                # see Rule 10. omit key if none.
 blockers:                                 # see Rule 11. omit key if none.
   - 等 CodeOwner 评审通过
   - CI 失败：unit test 红
+tasks:                                    # see Rule 12. omit key if none.
+  - title: 收集 EagleEye 数据样本           # ≤ 60 chars
+    done: true
+  - title: 提交 Aone ISSUE
+    done: false
 ---
 
 # 目标
@@ -80,14 +86,12 @@ declared next step, write "(无明确)" / "(none stated)".
 Pending questions, blockers, or things actively in flight. One per
 line. If nothing pending, "(无)" / "(none)".
 
-# 任务（建议）
-Up to 8 checkbox items reflecting work done and remaining for this
-specific session's effort. Use `[x]` for items the session has
-clearly completed (evidence: edited_files, task_events.completed,
-explicit confirmation), `[ ]` for outstanding ones. Each ≤ 60 chars.
-- [x] 收集 EagleEye 数据样本
-- [ ] 提交 Aone ISSUE
 ```
+
+(Tasks live in the `tasks:` frontmatter — see Rule 12. The body
+no longer carries a `# 任务` section: Layer 2 reads tasks from the
+frontmatter structurally, so the markdown form would just be dead
+weight that risks drift.)
 
 # Rules
 
@@ -212,3 +216,33 @@ explicit confirmation), `[ ]` for outstanding ones. Each ≤ 60 chars.
     - **Cap 5 entries.**
 
     If no blockers, omit the `blockers:` key entirely.
+
+12. **tasks: this session's contribution to the initiative's task list.**
+    Up to 8 entries. Each task is a discrete checkbox-shaped item that
+    the session either completed (`done: true`) or pushed forward but
+    didn't finish (`done: false`).
+
+    Format (YAML list under the `tasks:` frontmatter key):
+
+    ```yaml
+    tasks:
+      - title: <≤ 60 chars, declarative>
+        done: true | false
+    ```
+
+    Hard rules for tasks:
+    - **Reuse exact titles across sessions when describing the same
+      step.** Layer 2 aggregates by stable slug derived from the
+      title; reworded titles produce duplicates. Bad: "P14.2: 写
+      prompts/summarize-session.md + 调优" vs "P14.2: 写
+      prompts/summarize-session.md + 3 个真实 session 调优". Good:
+      both summaries write the same title verbatim.
+    - **Evidence-grounded for done: true** — edited_files, an explicit
+      "完成"/"shipped"/"merged" turn, or task_events.completed.
+    - **No padding.** A 10-minute investigation session might propose
+      2-3 tasks; a multi-hour build session might propose 6-8.
+    - **Cap 8 entries.** If the work clearly spans more, pick the most
+      load-bearing 8.
+
+    If the session has no clearly task-shaped contribution, omit the
+    `tasks:` key entirely. (Don't write `tasks: []`.)

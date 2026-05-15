@@ -59,6 +59,12 @@ LOCALE = {
         "linked": "关联",
         "initiative": "子项目",
         "tasks_meta": "{} 个任务 · {} 已完成",
+        "tasks_archived_chip": "+{} 已归档",
+        "tasks_archive_loading": "正在加载归档任务…",
+        "tasks_archive_empty": "没有归档任务",
+        "tasks_archive_show": "▾ 查看全部归档（{}）",
+        "tasks_archive_hide": "▴ 收起归档",
+        "tasks_archive_err": "归档加载失败：{}",
         "sessions_meta": "{} 个会话",
         "show_done_tasks": "展开 {} 个已完成",
         "hide_done_tasks": "收起已完成",
@@ -152,6 +158,12 @@ LOCALE = {
         "linked": "Linked",
         "initiative": "initiative",
         "tasks_meta": "{} tasks · {} done",
+        "tasks_archived_chip": "+{} archived",
+        "tasks_archive_loading": "Loading archived tasks…",
+        "tasks_archive_empty": "No archived tasks",
+        "tasks_archive_show": "▾ View all archived ({})",
+        "tasks_archive_hide": "▴ Hide archived",
+        "tasks_archive_err": "Archive load failed: {}",
         "sessions_meta": "{} sessions",
         "show_done_tasks": "Show {} done",
         "hide_done_tasks": "Hide done",
@@ -727,6 +739,42 @@ button.expand-toggle {
 }
 button.expand-toggle:hover { color: var(--accent); }
 
+/* Archived-task surfaces (DD-008) */
+.label-archived-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-mute);
+  background: var(--bg-mute, rgba(0,0,0,0.06));
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+.label-archived-chip:hover { color: var(--accent); }
+ul.archived-tasks-list { margin-top: 6px; opacity: 0.85; }
+ul.archived-tasks-list li.task-archived {
+  padding: 3px 6px 3px 0; display: flex; gap: 6px; align-items: baseline;
+  font-size: 12px;
+}
+ul.archived-tasks-list li.task-archived .task-archived-mark {
+  width: 14px; flex-shrink: 0; color: var(--text-mute);
+}
+ul.archived-tasks-list li.task-archived[data-done="true"] .task-title {
+  text-decoration: line-through; color: var(--text-mute);
+}
+ul.archived-tasks-list li.task-archived .task-archived-when {
+  margin-left: auto; color: var(--text-mute); font-size: 10px;
+  font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+ul.archived-tasks-list li.task-loading,
+ul.archived-tasks-list li.task-empty,
+ul.archived-tasks-list li.task-error {
+  color: var(--text-mute); font-style: italic; font-size: 12px; padding: 4px 0;
+}
+ul.archived-tasks-list li.task-error { color: var(--red); }
+
 /* Sessions */
 ul.sessions-list { list-style: none; margin: 0; padding: 0; }
 ul.sessions-list li.session {
@@ -1261,13 +1309,21 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
     // Tasks
     const tasks = init.tasks || [];
-    if (tasks.length) {
+    const archivedCount = init.tasks_archived_count || 0;
+    if (tasks.length || archivedCount) {
       const doneCount = tasks.filter(t => t.done).length;
       const labelMeta = I18N.tasks_meta.replace('{}', tasks.length).replace('{}', doneCount);
       const taskSection = document.createElement('div');
       taskSection.className = 'card-section tasks-section';
-      taskSection.innerHTML =
-        '<div class="label">' + esc(I18N.tasks) + ' <span class="label-meta">' + esc(labelMeta) + '</span></div>';
+      let header = '<div class="label">' + esc(I18N.tasks) +
+        ' <span class="label-meta">' + esc(labelMeta) + '</span>';
+      if (archivedCount > 0) {
+        const archChip = I18N.tasks_archived_chip.replace('{}', archivedCount);
+        header += ' <span class="label-archived-chip" data-init-id="' + esc(initId) + '">' +
+          esc(archChip) + '</span>';
+      }
+      header += '</div>';
+      taskSection.innerHTML = header;
       const ul = document.createElement('ul');
       ul.className = 'tasks-list';
       // Order: open first, then most recent done first (we don't have timestamps,
@@ -1303,6 +1359,60 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         });
         taskSection.appendChild(btn);
       }
+
+      // Inline archive expand: chip click → fetch /api/task-history and
+      // render the full list below the visible tasks. Server-mode only;
+      // file:// mode hides the chip.
+      if (archivedCount > 0 && SERVER_MODE) {
+        const archBtn = document.createElement('button');
+        archBtn.className = 'expand-toggle expand-archived';
+        archBtn.setAttribute('data-state', 'collapsed');
+        archBtn.textContent = I18N.tasks_archive_show.replace('{}', archivedCount);
+        const archUl = document.createElement('ul');
+        archUl.className = 'tasks-list archived-tasks-list';
+        archUl.style.display = 'none';
+        let archLoaded = false;
+        const loadArchive = async () => {
+          if (archLoaded) return;
+          archUl.innerHTML = '<li class="task-loading">' + esc(I18N.tasks_archive_loading) + '</li>';
+          try {
+            const r = await fetch('/api/task-history?init_id=' + encodeURIComponent(initId));
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            const data = await r.json();
+            archUl.innerHTML = '';
+            const visibleIds = new Set(tasks.map(t => t.id).filter(Boolean));
+            const archOnly = (data.tasks || []).filter(t => !visibleIds.has(t.id));
+            if (!archOnly.length) {
+              archUl.innerHTML = '<li class="task-empty">' + esc(I18N.tasks_archive_empty) + '</li>';
+            } else {
+              for (const t of archOnly) archUl.appendChild(buildArchivedTaskLi(t));
+            }
+            archLoaded = true;
+          } catch (e) {
+            archUl.innerHTML = '<li class="task-error">' +
+              esc(I18N.tasks_archive_err.replace('{}', e.message || e)) + '</li>';
+          }
+        };
+        archBtn.addEventListener('click', async () => {
+          const isCollapsed = archBtn.getAttribute('data-state') === 'collapsed';
+          if (isCollapsed) {
+            await loadArchive();
+            archUl.style.display = '';
+            archBtn.setAttribute('data-state', 'expanded');
+            archBtn.textContent = I18N.tasks_archive_hide;
+          } else {
+            archUl.style.display = 'none';
+            archBtn.setAttribute('data-state', 'collapsed');
+            archBtn.textContent = I18N.tasks_archive_show.replace('{}', archivedCount);
+          }
+        });
+        // Chip click triggers the same expand
+        const chip = taskSection.querySelector('.label-archived-chip');
+        if (chip) chip.addEventListener('click', () => archBtn.click());
+        taskSection.appendChild(archBtn);
+        taskSection.appendChild(archUl);
+      }
+
       card.appendChild(taskSection);
     }
 
@@ -1517,6 +1627,22 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       saveOverrides();
       replaceCard(initId);
     });
+    return li;
+  }
+
+  function buildArchivedTaskLi(task) {
+    // Read-only render of an archived task: ✓/· marker, title, plus a
+    // small relative-time hint based on done_at or last_seen_at.
+    const li = document.createElement('li');
+    li.className = 'task task-archived';
+    li.setAttribute('data-done', task.done ? 'true' : 'false');
+    const mark = task.done ? '✓' : '·';
+    const when = task.done_at || task.last_seen_at || task.first_seen_at || '';
+    const whenShort = when ? when.substring(0, 10) : '';
+    li.innerHTML =
+      '<span class="task-archived-mark">' + mark + '</span>' +
+      '<span class="task-title">' + esc(task.title || '') + '</span>' +
+      (whenShort ? '<span class="task-archived-when">' + esc(whenShort) + '</span>' : '');
     return li;
   }
 
@@ -1921,6 +2047,8 @@ def render_html(data: dict, L: dict, lang: str) -> str:
                 init_slim["artifacts"] = i["artifacts"]
             if i.get("blockers"):
                 init_slim["blockers"] = i["blockers"]
+            if i.get("tasks_archived_count"):
+                init_slim["tasks_archived_count"] = i["tasks_archived_count"]
             ws_copy["initiatives"].append(init_slim)
         workspaces.append(ws_copy)
     slim = {
