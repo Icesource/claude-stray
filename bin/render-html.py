@@ -80,6 +80,8 @@ LOCALE = {
         "confirm_archive": "归档 \"{}\" ?\n归档后下次 AI refresh 不再处理它，但完整数据会保存在 cache/archive/。",
         "confirm_delete": "永久删除 \"{}\" ?\nID 会进入 tombstone，AI 即使看到新证据也不会重新创建它。",
         "confirm_delete_task": "删除任务 \"{}\" ?\n该 task 加入 tombstone，AI 不再生成。",
+        "dlg_ok": "确定",
+        "dlg_cancel": "取消",
         "sync_idle": "未同步",
         "sync_local": "本地已暂存 {} 项变更",
         "sync_disk": "已写入 cache/",
@@ -179,6 +181,8 @@ LOCALE = {
         "confirm_archive": "Archive \"{}\" ?\nFuture AI refreshes will skip it, but full data lives in cache/archive/.",
         "confirm_delete": "Delete \"{}\" permanently?\nIts ID enters the tombstone list; AI won't recreate it.",
         "confirm_delete_task": "Delete task \"{}\" ?\nGoes to tombstone; AI won't bring it back.",
+        "dlg_ok": "OK",
+        "dlg_cancel": "Cancel",
         "sync_idle": "not synced",
         "sync_local": "{} pending changes",
         "sync_disk": "saved to cache/",
@@ -632,6 +636,36 @@ article.card.archived { opacity: 0.7; }
   z-index: 1000;
   padding: 8vh 16px;
 }
+/* Custom confirm dialog — used in place of window.confirm() so the
+   browser's per-origin "block dialogs" setting can't make our buttons
+   look broken. */
+.confirm-overlay { align-items: center; padding: 16px; z-index: 1100; }
+.confirm-box {
+  background: white; border-radius: 10px; padding: 22px 24px 18px;
+  max-width: 460px; width: 100%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+}
+.confirm-box .confirm-msg {
+  white-space: pre-wrap; font-size: 14px; line-height: 1.55;
+  color: var(--text); margin-bottom: 18px;
+}
+.confirm-box .confirm-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+.confirm-box .confirm-actions button {
+  background: var(--bg); border: 1px solid var(--border, #ddd);
+  padding: 7px 18px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--text);
+}
+.confirm-box .confirm-actions button:hover { background: var(--bg-mute, #f3f3f3); }
+.confirm-box .confirm-actions button.confirm-ok {
+  border-color: transparent; background: var(--accent, #2563eb); color: white;
+}
+.confirm-box .confirm-actions button.confirm-ok.danger {
+  background: var(--red, #dc2626);
+}
+.confirm-box .confirm-actions button.confirm-ok:hover { filter: brightness(1.07); }
+.confirm-box .confirm-actions button:focus { outline: 2px solid var(--accent, #2563eb); outline-offset: 1px; }
 .modal {
   background: white; border-radius: 8px;
   max-width: 720px; width: 100%; max-height: 84vh;
@@ -1459,8 +1493,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     if (!isArchived) {
       const ab = document.createElement('button');
       ab.innerHTML = '📦 ' + esc(I18N.btn_archive);
-      ab.addEventListener('click', () => {
-        if (!confirm(I18N.confirm_archive.replace('{}', init.name))) return;
+      ab.addEventListener('click', async () => {
+        if (!(await confirmDialog(I18N.confirm_archive.replace('{}', init.name)))) return;
         overrides.archived.push(initId); saveOverrides(); render();
       });
       foot.appendChild(ab);
@@ -1476,8 +1510,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     const db = document.createElement('button');
     db.className = 'danger';
     db.innerHTML = '🗑️ ' + esc(I18N.btn_delete);
-    db.addEventListener('click', () => {
-      if (!confirm(I18N.confirm_delete.replace('{}', init.name))) return;
+    db.addEventListener('click', async () => {
+      if (!(await confirmDialog(I18N.confirm_delete.replace('{}', init.name), { danger: true }))) return;
       overrides.deleted.push(initId); saveOverrides(); render();
     });
     foot.appendChild(db);
@@ -1501,6 +1535,57 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     }
 
     return card;
+  }
+
+  // -- Custom confirm dialog ---------------------------------------------
+  // Replaces window.confirm() because Chrome (and others) lets users
+  // suppress browser dialogs per-origin after a few prompts; once
+  // suppressed, confirm() silently returns false and the calling handler
+  // returns early — looks exactly like "the button does nothing", which
+  // is what users reported. A custom in-page modal is also more
+  // consistent with the dashboard's visual style.
+  //
+  // Returns a Promise<boolean>.
+  function confirmDialog(message, opts) {
+    return new Promise(resolve => {
+      const o = opts || {};
+      const okText = o.okText || I18N.dlg_ok;
+      const cancelText = o.cancelText || I18N.dlg_cancel;
+      const danger = !!o.danger;
+
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay confirm-overlay';
+      const box = document.createElement('div');
+      box.className = 'confirm-box' + (danger ? ' danger' : '');
+      box.innerHTML =
+        '<div class="confirm-msg"></div>' +
+        '<div class="confirm-actions">' +
+          '<button class="confirm-cancel" type="button"></button>' +
+          '<button class="confirm-ok ' + (danger ? 'danger' : '') + '" type="button"></button>' +
+        '</div>';
+      box.querySelector('.confirm-msg').textContent = message;
+      box.querySelector('.confirm-cancel').textContent = cancelText;
+      box.querySelector('.confirm-ok').textContent = okText;
+      overlay.appendChild(box);
+
+      const close = (result) => {
+        document.removeEventListener('keydown', onKey, true);
+        overlay.remove();
+        resolve(result);
+      };
+      const onKey = (ev) => {
+        if (ev.key === 'Escape') { ev.preventDefault(); close(false); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); close(true); }
+      };
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(false); });
+      box.querySelector('.confirm-cancel').addEventListener('click', () => close(false));
+      box.querySelector('.confirm-ok').addEventListener('click', () => close(true));
+
+      document.body.appendChild(overlay);
+      document.addEventListener('keydown', onKey, true);
+      // Focus the OK button for keyboard users
+      requestAnimationFrame(() => box.querySelector('.confirm-ok').focus());
+    });
   }
 
   // -- Detail modal ------------------------------------------------------
@@ -1621,8 +1706,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       // Live-update: replace this card in place
       replaceCard(initId);
     });
-    li.querySelector('.task-del').addEventListener('click', () => {
-      if (!confirm(I18N.confirm_delete_task.replace('{}', task.title))) return;
+    li.querySelector('.task-del').addEventListener('click', async () => {
+      if (!(await confirmDialog(I18N.confirm_delete_task.replace('{}', task.title), { danger: true }))) return;
       overrides.deleted_tasks.push({ init_id: initId, task_title: task.title, at: new Date().toISOString() });
       saveOverrides();
       replaceCard(initId);
@@ -1677,7 +1762,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
             return;
           }
           if (res.status === 404) {
-            if (confirm(I18N.toast_pane_gone.replace('{}', loc.zellij_pane_id) + ' — 在新 pane 中 resume?')) {
+            if (await confirmDialog(I18N.toast_pane_gone.replace('{}', loc.zellij_pane_id) + ' — 在新 pane 中 resume?')) {
               const r2 = await helperCall('newpane', { sid: sid, cwd: resumeCwd });
               if (r2.ok) toast(I18N.toast_new_pane);
             }
