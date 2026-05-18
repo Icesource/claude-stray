@@ -99,6 +99,10 @@ LOCALE = {
         "lifecycle_resume": "恢复",
         "lifecycle_resume_confirm": "恢复后,Stop hook 将再次触发 AI 流水线。继续?",
         "lifecycle_resumed_toast": "Pipeline 已恢复",
+        "archive_bucket_this_week": "本周归档",
+        "archive_bucket_last_week": "上周归档",
+        "archive_bucket_two_weeks_ago": "2 周前归档",
+        "archive_bucket_older": "更早归档",
         "refresh_started": "已触发后台刷新，稍后会有新数据提示",
         "toast_jumped": "已切换到 pane {}",
         "toast_already_focused": "已经在 pane {}",
@@ -205,6 +209,10 @@ LOCALE = {
         "lifecycle_resume": "Resume",
         "lifecycle_resume_confirm": "Resume the pipeline? Stop hooks will start firing AI work again.",
         "lifecycle_resumed_toast": "Pipeline resumed",
+        "archive_bucket_this_week": "Archived this week",
+        "archive_bucket_last_week": "Archived last week",
+        "archive_bucket_two_weeks_ago": "Archived 2 weeks ago",
+        "archive_bucket_older": "Archived earlier",
         "refresh_started": "Background refresh kicked off; you'll see an update banner when done",
         "toast_jumped": "Focused pane {}",
         "toast_already_focused": "Already on pane {}",
@@ -558,6 +566,26 @@ section.archive-zone div.archive-body {
   grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
   gap: 10px;
   align-items: start;
+}
+
+/* Archive zone weekly buckets — one section per week-relative group. */
+section.archive-zone .archive-bucket { margin-top: 12px; }
+section.archive-zone .archive-bucket:first-of-type { margin-top: 0; }
+section.archive-zone .archive-bucket-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin: 4px 0 8px;
+  font-size: 12px; color: var(--text-mute);
+}
+section.archive-zone .archive-bucket-head .bucket-label {
+  font-weight: 500;
+}
+section.archive-zone .archive-bucket-head .bucket-count {
+  background: var(--bg-mute, rgba(0,0,0,0.05));
+  padding: 0 8px; border-radius: 999px; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.archive-zone .from-ws .archive-when {
+  color: var(--text-mute); font-variant-numeric: tabular-nums;
 }
 section.archive-zone article.card {
   opacity: 0.75; padding: 12px; font-size: 13px;
@@ -1039,6 +1067,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         ws_cwd: entry.ws_cwd || null,
         init: init,
         persisted: true,
+        archived_at: entry.archived_at || null,   // for weekly grouping
       };
     }
   }
@@ -1066,6 +1095,51 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
   function isDeleted(initId) {
     return overrides.deleted.indexOf(initId) !== -1;
+  }
+
+  // Archive zone weekly bucketing (DD-006-anchor for weekly report too).
+  // Group archived entries by ISO week relative to "this week":
+  //   0 → 本周, 1 → 上周, 2 → 2 周前, ≥3 → 更早.
+  // "This week" starts Monday in the user's local time. Entries with no
+  // archived_at fall into 更早 (oldest bucket).
+  function _mondayOfWeek(d) {
+    const date = new Date(d);
+    const day = date.getDay();   // 0=Sun, 1=Mon, ..., 6=Sat
+    const diff = day === 0 ? -6 : (1 - day);
+    date.setDate(date.getDate() + diff);
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+
+  function _weekBucketIndex(archivedAt, now) {
+    if (!archivedAt) return 3;
+    const ad = new Date(archivedAt);
+    if (isNaN(ad.getTime())) return 3;
+    const weeksAgo = Math.round(
+      (_mondayOfWeek(now) - _mondayOfWeek(ad)) / (7 * 86400000)
+    );
+    if (weeksAgo <= 0) return 0;
+    if (weeksAgo === 1) return 1;
+    if (weeksAgo === 2) return 2;
+    return 3;
+  }
+
+  function groupArchivedByWeekBucket(list) {
+    const now = new Date();
+    const buckets = [
+      { label: I18N.archive_bucket_this_week,     entries: [] },
+      { label: I18N.archive_bucket_last_week,     entries: [] },
+      { label: I18N.archive_bucket_two_weeks_ago, entries: [] },
+      { label: I18N.archive_bucket_older,         entries: [] },
+    ];
+    for (const e of list) {
+      buckets[_weekBucketIndex(e.archived_at, now)].entries.push(e);
+    }
+    for (const b of buckets) {
+      b.entries.sort((a, b) =>
+        (b.archived_at || '').localeCompare(a.archived_at || ''));
+    }
+    return buckets;
   }
 
   // ---------- Helpers ----------------------------------------------------
@@ -1116,7 +1190,13 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       for (const init of (ws.initiatives || [])) {
         if (isDeleted(init.id)) continue;
         if (effectiveStatus(init.id) === 'archived') {
-          archivedList.push({ ws_name: ws.name, ws_idx: wsIdx, init: init });
+          // AI-archived: no separate archived_at; use last_activity_at
+          // as the time-bucket key (best available signal for "when
+          // did this work happen").
+          archivedList.push({
+            ws_name: ws.name, ws_idx: wsIdx, init: init,
+            archived_at: init.last_activity_at || ''
+          });
           seenInArchive.add(init.id);
         } else {
           liveInits.push(init);
@@ -1157,11 +1237,17 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
     // Also pull in items persisted to cache/archive/ (already swept from
     // mindmap.json by the classifier). They are in initById tagged as `persisted`.
+    // Persisted (user-archived to disk) entries already carry
+    // entry.archived_at from cache/archive/<ws>/<id>.json. Merge them
+    // into archivedList here, preserving that timestamp for grouping.
     for (const id in initById) {
       if (seenInArchive.has(id) || isDeleted(id)) continue;
       const rec = initById[id];
       if (rec.persisted) {
-        archivedList.push({ ws_name: rec.ws_name, ws_idx: -1, init: rec.init });
+        archivedList.push({
+          ws_name: rec.ws_name, ws_idx: -1, init: rec.init,
+          archived_at: rec.archived_at || rec.init.last_activity_at || ''
+        });
       }
     }
 
@@ -1186,21 +1272,42 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       });
       arcSec.appendChild(head);
 
-      const body = document.createElement('div');
-      body.className = 'archive-body';
-      for (const entry of archivedList) {
-        const card = renderCard(entry.init.id);
-        // Add a "from <workspace>" tag at the top of the card meta
-        const fromTag = document.createElement('div');
-        fromTag.className = 'from-ws';
-        fromTag.innerHTML = esc(I18N.from_workspace) + ' <code>' + esc(entry.ws_name) + '</code>';
-        // Insert right after card-head (before card-meta)
-        const meta = card.querySelector('.card-meta');
-        if (meta) meta.parentNode.insertBefore(fromTag, meta);
-        else card.insertBefore(fromTag, card.firstChild);
-        body.appendChild(card);
+      // Group archived entries by ISO-week bucket relative to current
+      // week: 本周 / 上周 / 2 周前 / 更早. Each bucket renders as its
+      // own .archive-bucket section so users can scan a timeline of
+      // what got shelved when. archived_at is preferred; fall back to
+      // last_activity_at for AI-archived entries.
+      const buckets = groupArchivedByWeekBucket(archivedList);
+      for (const bucket of buckets) {
+        if (!bucket.entries.length) continue;
+        const bSec = document.createElement('div');
+        bSec.className = 'archive-bucket';
+        const bHead = document.createElement('div');
+        bHead.className = 'archive-bucket-head';
+        bHead.innerHTML =
+          '<span class="bucket-label">' + esc(bucket.label) + '</span>' +
+          '<span class="bucket-count">' + bucket.entries.length + '</span>';
+        bSec.appendChild(bHead);
+        const bBody = document.createElement('div');
+        bBody.className = 'archive-body';
+        for (const entry of bucket.entries) {
+          const card = renderCard(entry.init.id);
+          const fromTag = document.createElement('div');
+          fromTag.className = 'from-ws';
+          fromTag.innerHTML = esc(I18N.from_workspace) + ' <code>' +
+            esc(entry.ws_name) + '</code>' +
+            (entry.archived_at
+              ? '<span class="archive-when"> · ' +
+                esc(entry.archived_at.substring(0, 10)) + '</span>'
+              : '');
+          const meta = card.querySelector('.card-meta');
+          if (meta) meta.parentNode.insertBefore(fromTag, meta);
+          else card.insertBefore(fromTag, card.firstChild);
+          bBody.appendChild(card);
+        }
+        bSec.appendChild(bBody);
+        arcSec.appendChild(bSec);
       }
-      arcSec.appendChild(body);
       board.appendChild(arcSec);
     }
 
