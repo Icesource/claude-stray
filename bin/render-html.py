@@ -58,14 +58,15 @@ LOCALE = {
         "sessions": "会话",
         "linked": "关联",
         "initiative": "子项目",
-        "tasks_meta": "{} 个任务 · {} 已完成",
-        "tasks_archived_chip": "+{} 已归档",
-        "tasks_archive_loading": "正在加载归档任务…",
-        "tasks_archive_empty": "没有归档任务",
-        "tasks_archive_show": "▾ 查看全部归档（{}）",
-        "tasks_archive_hide": "▴ 收起归档",
-        "tasks_archive_err": "归档加载失败：{}",
+        "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
+        "task_status_done": "已完成",
+        "task_status_cancelled": "已取消",
+        "task_cancel_action": "标记为已取消",
+        "task_uncancel_action": "重新激活",
+        "task_terminal_fold_show": "▶ 显示 {}",
+        "task_terminal_fold_hide": "▼ 收起",
+        "confirm_cancel_task": "将 \"{}\" 标记为已取消?\n该任务从待办列表移走,可以随时重新激活。",
         "show_done_tasks": "展开 {} 个已完成",
         "hide_done_tasks": "收起已完成",
         "show_more_sessions": "展开剩余 {} 个会话",
@@ -182,14 +183,15 @@ LOCALE = {
         "sessions": "Sessions",
         "linked": "Linked",
         "initiative": "initiative",
-        "tasks_meta": "{} tasks · {} done",
-        "tasks_archived_chip": "+{} archived",
-        "tasks_archive_loading": "Loading archived tasks…",
-        "tasks_archive_empty": "No archived tasks",
-        "tasks_archive_show": "▾ View all archived ({})",
-        "tasks_archive_hide": "▴ Hide archived",
-        "tasks_archive_err": "Archive load failed: {}",
+        "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
+        "task_status_done": "done",
+        "task_status_cancelled": "cancelled",
+        "task_cancel_action": "Mark cancelled",
+        "task_uncancel_action": "Reactivate",
+        "task_terminal_fold_show": "▶ Show {}",
+        "task_terminal_fold_hide": "▼ Hide",
+        "confirm_cancel_task": "Mark \"{}\" cancelled?\nMoves it out of the active list. You can reactivate it any time.",
         "show_done_tasks": "Show {} done",
         "hide_done_tasks": "Hide done",
         "show_more_sessions": "Show {} more",
@@ -955,13 +957,28 @@ ul.tasks-list li.task {
 ul.tasks-list li.task:hover { background: var(--bg); }
 ul.tasks-list li.task input[type=checkbox] { margin-top: 3px; cursor: pointer; flex-shrink: 0; }
 ul.tasks-list li.task .task-title { flex: 1; word-break: break-word; }
-ul.tasks-list li.task[data-done="true"] .task-title { text-decoration: line-through; color: var(--text-mute); }
-ul.tasks-list li.task .task-del {
+ul.tasks-list li.task[data-status="done"] .task-title,
+ul.tasks-list li.task[data-status="cancelled"] .task-title {
+  text-decoration: line-through; color: var(--text-mute);
+}
+ul.tasks-list li.task .task-status-icon {
+  width: 16px; flex-shrink: 0; text-align: center;
+  font-weight: 600; line-height: 1.45; margin-top: 1px;
+}
+ul.tasks-list li.task[data-status="done"] .task-status-icon { color: var(--green, #1f7a3b); }
+ul.tasks-list li.task[data-status="cancelled"] .task-status-icon { color: var(--text-mute); }
+ul.tasks-list li.task .task-del,
+ul.tasks-list li.task .task-cancel,
+ul.tasks-list li.task .task-reactivate {
   background: none; border: none; cursor: pointer; padding: 0 6px;
   color: var(--text-mute); opacity: 0; font-size: 13px; line-height: 1;
 }
-ul.tasks-list li.task:hover .task-del { opacity: 1; }
+ul.tasks-list li.task:hover .task-del,
+ul.tasks-list li.task:hover .task-cancel,
+ul.tasks-list li.task:hover .task-reactivate { opacity: 1; }
 ul.tasks-list li.task .task-del:hover { color: var(--red); }
+ul.tasks-list li.task .task-cancel:hover,
+ul.tasks-list li.task .task-reactivate:hover { color: var(--accent); }
 ul.tasks-list li.task.hidden-done { display: none; }
 
 button.expand-toggle {
@@ -969,42 +986,6 @@ button.expand-toggle {
   color: var(--text-mute); font-size: 12px; text-align: left; display: block;
 }
 button.expand-toggle:hover { color: var(--accent); }
-
-/* Archived-task surfaces (DD-008) */
-.label-archived-chip {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  font-weight: 400;
-  font-size: 11px;
-  color: var(--text-mute);
-  background: var(--bg-mute, rgba(0,0,0,0.06));
-  border-radius: 4px;
-  cursor: pointer;
-  user-select: none;
-}
-.label-archived-chip:hover { color: var(--accent); }
-ul.archived-tasks-list { margin-top: 6px; opacity: 0.85; }
-ul.archived-tasks-list li.task-archived {
-  padding: 3px 6px 3px 0; display: flex; gap: 6px; align-items: baseline;
-  font-size: 12px;
-}
-ul.archived-tasks-list li.task-archived .task-archived-mark {
-  width: 14px; flex-shrink: 0; color: var(--text-mute);
-}
-ul.archived-tasks-list li.task-archived[data-done="true"] .task-title {
-  text-decoration: line-through; color: var(--text-mute);
-}
-ul.archived-tasks-list li.task-archived .task-archived-when {
-  margin-left: auto; color: var(--text-mute); font-size: 10px;
-  font-variant-numeric: tabular-nums; flex-shrink: 0;
-}
-ul.archived-tasks-list li.task-loading,
-ul.archived-tasks-list li.task-empty,
-ul.archived-tasks-list li.task-error {
-  color: var(--text-mute); font-style: italic; font-size: 12px; padding: 4px 0;
-}
-ul.archived-tasks-list li.task-error { color: var(--red); }
 
 /* Sessions */
 ul.sessions-list { list-style: none; margin: 0; padding: 0; }
@@ -1155,7 +1136,6 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   const FILTER_KEY = 'claude-code-worktree:filter:v1';
   const HELPER_PORTS = [9876, 9877, 9878];
 
-  const DONE_SHOW_LIMIT = 2;       // show this many done tasks by default
   const SESS_SHOW_LIMIT = 3;        // show this many sessions by default
 
   // When loaded via http://, the page is served by serve.py and we can
@@ -1227,7 +1207,15 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     for (const tt of overrides.task_toggles) {
       if (tt.init_id !== initId) continue;
       const t = init.tasks?.find(x => x.title === tt.task_title);
-      if (t) t.done = tt.done;
+      if (!t) continue;
+      // DD-011: prefer `status`. Pre-DD-011 toggles use `done: bool`.
+      if (tt.status === 'pending' || tt.status === 'done' || tt.status === 'cancelled') {
+        t.status = tt.status;
+      } else if ('done' in tt) {
+        t.status = tt.done ? 'done' : 'pending';
+      }
+      // Keep legacy `done` aligned for any older code reading it.
+      t.done = (t.status === 'done');
     }
     init.tasks = (init.tasks || []).filter(t => !overrides.deleted_tasks.some(dt => dt.init_id === initId && dt.task_title === t.title));
     return { ws_name: base.ws_name, ws_cwd: base.ws_cwd, init: init };
@@ -1652,110 +1640,46 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       card.appendChild(bp);
     }
 
-    // Tasks
-    const tasks = init.tasks || [];
-    const archivedCount = init.tasks_archived_count || 0;
-    if (tasks.length || archivedCount) {
-      const doneCount = tasks.filter(t => t.done).length;
-      const labelMeta = I18N.tasks_meta.replace('{}', tasks.length).replace('{}', doneCount);
+    // Tasks (DD-011: tri-state, single store, inline fold for terminal)
+    const tasks = (init.tasks || []).map(taskStatus);
+    if (tasks.length) {
+      const doneCount = tasks.filter(t => t._status === 'done').length;
+      const cancelledCount = tasks.filter(t => t._status === 'cancelled').length;
+      const labelMeta = I18N.tasks_meta
+        .replace('{}', tasks.length)
+        .replace('{}', doneCount)
+        .replace('{}', cancelledCount);
       const taskSection = document.createElement('div');
       taskSection.className = 'card-section tasks-section';
-      let header = '<div class="label">' + esc(I18N.tasks) +
-        ' <span class="label-meta">' + esc(labelMeta) + '</span>';
-      if (archivedCount > 0) {
-        const archChip = I18N.tasks_archived_chip.replace('{}', archivedCount);
-        header += ' <span class="label-archived-chip" data-init-id="' + esc(initId) + '">' +
-          esc(archChip) + '</span>';
-      }
-      header += '</div>';
-      taskSection.innerHTML = header;
+      taskSection.innerHTML = '<div class="label">' + esc(I18N.tasks) +
+        ' <span class="label-meta">' + esc(labelMeta) + '</span></div>';
       const ul = document.createElement('ul');
       ul.className = 'tasks-list';
-      // Order: open first, then most recent done first (we don't have timestamps,
-      // so just preserve original order within each group)
-      const opens = tasks.filter(t => !t.done);
-      const dones = tasks.filter(t => t.done);
-      for (const t of opens) ul.appendChild(buildTaskLi(initId, t, false));
-      // Show first DONE_SHOW_LIMIT done tasks, rest hidden
-      for (let i = 0; i < dones.length; i++) {
-        const hide = i >= DONE_SHOW_LIMIT;
-        ul.appendChild(buildTaskLi(initId, dones[i], hide));
-      }
+      const pendings = tasks.filter(t => t._status === 'pending');
+      const terminals = tasks.filter(t => t._status !== 'pending');
+      for (const t of pendings) ul.appendChild(buildTaskLi(initId, t, false));
+      for (const t of terminals) ul.appendChild(buildTaskLi(initId, t, true));
       taskSection.appendChild(ul);
-      if (dones.length > DONE_SHOW_LIMIT) {
-        const btn = document.createElement('button');
-        btn.className = 'expand-toggle';
-        btn.setAttribute('data-state', 'collapsed');
-        btn.textContent = '▾ ' + I18N.show_done_tasks.replace('{}', dones.length - DONE_SHOW_LIMIT);
-        btn.addEventListener('click', () => {
-          const isCollapsed = btn.getAttribute('data-state') === 'collapsed';
-          ul.querySelectorAll('li.hidden-done').forEach(li => li.classList.remove('hidden-done'));
-          if (isCollapsed) {
-            btn.setAttribute('data-state', 'expanded');
-            btn.textContent = '▴ ' + I18N.hide_done_tasks;
-            // Re-hide them after the toggle is "expanded->collapsed". Done in else.
-          } else {
-            // toggling back: re-hide
-            btn.setAttribute('data-state', 'collapsed');
-            btn.textContent = '▾ ' + I18N.show_done_tasks.replace('{}', dones.length - DONE_SHOW_LIMIT);
-            const items = ul.querySelectorAll('li.task[data-done="true"]');
-            for (let i = DONE_SHOW_LIMIT; i < items.length; i++) items[i].classList.add('hidden-done');
-          }
-        });
-        taskSection.appendChild(btn);
-      }
 
-      // Inline archive expand: chip click → fetch /api/task-history and
-      // render the full list below the visible tasks. Server-mode only;
-      // file:// mode hides the chip.
-      if (archivedCount > 0 && SERVER_MODE) {
-        const archBtn = document.createElement('button');
-        archBtn.className = 'expand-toggle expand-archived';
-        archBtn.setAttribute('data-state', 'collapsed');
-        archBtn.textContent = I18N.tasks_archive_show.replace('{}', archivedCount);
-        const archUl = document.createElement('ul');
-        archUl.className = 'tasks-list archived-tasks-list';
-        archUl.style.display = 'none';
-        let archLoaded = false;
-        const loadArchive = async () => {
-          if (archLoaded) return;
-          archUl.innerHTML = '<li class="task-loading">' + esc(I18N.tasks_archive_loading) + '</li>';
-          try {
-            const r = await fetch('/api/task-history?init_id=' + encodeURIComponent(initId));
-            if (!r.ok) throw new Error('HTTP ' + r.status);
-            const data = await r.json();
-            archUl.innerHTML = '';
-            const visibleIds = new Set(tasks.map(t => t.id).filter(Boolean));
-            const archOnly = (data.tasks || []).filter(t => !visibleIds.has(t.id));
-            if (!archOnly.length) {
-              archUl.innerHTML = '<li class="task-empty">' + esc(I18N.tasks_archive_empty) + '</li>';
-            } else {
-              for (const t of archOnly) archUl.appendChild(buildArchivedTaskLi(t));
-            }
-            archLoaded = true;
-          } catch (e) {
-            archUl.innerHTML = '<li class="task-error">' +
-              esc(I18N.tasks_archive_err.replace('{}', e.message || e)) + '</li>';
-          }
-        };
-        archBtn.addEventListener('click', async () => {
-          const isCollapsed = archBtn.getAttribute('data-state') === 'collapsed';
-          if (isCollapsed) {
-            await loadArchive();
-            archUl.style.display = '';
-            archBtn.setAttribute('data-state', 'expanded');
-            archBtn.textContent = I18N.tasks_archive_hide;
+      if (terminals.length) {
+        const fold = document.createElement('button');
+        fold.className = 'expand-toggle';
+        fold.setAttribute('data-state', 'collapsed');
+        fold.textContent = I18N.task_terminal_fold_show.replace('{}', terminals.length);
+        fold.addEventListener('click', () => {
+          const collapsed = fold.getAttribute('data-state') === 'collapsed';
+          ul.querySelectorAll('li.task-terminal').forEach(li => {
+            li.classList.toggle('hidden-done', !collapsed);
+          });
+          if (collapsed) {
+            fold.setAttribute('data-state', 'expanded');
+            fold.textContent = I18N.task_terminal_fold_hide;
           } else {
-            archUl.style.display = 'none';
-            archBtn.setAttribute('data-state', 'collapsed');
-            archBtn.textContent = I18N.tasks_archive_show.replace('{}', archivedCount);
+            fold.setAttribute('data-state', 'collapsed');
+            fold.textContent = I18N.task_terminal_fold_show.replace('{}', terminals.length);
           }
         });
-        // Chip click triggers the same expand
-        const chip = taskSection.querySelector('.label-archived-chip');
-        if (chip) chip.addEventListener('click', () => archBtn.click());
-        taskSection.appendChild(archBtn);
-        taskSection.appendChild(archUl);
+        taskSection.appendChild(fold);
       }
 
       card.appendChild(taskSection);
@@ -1998,53 +1922,85 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     return d;
   }
 
-  function buildTaskLi(initId, task, hidden) {
-    const li = document.createElement('li');
-    li.className = 'task' + (hidden ? ' hidden-done' : '');
-    li.setAttribute('data-task-title', task.title);
-    li.setAttribute('data-done', task.done ? 'true' : 'false');
-    // DD-009 done_evidence: AI-supplied short quote/paraphrase explaining
-    // why this task was flipped to done. Show as a discreet ✨ marker
-    // with the evidence as a native tooltip.
-    const evidenceHtml = (task.done && task.done_evidence)
-      ? ' <span class="task-evidence" title="' + esc(task.done_evidence) + '">✨</span>'
-      : '';
-    li.innerHTML =
-      '<input type="checkbox" ' + (task.done ? 'checked' : '') + '>' +
-      '<span class="task-title">' + esc(task.title) + '</span>' + evidenceHtml +
-      '<button class="task-del" title="' + esc(I18N.btn_delete) + '">✕</button>';
+  function taskStatus(t) {
+    // DD-011: prefer `status`; fall back to legacy `done: bool` for any
+    // mindmap.json snapshot written before the migration ran.
+    let s = t.status;
+    if (s !== 'pending' && s !== 'done' && s !== 'cancelled') {
+      s = t.done ? 'done' : 'pending';
+    }
+    return Object.assign({}, t, { _status: s });
+  }
 
-    li.querySelector('input').addEventListener('change', (e) => {
-      const done = e.target.checked;
-      // Replace prior toggle for same (init, title)
-      overrides.task_toggles = overrides.task_toggles.filter(tt => !(tt.init_id === initId && tt.task_title === task.title));
-      overrides.task_toggles.push({ init_id: initId, task_title: task.title, done: done, at: new Date().toISOString() });
-      saveOverrides();
-      // Live-update: replace this card in place
-      replaceCard(initId);
+  function postStatusToggle(initId, task, nextStatus) {
+    overrides.task_toggles = overrides.task_toggles.filter(
+      tt => !(tt.init_id === initId && tt.task_title === task.title));
+    overrides.task_toggles.push({
+      init_id: initId, task_title: task.title,
+      status: nextStatus, at: new Date().toISOString(),
     });
+    saveOverrides();
+    replaceCard(initId);
+  }
+
+  function buildTaskLi(initId, task, foldHidden) {
+    const li = document.createElement('li');
+    const s = task._status || 'pending';
+    const isTerminal = (s !== 'pending');
+    li.className = 'task task-status-' + s + (isTerminal ? ' task-terminal' : '')
+      + (foldHidden && isTerminal ? ' hidden-done' : '');
+    li.setAttribute('data-task-title', task.title);
+    li.setAttribute('data-status', s);
+
+    // Evidence marker (✨ for done, ✕ for cancelled with reason)
+    const evidence = task.evidence || task.done_evidence;
+    const evidenceHtml = (isTerminal && evidence)
+      ? ' <span class="task-evidence" title="' + esc(evidence) + '">✨</span>'
+      : '';
+
+    // Pending → checkbox. Terminal → status icon + reactivate menu.
+    const head = (s === 'pending')
+      ? '<input type="checkbox">'
+      : '<span class="task-status-icon" title="'
+        + esc(s === 'done' ? I18N.task_status_done : I18N.task_status_cancelled)
+        + '">' + (s === 'done' ? '✓' : '✕') + '</span>';
+
+    const actions = (s === 'pending')
+      ? '<button class="task-cancel" title="' + esc(I18N.task_cancel_action) + '">⊘</button>'
+        + '<button class="task-del" title="' + esc(I18N.btn_delete) + '">✕</button>'
+      : '<button class="task-reactivate" title="' + esc(I18N.task_uncancel_action) + '">↺</button>'
+        + '<button class="task-del" title="' + esc(I18N.btn_delete) + '">✕</button>';
+
+    li.innerHTML = head
+      + '<span class="task-title">' + esc(task.title) + '</span>'
+      + evidenceHtml
+      + actions;
+
+    const checkbox = li.querySelector('input[type="checkbox"]');
+    if (checkbox) {
+      checkbox.addEventListener('change', (e) => {
+        postStatusToggle(initId, task, e.target.checked ? 'done' : 'pending');
+      });
+    }
+    const cancelBtn = li.querySelector('.task-cancel');
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', async () => {
+        if (!(await confirmDialog(I18N.confirm_cancel_task.replace('{}', task.title)))) return;
+        postStatusToggle(initId, task, 'cancelled');
+      });
+    }
+    const reactivateBtn = li.querySelector('.task-reactivate');
+    if (reactivateBtn) {
+      reactivateBtn.addEventListener('click', () => {
+        postStatusToggle(initId, task, 'pending');
+      });
+    }
     li.querySelector('.task-del').addEventListener('click', async () => {
       if (!(await confirmDialog(I18N.confirm_delete_task.replace('{}', task.title), { danger: true }))) return;
       overrides.deleted_tasks.push({ init_id: initId, task_title: task.title, at: new Date().toISOString() });
       saveOverrides();
       replaceCard(initId);
     });
-    return li;
-  }
-
-  function buildArchivedTaskLi(task) {
-    // Read-only render of an archived task: ✓/· marker, title, plus a
-    // small relative-time hint based on done_at or last_seen_at.
-    const li = document.createElement('li');
-    li.className = 'task task-archived';
-    li.setAttribute('data-done', task.done ? 'true' : 'false');
-    const mark = task.done ? '✓' : '·';
-    const when = task.done_at || task.last_seen_at || task.first_seen_at || '';
-    const whenShort = when ? when.substring(0, 10) : '';
-    li.innerHTML =
-      '<span class="task-archived-mark">' + mark + '</span>' +
-      '<span class="task-title">' + esc(task.title || '') + '</span>' +
-      (whenShort ? '<span class="task-archived-when">' + esc(whenShort) + '</span>' : '');
     return li;
   }
 
@@ -2721,8 +2677,6 @@ def render_html(data: dict, L: dict, lang: str) -> str:
                 init_slim["artifacts"] = i["artifacts"]
             if i.get("blockers"):
                 init_slim["blockers"] = i["blockers"]
-            if i.get("tasks_archived_count"):
-                init_slim["tasks_archived_count"] = i["tasks_archived_count"]
             ws_copy["initiatives"].append(init_slim)
         workspaces.append(ws_copy)
     # Embed lifecycle state so static (file://) mode also shows the

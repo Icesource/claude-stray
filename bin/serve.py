@@ -9,8 +9,6 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   GET  /cache/...         -> serves files from cache/ (json data, etc.)
   GET  /ping              -> health check + capabilities
   GET  /api/data          -> current mindmap.json + locations + overrides + lifecycle
-  GET  /api/task-history  -> per-initiative full task archive (DD-008)
-                             query: ?init_id=<initiative-id>
   POST /api/save          -> persist user overrides (task toggles, archive, delete)
   POST /api/refresh       -> trigger background AI refresh
   POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
@@ -54,7 +52,6 @@ ARCHIVE_DIR = CACHE_DIR / "archive"
 RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
-TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
 DERIVED_DIR = CACHE_DIR / "derived"
 
 PORTS = [9876, 9877, 9878]
@@ -416,23 +413,6 @@ class Handler(BaseHTTPRequestHandler):
                 "week": week,
                 "markdown": md_path.read_text(),
             })
-        if path == "/api/task-history":
-            # Per-initiative task archive (DD-008). Read-only.
-            qs = parse_qs(urlparse(self.path).query)
-            init_id = (qs.get("init_id") or [""])[0]
-            if not init_id:
-                return self._reply(400, {"error": "missing init_id"})
-            # Resolve the same safe-filename derivation that classify.py uses.
-            import re as _re
-            safe = _re.sub(r"[^\w\-]", "_", init_id)[:120]
-            p = TASK_ARCHIVE_DIR / f"{safe}.json"
-            if not p.exists():
-                return self._reply(404, {"error": "no archive for this initiative"})
-            try:
-                rec = json.loads(p.read_text())
-            except Exception as e:
-                return self._reply(500, {"error": f"archive corrupt: {e}"})
-            return self._reply(200, rec)
         # Static file passthrough from cache/ (limited to known whitelist below)
         if path.startswith("/cache/"):
             rel = path[len("/cache/"):]
@@ -520,12 +500,16 @@ class Handler(BaseHTTPRequestHandler):
         """
         Body shape:
           {
-            task_toggles: [{init_id, task_title, done, at}],
+            task_toggles: [{init_id, task_title, status, at}],   # DD-011
             deleted_tasks: [{init_id, task_title, at}],
             archived: [init_id, ...],
             archived_data: { init_id: {ws_name, ws_cwd, init} },   // payload to write under archive/
             deleted: [init_id, ...]
           }
+
+        `status` is the new tri-state field (`pending|done|cancelled`).
+        Pre-DD-011 clients may still send `done: bool`; classify.py's
+        apply_user_overrides_inplace coerces both shapes.
         """
         try:
             from datetime import datetime, timezone
@@ -612,7 +596,7 @@ def serve(open_browser: bool = True):
         print(f"[serve] endpoints:")
         print(f"        GET  /            (mindmap dashboard)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
-        print(f"        GET  /ping        /api/data    /api/task-history?init_id=<id>")
+        print(f"        GET  /ping        /api/data")
         print(f"        POST /api/save    /api/refresh  /api/lifecycle  /focus  /newpane")
         print(f"[serve] Ctrl-C to stop.\n")
 

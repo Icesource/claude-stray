@@ -46,9 +46,11 @@ output, with restricted modifications (see rule §5).**
             {
               "id":  "<optional — REUSE PRIOR's id when continuing a task>",
               "title": "<≤80 chars>",
-              "done": true | false,
-              "done_evidence": "<optional — required when flipping
-                               PRIOR.done false→true (see §7d), ≤80 chars>"
+              "status": "pending | done | cancelled",
+              "evidence": "<optional — required when flipping
+                           PRIOR.status pending→done OR pending→cancelled
+                           (see §7d), ≤80 chars>",
+              "terminal_at": "<set by post-process; do not emit>"
             }
           ],
           "sessions": ["<full UUID>", ...],
@@ -93,11 +95,14 @@ a hot session would naturally belong to that initiative, you must
 either (a) skip the session, or (b) create a NEW initiative under a
 different id. Never resurrect a deleted id.
 
-## §4 — `done` is monotone
+## §4 — Terminal statuses are monotone (AI-side)
 
-If PRIOR has a task with `done: true`, the same task in output MUST
-also have `done: true`. Never flip `true → false`, ever. (Even if you
-think the original "done" was wrong.)
+If PRIOR has a task with `status: done` or `status: cancelled`, the
+same task in output MUST keep that status. Never flip
+`done → pending`, `cancelled → pending`, or between `done` and
+`cancelled`. (Even if you think the original terminal status was
+wrong.) Only the user can revive a terminal task — that happens via
+`task_toggles` in `user_overrides.json`, not via your output.
 
 ## §5 — Cold initiative rule ⚠️ CRITICAL
 
@@ -197,17 +202,18 @@ If empty, omit the `blockers` key.
 ## §7c — Aggregate tasks (hot initiatives only)
 
 **Tasks are append-only from your perspective.** You may add new
-tasks (with hot-summary evidence) and you may flip a task's `done`
-from `false` to `true` (with §7d evidence). You may **NOT** drop a
-task, hide a task, or shrink the task list. A task's only path off
-an initiative is through the user clicking 🗑️ in the UI — that goes
-through DELETED_IDS, never your output.
+tasks (with hot-summary evidence) and you may flip a task's `status`
+from `pending` to either `done` or `cancelled` (with §7d evidence).
+You may **NOT** drop a task, hide a task, or shrink the task list.
+A task's only path off an initiative is through the user clicking
+🗑️ in the UI — that goes through DELETED_IDS, never your output.
 
 For each hot initiative, the `tasks[]` you emit must include:
 
 1. **Every PRIOR task for this initiative** — carry them all forward,
-   even if no hot summary mentions them. They represent decisions /
-   work plan already accepted; you don't have permission to revoke.
+   regardless of `status`, even if no hot summary mentions them. They
+   represent decisions / work plan already accepted; you don't have
+   permission to revoke.
 2. **New tasks from hot session summaries** — each session in this
    initiative's `sessions[]` has its own `tasks:` frontmatter; add
    anything not yet in PRIOR.
@@ -222,11 +228,12 @@ Hard rules:
   the same as a PRIOR task. Reworded titles, translations
   (中文 ↔ English), or expanded wordings all count as "same" if the
   conceptual action is the same.
-- **`done` is monotone** (§4): true wins forever. PRIOR done state
-  is preserved by post-process even if you forget to emit done=true.
-- **Cap to 20 visible tasks** is enforced by post-process. You may
-  emit up to ~25 — extras get moved to the archive (still visible
-  via the "+N archived" UI expander, just collapsed by default).
+- **Terminal statuses are monotone** (§4): once a task is `done` or
+  `cancelled` in PRIOR, it stays that way in output. Post-process
+  preserves the terminal status even if you forget to emit it.
+- **No visible cap.** Emit every PRIOR task plus every new
+  hot-summary task. The UI folds completed/cancelled tasks inline,
+  so quantity is cheap.
 - **Output `tasks[]` count ≥ PRIOR `tasks[]` count.** A shrinking
   count is the canonical signal that you tried to drop a task —
   post-process will detect this and refuse the write.
@@ -234,45 +241,73 @@ Hard rules:
 If neither PRIOR nor any hot summary has tasks for this initiative,
 omit the `tasks` key entirely (do NOT emit `[]`).
 
-## §7d — Mark PRIOR pending tasks done from hot summary evidence
+## §7d — Flip PRIOR pending tasks to terminal status from hot evidence
 
-For each PRIOR `done: false` task in a hot initiative, examine the
-hot summaries' content (their `# 当前状态` / `# 已下的决定` /
-`# 产物` sections, plus their tasks[]) and decide whether that
-specific task has been completed since PRIOR was generated.
+For each PRIOR `status: pending` task in a hot initiative, examine
+the hot summaries' content (their `# 当前状态` / `# 已下的决定` /
+`# 产物` sections, plus their `tasks:` frontmatter) and decide
+whether that specific task is now terminal — either **done** or
+**cancelled**.
 
-A PRIOR task X is "completed" only when a hot summary clearly states
+### Done
+
+A PRIOR task X is **done** only when a hot summary clearly states
 the corresponding work shipped — MR merged, feature deployed, tests
 green, an explicit "X 完成 / done / shipped" phrasing that
 unambiguously refers to X (or a clear paraphrase). Lone words like
 "完成了" without referent don't count.
 
-If the evidence is clear, in your output:
+### Cancelled
+
+A PRIOR task X is **cancelled** when a hot summary clearly states
+the work was abandoned, deferred, or absorbed into something else:
+- "算了 / 不做了 / 改方案" with X in clear reference
+- "合并到 <other task>" — X has been merged into another initiative
+  task; the surviving task continues, X becomes cancelled with
+  `evidence: "merged into <other task title>"`
+- "scoped out / dropped / redirected" — explicit redirect in the
+  latest turn
+
+Cancellation also handles the "duplicate consolidation" case: if
+two PRIOR tasks describe the same conceptual work (slight wording
+drift that slipped past slug-dedup), you may keep one and mark the
+other `cancelled` with `evidence: "merged into <surviving title>"`.
+
+### How to emit
+
+Whether marking `done` or `cancelled`:
 - Use PRIOR's `id` for the task (so post-process recognizes it as a
   continuation, not a new task)
-- Set `done: true`
-- Add a `done_evidence` field: ≤80 chars, a brief paraphrase or
-  short quote from the summary explaining WHY you marked it done.
-  This becomes an audit trail visible in the UI tooltip.
+- Set `status` to the new terminal value
+- Add an `evidence` field: ≤80 chars, brief paraphrase or short
+  quote from the hot summary explaining WHY. This becomes the audit
+  trail in the UI tooltip.
 
-**If the evidence is ambiguous, DON'T flip.** done-monotone makes
-the flip irreversible from the user's normal flow. Over-eager
-completion leaves the user with checked tasks that aren't actually
-done, which they then have to manually un-check (which is also
-blocked by done-monotone). When in doubt, leave it pending; the
-user can check it manually.
+**If the evidence is ambiguous, DON'T flip.** Terminal-monotone
+makes the flip irreversible from the user's normal flow. Over-eager
+completion or cancellation leaves the user with mis-stated tasks
+they then have to manually un-toggle. When in doubt, leave it
+`pending`.
 
-Example:
+Example (done):
 - PRIOR: `{"id": "implement-online-offline-is-online-commands",
            "title": "Implement online/offline/is-online commands",
-           "done": false}`
+           "status": "pending"}`
 - Hot summary's # 当前状态: "三个命令 (online/offline/is-online)
   已实现完毕,MR 27411369 已合并。"
 - → Emit `{"id": "implement-online-offline-is-online-commands",
-            "title": "实现 online/offline/is-online 命令", "done": true,
-            "done_evidence": "MR 27411369 已合并,三个命令实现完毕"}`
-- (id reused, title rewritten to output_lang, done flipped,
-  evidence cited.)
+            "title": "实现 online/offline/is-online 命令",
+            "status": "done",
+            "evidence": "MR 27411369 已合并,三个命令实现完毕"}`
+
+Example (cancelled / merged):
+- PRIOR: two tasks: `{"id": "fix-eagleeye-trace", "title": "修复
+  EagleEye 链路追踪"}` and `{"id": "patch-eagleeyehttphook",
+  "title": "Patch EagleEyeHttpHook parameter"}` — same work.
+- Hot summary's # 已下的决定: "走 EagleEyeHttpHook 参数补丁方案"
+- → Keep `patch-eagleeyehttphook` as `pending`; emit
+  `{"id": "fix-eagleeye-trace", "status": "cancelled",
+    "evidence": "merged into Patch EagleEyeHttpHook parameter"}`
 
 # Output language
 
@@ -290,7 +325,7 @@ machine fields are always English/raw regardless of `output_lang`:
 - `status` enum values (active/paused/done/archived)
 - `artifact.type`, `artifact.url`, `artifact.status`,
   `artifact.ref_id`, `artifact.last_mentioned_at`
-- `task.done`
+- `task.status`, `task.terminal_at`
 
 When you see PRIOR or a hot summary using a different language for a
 natural-language field, **rewrite it to match `output_lang`**. Do not
@@ -307,7 +342,8 @@ work.
    - Hot → you may update `progress`, refresh status from hot session
      signal, aggregate `artifacts[]` per §7a, `blockers[]` per §7b,
      and `tasks[]` per §7c. For each PRIOR pending task, apply §7d
-     (flip done=true only with clear evidence). Add new sessions if any.
+     (flip to `done` or `cancelled` only with clear evidence). Add
+     new sessions if any.
    - Cold → apply §5 mechanically. Touch only `status` (decay rule).
      `artifacts[]` and `blockers[]` stay byte-identical.
 3. **Discover new initiatives** from HOT_SUMMARIES whose
@@ -326,7 +362,10 @@ For your output, verify each of:
 - [ ] Every `sessions[]` entry is a full UUID (36 chars with hyphens).
 - [ ] Every hot session_id (from HOT_SUMMARIES) appears in some
       initiative's `sessions[]`.
-- [ ] No task done state flipped from `true` to `false` vs PRIOR.
+- [ ] No task `status` reverted from terminal (`done`/`cancelled`) to
+      `pending` vs PRIOR, and no flip between `done` and `cancelled`.
+- [ ] Every `status` value is one of `pending | done | cancelled` —
+      no legacy `done: true|false` booleans, no other strings.
 - [ ] Cold initiatives' name/summary/progress/tasks/artifacts/blockers
       unchanged.
 - [ ] All `artifacts[].url` values are non-empty strings (no nulls).
@@ -336,9 +375,9 @@ For your output, verify each of:
       with explicit `id` (no inventions); no two entries share the
       same `id`. Reworded titles for the same conceptual task carry
       PRIOR's `id`.
-- [ ] Every `done: true` flip from PRIOR's `done: false` has a
-      `done_evidence` field with a short quote/paraphrase.
-- [ ] **`tasks[]` length ≥ PRIOR `tasks[]` length (DD-010 invariant).**
+- [ ] Every `pending → done` or `pending → cancelled` flip from PRIOR
+      carries an `evidence` field with a short quote/paraphrase.
+- [ ] **`tasks[]` length ≥ PRIOR `tasks[]` length (DD-011 invariant).**
       You cannot drop a task. If a shrink looks justified, leave it
       to the user to delete via the UI — never delete via your output.
 

@@ -48,9 +48,10 @@ blockers:                                 # see Rule 11. omit key if none.
   - CI 失败：unit test 红
 tasks:                                    # see Rule 12. omit key if none.
   - title: 收集 EagleEye 数据样本           # ≤ 60 chars
-    done: true
+    status: done                          # pending | done | cancelled
+    evidence: 已上传至 /tmp/eagleeye-sample/ # required when status != pending
   - title: 提交 Aone ISSUE
-    done: false
+    status: pending
 ---
 
 # 目标
@@ -117,7 +118,7 @@ weight that risks drift.)
 
    - **Body** (every H1 section): in `output_lang`.
    - **Frontmatter natural-language fields** (in `output_lang`):
-     - `tasks[].title`
+     - `tasks[].title`, `tasks[].evidence`
      - `artifacts[].title`
      - `blockers[]` strings
    - **Frontmatter machine fields** (always English/raw, regardless of
@@ -126,7 +127,7 @@ weight that risks drift.)
        `updated_at`, `user_turns`, `status_guess`
      - `artifacts[].type`, `artifacts[].url`, `artifacts[].status`,
        `artifacts[].ref_id`, `artifacts[].last_mentioned_at`
-     - `tasks[].done`
+     - `tasks[].status`
 
    Mixing English titles in a Chinese-locale summary breaks downstream
    slug-based dedup (the same task ends up as two entries: one zh,
@@ -234,16 +235,17 @@ weight that risks drift.)
     If no blockers, omit the `blockers:` key entirely.
 
 12. **tasks: this session's contribution to the initiative's task list.**
-    Up to 8 entries. Each task is a discrete checkbox-shaped item that
-    the session either completed (`done: true`) or pushed forward but
-    didn't finish (`done: false`).
+    Up to 8 entries. Each task is a discrete checkbox-shaped item with
+    a tri-state status: `pending` (in flight), `done` (shipped), or
+    `cancelled` (no longer relevant — merged, scoped out, replaced).
 
     Format (YAML list under the `tasks:` frontmatter key):
 
     ```yaml
     tasks:
       - title: <≤ 60 chars, declarative>
-        done: true | false
+        status: pending | done | cancelled
+        evidence: <≤ 80 chars, required when status != pending>
     ```
 
     Hard rules for tasks:
@@ -253,8 +255,14 @@ weight that risks drift.)
       prompts/summarize-session.md + 调优" vs "P14.2: 写
       prompts/summarize-session.md + 3 个真实 session 调优". Good:
       both summaries write the same title verbatim.
-    - **Evidence-grounded for done: true** — edited_files, an explicit
-      "完成"/"shipped"/"merged" turn, or task_events.completed.
+    - **Evidence-grounded for non-pending** — for `status: done`,
+      cite an edit / merge / "完成" / "shipped" / task_events.completed.
+      For `status: cancelled`, cite a user redirect ("算了 / 不做了 /
+      合并到 X / 改方案"). One short paraphrase in `evidence:`.
+    - **`cancelled` is for AI-visible abandonment**, not for "task
+      I haven't looked at in a while." Only emit `cancelled` when a
+      turn or a downstream artifact clearly says the task is no
+      longer wanted. When in doubt, leave it `pending`.
     - **No padding.** A 10-minute investigation session might propose
       2-3 tasks; a multi-hour build session might propose 6-8.
     - **Cap 8 entries.** If the work clearly spans more, pick the most

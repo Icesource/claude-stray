@@ -4,7 +4,7 @@ Layer 2 of the AI pipeline (per DD-002).
 
 Reads:
   - cache/summaries/*.md             (Layer 1 outputs)
-  - cache/mindmap.json               (PRIOR_MINDMAP)
+  - cache/mindmap.json               (PRIOR_MINDMAP — sole task store, DD-011)
   - cache/deleted_ids.json           (DELETED_IDS)
   - cache/user_overrides.json        (applied to PRIOR before AI call)
   - cache/archive/<ws>/<id>.json     (used to strip archived ids from PRIOR)
@@ -46,17 +46,15 @@ CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
-TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
 MINDMAP_FILE = CACHE_DIR / "mindmap.json"
 DELETED_FILE = CACHE_DIR / "deleted_ids.json"
 OVERRIDES_FILE = CACHE_DIR / "user_overrides.json"
 CONFIG_FILE = CACHE_DIR / "config.json"
 PROMPT_FILE = REPO_ROOT / "prompts" / "classify-cross-session.md"
 
-# Cap on the number of tasks shown directly on an initiative card.
-# Overflow tasks (oldest done first) spill to cache/task_archive/<id>.json
-# per DD-008.
-MAX_VISIBLE_TASKS = int(os.environ.get("CLAUDE_WORKTREE_MAX_VISIBLE_TASKS", "20"))
+# Valid task status values (DD-011).
+TASK_STATUSES = ("pending", "done", "cancelled")
+TASK_TERMINAL = ("done", "cancelled")
 
 # Hot/cold threshold (configurable via env)
 HOT_HOURS = int(os.environ.get("CLAUDE_WORKTREE_HOT_HOURS", "48"))
@@ -154,17 +152,21 @@ def slugify_task_title(title: str, max_len: int = 64) -> str:
 def parse_tasks_from_fm(raw_fm: str) -> list[dict]:
     """Extract the `tasks:` block from raw frontmatter text.
 
-    Expected shape (per prompts/summarize-session.md Rule 12):
+    Expected shape (per prompts/summarize-session.md Rule 12, DD-011):
 
         tasks:
           - title: <text>
-            done: true | false
+            status: pending | done | cancelled
+            evidence: <text>     # optional, when status != pending
           - title: <text>
-            done: false
+            status: pending
 
-    Returns [{"title": str, "done": bool}, ...] — empty list if no
-    `tasks:` key or it's malformed. Deliberately tolerant: skips
-    entries missing a title.
+    Returns [{"title": str, "status": str, "evidence": str|None}, ...].
+    Empty list if no `tasks:` key or it's malformed.
+
+    Backward compatibility: a legacy `done: true|false` is mapped to
+    `status: done|pending` so an old Layer 1 summary still in
+    cache/summaries/ doesn't get dropped on the way to DD-011 storage.
     """
     if not raw_fm or "tasks:" not in raw_fm:
         return []
@@ -193,24 +195,43 @@ def parse_tasks_from_fm(raw_fm: str) -> list[dict]:
                 out.append(cur)
             cur = {}
             rest = s[2:].strip()
-            if rest.startswith("title:"):
-                cur["title"] = _yaml_scalar(rest[len("title:"):].strip())
-            elif rest.startswith("done:"):
-                cur["done"] = _yaml_bool(rest[len("done:"):].strip())
-        elif s.startswith("title:") and cur is not None:
-            cur["title"] = _yaml_scalar(s[len("title:"):].strip())
-        elif s.startswith("done:") and cur is not None:
-            cur["done"] = _yaml_bool(s[len("done:"):].strip())
+            _absorb_task_field(cur, rest)
+        elif cur is not None and ":" in s:
+            _absorb_task_field(cur, s)
     if in_block and cur and cur.get("title"):
         out.append(cur)
-    # Normalize: every task has a title and a done flag (default false)
+    # Normalize: every task has a title and a status (default pending).
     norm: list[dict] = []
     for t in out:
         title = (t.get("title") or "").strip()
         if not title:
             continue
-        norm.append({"title": title, "done": bool(t.get("done"))})
+        status = t.get("status")
+        if status not in TASK_STATUSES:
+            # Legacy fallback: `done: true|false`
+            status = "done" if t.get("_legacy_done") else "pending"
+        entry = {"title": title, "status": status}
+        evidence = (t.get("evidence") or "").strip()
+        if evidence:
+            entry["evidence"] = evidence[:80]
+        norm.append(entry)
     return norm
+
+
+def _absorb_task_field(cur: dict, s: str) -> None:
+    """Helper for parse_tasks_from_fm: parse one `key: value` line into cur."""
+    if s.startswith("title:"):
+        cur["title"] = _yaml_scalar(s[len("title:"):].strip())
+    elif s.startswith("status:"):
+        v = _yaml_scalar(s[len("status:"):].strip()).lower()
+        if v in TASK_STATUSES:
+            cur["status"] = v
+    elif s.startswith("evidence:"):
+        cur["evidence"] = _yaml_scalar(s[len("evidence:"):].strip())
+    elif s.startswith("done:"):
+        # Legacy bridge — kept so a pre-DD-011 summary in cache/
+        # still parses. New Layer 1 outputs use `status:`.
+        cur["_legacy_done"] = _yaml_bool(s[len("done:"):].strip())
 
 
 def _yaml_scalar(s: str) -> str:
@@ -335,7 +356,14 @@ def archived_session_ids_on_disk() -> dict[str, str]:
 
 def apply_user_overrides_inplace(mindmap: dict) -> int:
     """Bake task_toggles + deleted_tasks from user_overrides.json into
-    the in-memory mindmap. Returns count of changes."""
+    the in-memory mindmap. Returns count of changes.
+
+    DD-011: toggles carry a `status` enum (`pending|done|cancelled`).
+    A pre-DD-011 toggle with `done: bool` is accepted for backward
+    compatibility — `done: true` → status `done`, `done: false` →
+    status `pending`. The user-toggle path is the only way to revive
+    a terminal task; AI never sees it (overrides are applied to PRIOR
+    before slim_prior runs)."""
     overrides = load_overrides()
     if not overrides:
         return 0
@@ -343,10 +371,21 @@ def apply_user_overrides_inplace(mindmap: dict) -> int:
     deleted_tasks = overrides.get("deleted_tasks") or []
     if not (task_toggles or deleted_tasks):
         return 0
-    toggle_idx = {(tt["init_id"], tt["task_title"]): tt["done"] for tt in task_toggles}
+
+    def coerce_status(tt: dict) -> str:
+        v = tt.get("status")
+        if v in TASK_STATUSES:
+            return v
+        if "done" in tt:
+            return "done" if tt["done"] else "pending"
+        return "pending"
+
+    toggle_idx = {(tt["init_id"], tt["task_title"]): coerce_status(tt)
+                  for tt in task_toggles}
     del_set = {(dt["init_id"], dt["task_title"]) for dt in deleted_tasks}
     applied_tog = 0
     removed_tasks = 0
+    now = now_utc_iso()
     for ws in mindmap.get("workspaces") or []:
         for init in ws.get("initiatives") or []:
             iid = init.get("id")
@@ -357,8 +396,14 @@ def apply_user_overrides_inplace(mindmap: dict) -> int:
                     removed_tasks += 1
                     continue
                 if (iid, title) in toggle_idx:
-                    if t.get("done") != toggle_idx[(iid, title)]:
-                        t["done"] = toggle_idx[(iid, title)]
+                    desired = toggle_idx[(iid, title)]
+                    if t.get("status") != desired:
+                        t["status"] = desired
+                        if desired in TASK_TERMINAL:
+                            t["terminal_at"] = now
+                        else:
+                            t.pop("terminal_at", None)
+                            t.pop("evidence", None)
                         applied_tog += 1
                 new_tasks.append(t)
             init["tasks"] = new_tasks
@@ -572,20 +617,21 @@ def parse_ai_output(raw: str) -> dict:
     return json.loads(raw)
 
 
-def enforce_cold_and_done_monotone(new_mm: dict, prior: dict,
-                                    hot_sids: list[str]) -> int:
+def enforce_cold_and_terminal_monotone(new_mm: dict, prior: dict,
+                                        hot_sids: list[str]) -> int:
     """
     Belt-and-suspenders enforcement of two hard rules from
     prompts/classify-cross-session.md:
 
-      §5 (Cold rule)        An initiative whose sessions[] in PRIOR has
-                            NO overlap with the hot sids is "cold".
-                            For cold initiatives, ONLY status and
-                            last_activity_at may change; everything else
-                            is reverted to PRIOR values.
+      §5 (Cold rule)            An initiative whose sessions[] in PRIOR
+                                has NO overlap with the hot sids is
+                                "cold". For cold initiatives, ONLY status
+                                and last_activity_at may change.
 
-      §4 (Done monotone)    Any task that was done=true in PRIOR must
-                            remain done=true in the output.
+      §4 (Terminal monotone)    Any task that was status=done OR
+                                status=cancelled in PRIOR must remain
+                                that exact terminal status in output.
+                                (DD-011 extension of DD-010's done-monotone.)
 
     AI follows the prompt most of the time but sometimes drifts. This
     pass deterministically repairs drift so downstream readers can
@@ -627,106 +673,81 @@ def enforce_cold_and_done_monotone(new_mm: dict, prior: dict,
                         init[field] = prior_init.get(field)
                         repairs += 1
             else:
-                # §4: done monotone (only relevant when AI was allowed
-                # to modify tasks). Walk PRIOR tasks; for any done=true
-                # in PRIOR, force done=true in output if the same title
-                # still exists. Add back tasks that AI dropped.
+                # §4: terminal monotone. Walk PRIOR tasks; for any task
+                # in a terminal status in PRIOR, force that exact status
+                # in output if the same id still exists. Add back tasks
+                # AI dropped (DD-011 invariant — no AI deletion).
                 prior_tasks = prior_init.get("tasks") or []
                 new_tasks = init.get("tasks") or []
-                new_by_title = {t.get("title"): t for t in new_tasks}
+                new_by_id = {t.get("id") or slugify_task_title(t.get("title", "")):
+                             t for t in new_tasks if t.get("title")}
                 for pt in prior_tasks:
                     title = pt.get("title")
-                    if not pt.get("done"):
+                    if not title:
                         continue
-                    nt = new_by_title.get(title)
+                    pt_status = pt.get("status") or "pending"
+                    if pt_status not in TASK_TERMINAL:
+                        continue
+                    pid = pt.get("id") or slugify_task_title(title)
+                    nt = new_by_id.get(pid)
                     if nt is None:
-                        # AI dropped a done task — add it back at end
-                        new_tasks.append({"title": title, "done": True})
+                        # AI dropped a terminal task — add it back
+                        restored = {"id": pid, "title": title, "status": pt_status}
+                        if pt.get("evidence"):
+                            restored["evidence"] = pt["evidence"]
+                        if pt.get("terminal_at"):
+                            restored["terminal_at"] = pt["terminal_at"]
+                        new_tasks.append(restored)
                         repairs += 1
-                    elif not nt.get("done"):
-                        nt["done"] = True
+                    elif nt.get("status") != pt_status:
+                        nt["status"] = pt_status
+                        # Keep PRIOR's evidence/terminal_at if AI clobbered them.
+                        if pt.get("evidence") and not nt.get("evidence"):
+                            nt["evidence"] = pt["evidence"]
+                        if pt.get("terminal_at") and not nt.get("terminal_at"):
+                            nt["terminal_at"] = pt["terminal_at"]
                         repairs += 1
                 init["tasks"] = new_tasks
     return repairs
 
 
-def _safe_init_id_for_filename(init_id: str) -> str:
-    """Make init_id safe for use as a filename."""
-    return re.sub(r"[^\w\-]", "_", init_id or "unknown")[:120]
+def aggregate_tasks(new_mm: dict, prior: dict,
+                    hot_summaries: list) -> int:
+    """DD-011 — tri-state, single-store task aggregation.
 
+    Tasks live solely in mindmap.json. AI is additive-only: it may add
+    new tasks and may flip PRIOR `pending` to `done` or `cancelled`
+    with evidence, but never deletes and never reverts terminal status.
+    Only the user can delete or revive (via user_overrides.json).
 
-def load_task_archive(init_id: str) -> list[dict]:
-    """Read the per-initiative task archive (DD-008 §3.5). Returns the
-    list of task records, or [] if no archive yet."""
-    if not TASK_ARCHIVE_DIR.is_dir():
-        return []
-    p = TASK_ARCHIVE_DIR / f"{_safe_init_id_for_filename(init_id)}.json"
-    if not p.exists():
-        return []
-    try:
-        d = json.loads(p.read_text())
-        return d.get("tasks") or []
-    except (json.JSONDecodeError, OSError):
-        return []
+    For each hot initiative:
+      1. Carry forward every PRIOR task (DD-010/DD-011 invariant).
+      2. Merge in tasks from this initiative's hot session summaries
+         (Layer 1 frontmatter). New ids are inserted; existing ids
+         get title refresh + terminal-monotone update.
+      3. Apply AI continuations from new_mm: id-matched PRIOR entries
+         get title rewording / status flips with evidence.
+      4. Defensive shrink check: if the post-merge count is somehow
+         lower than PRIOR, refuse to write (leaves stale tasks rather
+         than silently destroying data).
+      5. Replace init["tasks"] with the 5-field DD-011 record.
 
+    Cold initiatives are untouched (§5) beyond a one-shot id backfill.
 
-def save_task_archive(init_id: str, tasks: list[dict]) -> None:
-    """Atomically write the per-initiative task archive."""
-    TASK_ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    p = TASK_ARCHIVE_DIR / f"{_safe_init_id_for_filename(init_id)}.json"
-    payload = {
-        "initiative_id": init_id,
-        "updated_at": now_utc_iso(),
-        "tasks": tasks,
-    }
-    tmp = p.with_suffix(p.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    tmp.replace(p)
-
-
-def aggregate_and_archive_tasks(new_mm: dict, prior: dict,
-                                 hot_summaries: list) -> tuple[int, int]:
-    """Per DD-010: tasks are AI-additive-only. AI may ADD tasks (with
-    session evidence) and may flip done false→true (with §7d evidence),
-    but NEVER causes a task to disappear. Only the user (via 🗑️
-    deleted_tasks override) can remove a task. Overflow past
-    MAX_VISIBLE_TASKS still gets moved to the archive file, but the
-    "+N archived" expander surfaces it on demand — the task is still
-    on the card, just collapsed.
-
-    Algorithm for each hot initiative:
-      1. Carry forward EVERY PRIOR task. None can vanish.
-      2. Add new tasks from this initiative's hot session summaries
-         (frontmatter `tasks:` block). Existing entries get their
-         title refreshed (latest wording wins) and sessions union'd.
-      3. Apply AI-emitted continuations: only `{id, title, done,
-         done_evidence}` where id matches a PRIOR entry. AI may
-         neither introduce new ids (the new-task path is hot-summary
-         only — DD-010 §3.1 step 3) nor drop existing ones.
-      4. Done-monotone: PRIOR.done=true wins forever.
-      5. Sort + cap at MAX_VISIBLE_TASKS; overflow → archive with
-         `eviction_reason="overflow_capped"`.
-      6. Archive is loaded-then-merged-then-saved (no overwrite).
-
-    Cold initiatives are unchanged per §5 (only backfill missing id).
-
-    Returns (n_initiatives_processed, total_archived_count) for log.
+    Returns n_initiatives_processed (for log).
     """
     now_iso = now_utc_iso()
 
-    # Map hot sid → list of {title, done} from that session's frontmatter
     hot_tasks_by_sid: dict[str, list[dict]] = {}
     for sid, _fm, _body, raw_fm in hot_summaries:
         hot_tasks_by_sid[sid] = parse_tasks_from_fm(raw_fm)
 
-    # PRIOR initiative lookup, plus per-initiative {id → prior_task} index
     prior_by_id: dict[str, dict] = {}
     for w in (prior.get("workspaces") or []):
         for i in (w.get("initiatives") or []):
             prior_by_id[i.get("id")] = i
 
     n_inits = 0
-    total_archived = 0
 
     for ws in new_mm.get("workspaces") or []:
         for init in (ws.get("initiatives") or []):
@@ -736,10 +757,7 @@ def aggregate_and_archive_tasks(new_mm: dict, prior: dict,
             sessions = init.get("sessions") or []
             hot_in_init = [s for s in sessions if s in hot_tasks_by_sid]
             if not hot_in_init:
-                # Cold — §5 byte-identical to PRIOR. Only backfill missing
-                # id slugs (legacy data); never touch content, never write
-                # to the archive file. With DD-010 the hot path can't shrink
-                # tasks either, so cold needs no defensive checks beyond this.
+                # Cold — only backfill missing id slugs on legacy entries.
                 for t in (init.get("tasks") or []):
                     if t.get("title") and not t.get("id"):
                         t["id"] = slugify_task_title(t["title"])
@@ -748,139 +766,113 @@ def aggregate_and_archive_tasks(new_mm: dict, prior: dict,
 
             prior_init = prior_by_id.get(init_id, {})
 
-            # ===== Step 1: carry forward ALL PRIOR tasks =========================
-            # This is the DD-010 invariant: no task disappears via AI action.
+            # Step 1: carry forward PRIOR. Normalize to DD-011 schema
+            # in case legacy entries with `done: bool` slipped through.
             merged: dict[str, dict] = {}
             for pt in (prior_init.get("tasks") or []):
                 if not pt.get("title"):
                     continue
                 pid = pt.get("id") or slugify_task_title(pt["title"])
-                rec = dict(pt)
-                rec["id"] = pid
-                rec.setdefault("first_seen_at", now_iso)
-                rec.setdefault("last_seen_at", now_iso)
-                if rec.get("done"):
-                    rec.setdefault("done_at", now_iso)
-                merged[pid] = rec
+                merged[pid] = _normalize_task(pt, pid, default_terminal_at=now_iso)
 
-            # ===== Step 2: add hot-summary tasks =================================
-            # New tasks (slug not yet in merged) are inserted. Existing ones
-            # get title refresh + sessions union + done-monotone update.
+            # Step 2: hot-summary tasks. Existing ids get monotonic upgrade
+            # to terminal status; new ids are inserted as fresh tasks.
             for sid in hot_in_init:
                 for t in hot_tasks_by_sid.get(sid, []):
-                    if not t.get("title"):
-                        continue
                     tid = slugify_task_title(t["title"])
-                    done = bool(t.get("done"))
+                    sess_status = t.get("status", "pending")
                     cur = merged.get(tid)
                     if cur is None:
-                        merged[tid] = {
-                            "id": tid,
-                            "title": t["title"],
-                            "done": done,
-                            "first_seen_at": now_iso,
-                            "last_seen_at": now_iso,
-                            "done_at": now_iso if done else None,
-                            "sessions": [sid],
-                        }
+                        rec = {"id": tid, "title": t["title"],
+                               "status": sess_status}
+                        if sess_status in TASK_TERMINAL:
+                            rec["terminal_at"] = now_iso
+                            if t.get("evidence"):
+                                rec["evidence"] = t["evidence"][:80]
+                        merged[tid] = rec
                     else:
-                        cur["title"] = t["title"]              # latest wording
-                        cur["last_seen_at"] = now_iso
-                        if done and not cur.get("done"):
-                            cur["done"] = True
-                            cur["done_at"] = now_iso
-                        sl = cur.setdefault("sessions", [])
-                        if sid not in sl:
-                            sl.append(sid)
+                        cur["title"] = t["title"]  # latest wording
+                        if (cur.get("status") == "pending"
+                                and sess_status in TASK_TERMINAL):
+                            cur["status"] = sess_status
+                            cur["terminal_at"] = now_iso
+                            if t.get("evidence"):
+                                cur["evidence"] = t["evidence"][:80]
 
-            # ===== Step 3: AI continuations (id-matched PRIOR refresh) ===========
-            # AI may NOT introduce a brand-new id here (DD-010 §3.1 step 3).
-            # Only id-matching PRIOR entries get title-rewording / done-flip
-            # / done_evidence applied.
+            # Step 3: AI continuations. Match by id only — DD-011 forbids
+            # AI from inventing new ids here (those come via hot summaries).
             for t in (init.get("tasks") or []):
                 ai_id = t.get("id")
-                if not ai_id or ai_id not in merged:
-                    continue
-                if not t.get("title"):
+                title = t.get("title")
+                if not ai_id or ai_id not in merged or not title:
                     continue
                 cur = merged[ai_id]
-                cur["title"] = t["title"]
-                cur["last_seen_at"] = now_iso
-                evidence = (t.get("done_evidence") or "").strip()[:80] or None
-                if t.get("done") and not cur.get("done"):
-                    cur["done"] = True
-                    cur["done_at"] = now_iso
+                cur["title"] = title
+                ai_status = (t.get("status") or "").lower()
+                evidence = (t.get("evidence")
+                            or t.get("done_evidence")  # legacy field name
+                            or "").strip()[:80] or None
+                if (cur.get("status") == "pending"
+                        and ai_status in TASK_TERMINAL):
+                    cur["status"] = ai_status
+                    cur["terminal_at"] = now_iso
                     if evidence:
-                        cur["done_evidence"] = evidence
-                elif evidence and cur.get("done") and not cur.get("done_evidence"):
-                    # PRIOR was already done but lacked evidence; accept new.
-                    cur["done_evidence"] = evidence
+                        cur["evidence"] = evidence
+                elif evidence and cur.get("status") in TASK_TERMINAL \
+                        and not cur.get("evidence"):
+                    cur["evidence"] = evidence
 
-            # ===== Step 4: sort + cap visible ===================================
-            all_tasks = list(merged.values())
-            not_done = sorted(
-                [t for t in all_tasks if not t.get("done")],
-                key=lambda t: t.get("first_seen_at") or "",
-                reverse=True,
-            )
-            done_tasks = sorted(
-                [t for t in all_tasks if t.get("done")],
-                key=lambda t: t.get("done_at") or t.get("last_seen_at") or "",
-                reverse=True,
-            )
-            ordered_all = not_done + done_tasks
-
-            # Always keep all not-done; fill remainder with most-recent done.
-            remaining = max(0, MAX_VISIBLE_TASKS - len(not_done))
-            visible = not_done + done_tasks[:remaining]
-            if len(visible) > MAX_VISIBLE_TASKS:
-                visible = visible[:MAX_VISIBLE_TASKS]
-
-            overflow_capped = ordered_all[len(visible):]
-            for o in overflow_capped:
-                o["evicted_at"] = o.get("evicted_at") or now_iso
-                o["eviction_reason"] = o.get("eviction_reason") or "overflow_capped"
-
-            visible_archived = len(overflow_capped)
-            total_archived += visible_archived
-
-            # ===== Defensive guardrail (DD-010 invariant check) =================
-            # If carry-forward + new-from-summary somehow ended up shrinking
-            # vs PRIOR, that's a logic regression — log it loudly and bail
-            # out (don't write anything). Better to keep yesterday's mindmap
-            # than silently destroy data.
+            # Step 4: shrink guard. The post-merge set must not be smaller
+            # than PRIOR — that's the DD-010/DD-011 canary for "AI dropped
+            # tasks." If tripped, skip the write for this initiative.
             prior_count = len([t for t in (prior_init.get("tasks") or [])
                                if t.get("title")])
-            if len(ordered_all) < prior_count:
+            if len(merged) < prior_count:
                 print(f"[classify] !! REFUSING to shrink tasks on {init_id}: "
-                      f"prior={prior_count} new={len(ordered_all)} — leaving "
+                      f"prior={prior_count} new={len(merged)} — leaving "
                       f"PRIOR tasks unchanged", file=sys.stderr)
                 continue
 
-            # ===== Step 5: write back ============================================
-            init["tasks"] = [
-                {
-                    **({"id": t["id"], "title": t["title"], "done": t["done"]}),
-                    **({"done_evidence": t["done_evidence"]} if t.get("done_evidence") else {}),
-                }
-                for t in visible
-            ]
-            init["tasks_archived_count"] = visible_archived
+            # Step 5: emit DD-011 records (id, title, status, evidence?,
+            # terminal_at?). Order: pending first (PRIOR order preserved),
+            # then terminal (most-recent terminal_at first).
+            init["tasks"] = _ordered_records(merged, prior_init)
+            # DD-011 cleanup: archive-related counters no longer apply.
+            init.pop("tasks_archived_count", None)
 
-            # Archive is APPEND-ONLY history per DD-008 §3.5: load existing,
-            # merge this round's state on top, write the union. NEVER write
-            # only the current round — that destroyed 13 archive files on
-            # 2026-05-18; the b409b70 fix and DD-010 together close the hole.
-            existing_archive: dict[str, dict] = {}
-            for t in load_task_archive(init_id):
-                tid = t.get("id")
-                if tid:
-                    existing_archive[tid] = dict(t)
-            for t in ordered_all:
-                existing_archive[t["id"]] = t
-            save_task_archive(init_id, list(existing_archive.values()))
+    return n_inits
 
-    return n_inits, total_archived
+
+def _normalize_task(pt: dict, pid: str, *, default_terminal_at: str) -> dict:
+    """Coerce a PRIOR task into the DD-011 schema. Legacy fields
+    (done bool, done_evidence, done_at) are mapped to status/evidence/
+    terminal_at; everything else (first_seen_at, sessions[], …) is
+    dropped per DD-011's "5 fields max" goal."""
+    title = pt["title"]
+    status = pt.get("status")
+    if status not in TASK_STATUSES:
+        status = "done" if pt.get("done") else "pending"
+    rec = {"id": pid, "title": title, "status": status}
+    evidence = pt.get("evidence") or pt.get("done_evidence")
+    if evidence:
+        rec["evidence"] = str(evidence)[:80]
+    terminal_at = pt.get("terminal_at") or pt.get("done_at")
+    if status in TASK_TERMINAL:
+        rec["terminal_at"] = terminal_at or default_terminal_at
+    return rec
+
+
+def _ordered_records(merged: dict[str, dict], prior_init: dict) -> list[dict]:
+    """Return tasks sorted: pending in PRIOR order (new tasks last,
+    by id order in dict), then terminal tasks by terminal_at desc."""
+    prior_order = {t.get("id") or slugify_task_title(t.get("title", "")): i
+                   for i, t in enumerate(prior_init.get("tasks") or [])
+                   if t.get("title")}
+    pending = [t for t in merged.values() if t.get("status") == "pending"]
+    terminal = [t for t in merged.values() if t.get("status") in TASK_TERMINAL]
+    pending.sort(key=lambda t: prior_order.get(t["id"], 10**6))
+    terminal.sort(key=lambda t: t.get("terminal_at") or "", reverse=True)
+    return pending + terminal
 
 
 def repair_short_session_ids(mindmap: dict, hot_sids: list[str]) -> int:
@@ -939,11 +931,14 @@ def emit_diff(prior: dict | None, new: dict) -> None:
         out = {}
         for ws in (d.get("workspaces") or []):
             for i in (ws.get("initiatives") or []):
+                tasks = i.get("tasks") or []
                 out[i.get("id")] = {
                     "name": i.get("name"),
                     "status": i.get("status"),
-                    "tasks_n": len(i.get("tasks") or []),
-                    "tasks_done": sum(1 for t in (i.get("tasks") or []) if t.get("done")),
+                    "tasks_n": len(tasks),
+                    "tasks_done": sum(1 for t in tasks
+                                      if (t.get("status") == "done")
+                                      or t.get("done") is True),
                 }
         return out
 
@@ -1109,17 +1104,15 @@ def main() -> int:
     repaired = repair_short_session_ids(new_mm, hot_sids)
     if repaired:
         print(f"[classify] repaired {repaired} truncated session_ids")
-    rule_repairs = enforce_cold_and_done_monotone(new_mm, prior, hot_sids)
+    rule_repairs = enforce_cold_and_terminal_monotone(new_mm, prior, hot_sids)
     if rule_repairs:
-        print(f"[classify] enforced cold/done-monotone rules: {rule_repairs} repairs")
+        print(f"[classify] enforced cold/terminal-monotone rules: {rule_repairs} repairs")
 
-    # DD-008 §3.4: rebuild hot initiatives' tasks[] from PRIOR + hot
-    # summaries' frontmatter + AI output; dedup by slug; cap at
-    # MAX_VISIBLE_TASKS; spill overflow to cache/task_archive/.
-    task_inits, task_archived = aggregate_and_archive_tasks(new_mm, prior, hot)
+    # DD-011: rebuild hot initiatives' tasks[] from PRIOR + hot summary
+    # frontmatter + AI output. Single store, tri-state, no archive.
+    task_inits = aggregate_tasks(new_mm, prior, hot)
     if task_inits:
-        print(f"[classify] tasks: rebuilt for {task_inits} hot initiative(s); "
-              f"{task_archived} task(s) overflowed to archive")
+        print(f"[classify] tasks: rebuilt for {task_inits} hot initiative(s)")
 
     # ---- 6. Write + diff + log ----
     atomic_write_json(output_path, new_mm)

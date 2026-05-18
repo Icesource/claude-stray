@@ -87,6 +87,12 @@ section names if writing in zh-CN):
     list. If empty, write "(no items this week)" once for the
     section.
 
+  ## Scope changes
+    From tasks_cancelled_this_week, list tasks that were cancelled
+    or merged into other tasks. Cite the evidence field briefly
+    (e.g. "Merged into X" or "Scoped out per turn"). Skip the
+    section if the list is empty.
+
   ## Notable artifacts
     From new_artifacts_this_week, list MR/PR/issue/doc links worth
     referencing. Skip if the list is empty.
@@ -144,6 +150,7 @@ def generate(week_offset: int = 1, *, dry_run: bool = False,
           f"active={len(signal.active_initiatives)} "
           f"archived={len(signal.archived_this_week)} "
           f"tasks_done={len(signal.tasks_done_this_week)} "
+          f"tasks_cancelled={len(signal.tasks_cancelled_this_week)} "
           f"artifacts={len(signal.new_artifacts_this_week)}]",
           file=sys.stderr)
 

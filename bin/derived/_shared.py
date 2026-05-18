@@ -3,8 +3,8 @@ Shared helpers for DD-006 derived features.
 
 The four derived features (weekly report, next-steps, tips, wellness)
 all consume the same upstream data (cache/mindmap.json + summaries +
-task_archive + cost_log) and produce different artifacts under
-cache/derived/. This module centralizes:
+cost_log) and produce different artifacts under cache/derived/. This
+module centralizes:
 
   - file paths and cache directory bootstrap
   - date / week-range computations
@@ -36,7 +36,6 @@ CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
-TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
 MINDMAP_FILE = CACHE_DIR / "mindmap.json"
 COST_LOG = CACHE_DIR / "cost_log.jsonl"
 DERIVED_DIR = CACHE_DIR / "derived"
@@ -147,8 +146,11 @@ class WeeklySignal:
     archived_this_week: list[dict] = field(default_factory=list)
     # Each: {id, name, archived_at, ws_name}
     tasks_done_this_week: list[dict] = field(default_factory=list)
-    # Each: {init_id, init_name, task_id, task_title, done_at,
-    #        done_evidence?}
+    # Each: {init_id, init_name, task_id, task_title, terminal_at,
+    #        evidence?}
+    tasks_cancelled_this_week: list[dict] = field(default_factory=list)
+    # Each: {init_id, init_name, task_id, task_title, terminal_at,
+    #        evidence?}  (DD-011)
     new_artifacts_this_week: list[dict] = field(default_factory=list)
     # Each: {init_id, init_name, type, title, url, status,
     #        last_mentioned_at}
@@ -157,6 +159,7 @@ class WeeklySignal:
         return not (self.hot_sessions or self.active_initiatives
                     or self.archived_this_week
                     or self.tasks_done_this_week
+                    or self.tasks_cancelled_this_week
                     or self.new_artifacts_this_week)
 
     def to_dict(self) -> dict:
@@ -167,6 +170,7 @@ class WeeklySignal:
             "active_initiatives": self.active_initiatives,
             "archived_this_week": self.archived_this_week,
             "tasks_done_this_week": self.tasks_done_this_week,
+            "tasks_cancelled_this_week": self.tasks_cancelled_this_week,
             "new_artifacts_this_week": self.new_artifacts_this_week,
         }
 
@@ -198,8 +202,9 @@ def _read_summary(sid: str) -> dict | None:
 
 
 def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
-    """Walk cache/summaries, cache/mindmap.json, cache/task_archive, and
-    cache/archive to assemble all evidence of work in `week`."""
+    """Walk cache/summaries, cache/mindmap.json, and cache/archive to
+    assemble all evidence of work in `week`. Per DD-011, tasks live
+    only in mindmap.json — no task_archive directory is consulted."""
     week = week or WeekRange.for_date()
     sig = WeeklySignal(week=week)
 
@@ -233,7 +238,7 @@ def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
                 "summary_excerpt": excerpt,
             })
 
-    # ---- Mindmap-derived signals ----
+    # ---- Mindmap-derived signals (active initiatives, artifacts, tasks) ----
     if MINDMAP_FILE.exists():
         try:
             mm = json.loads(MINDMAP_FILE.read_text())
@@ -272,6 +277,34 @@ def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
                             "status": art.get("status"),
                             "last_mentioned_at": lm,
                         })
+                # DD-011: tasks that became terminal this week, read straight
+                # from the canonical store.
+                iid = init.get("id")
+                iname = init.get("name") or iid
+                for t in (init.get("tasks") or []):
+                    ts = t.get("status")
+                    # Tolerate legacy `done: bool` records that may slip
+                    # through during the DD-011 rollout window.
+                    if ts not in ("done", "cancelled"):
+                        if t.get("done") is True:
+                            ts = "done"
+                        else:
+                            continue
+                    term_at = t.get("terminal_at") or t.get("done_at")
+                    if not week.contains(term_at):
+                        continue
+                    rec = {
+                        "init_id": iid,
+                        "init_name": iname,
+                        "task_id": t.get("id"),
+                        "task_title": t.get("title"),
+                        "terminal_at": term_at,
+                        "evidence": t.get("evidence") or t.get("done_evidence"),
+                    }
+                    if ts == "done":
+                        sig.tasks_done_this_week.append(rec)
+                    else:
+                        sig.tasks_cancelled_this_week.append(rec)
 
     # ---- Archived this week (cache/archive) ----
     if ARCHIVE_DIR.is_dir():
@@ -291,45 +324,12 @@ def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
                 "ws_name": rec.get("from_workspace") or f.parent.name,
             })
 
-    # ---- Tasks done this week (cache/task_archive) ----
-    if TASK_ARCHIVE_DIR.is_dir():
-        # Build a name lookup from current mindmap
-        init_name_lookup: dict[str, str] = {}
-        if MINDMAP_FILE.exists():
-            try:
-                mm = json.loads(MINDMAP_FILE.read_text())
-                for w in (mm.get("workspaces") or []):
-                    for i in (w.get("initiatives") or []):
-                        if i.get("id"):
-                            init_name_lookup[i["id"]] = i.get("name") or i["id"]
-            except json.JSONDecodeError:
-                pass
-        for f in TASK_ARCHIVE_DIR.glob("*.json"):
-            try:
-                rec = json.loads(f.read_text())
-            except (json.JSONDecodeError, OSError):
-                continue
-            iid = rec.get("initiative_id") or f.stem
-            for t in (rec.get("tasks") or []):
-                done_at = t.get("done_at")
-                if not week.contains(done_at):
-                    continue
-                if not t.get("done"):
-                    continue
-                sig.tasks_done_this_week.append({
-                    "init_id": iid,
-                    "init_name": init_name_lookup.get(iid, iid),
-                    "task_id": t.get("id"),
-                    "task_title": t.get("title"),
-                    "done_at": done_at,
-                    "done_evidence": t.get("done_evidence"),
-                })
-
     # Stable ordering: most recent first within each group
     sig.hot_sessions.sort(key=lambda x: x.get("last_activity_at") or "", reverse=True)
     sig.active_initiatives.sort(key=lambda x: x.get("last_activity_at") or "", reverse=True)
     sig.archived_this_week.sort(key=lambda x: x.get("archived_at") or "", reverse=True)
-    sig.tasks_done_this_week.sort(key=lambda x: x.get("done_at") or "", reverse=True)
+    sig.tasks_done_this_week.sort(key=lambda x: x.get("terminal_at") or "", reverse=True)
+    sig.tasks_cancelled_this_week.sort(key=lambda x: x.get("terminal_at") or "", reverse=True)
     sig.new_artifacts_this_week.sort(key=lambda x: x.get("last_mentioned_at") or "", reverse=True)
 
     return sig

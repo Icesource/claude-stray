@@ -16,9 +16,10 @@
 | [DD-005](../../design/DD-005-lifecycle.md) | 生命周期 / opt-in 运行模式（pause/resume、serve-only） | **Proposed** |
 | [DD-006](../../design/DD-006-card-derived-ai-features.md) | 基于卡片的 AI 派生功能（周报、下一步建议、tips、暖心提醒） | **Proposed** |
 | [DD-007](../../design/DD-007-agent-auto-runner.md) | 卡片驱动的 AI 代理自动推进 | **Idea-stage，需要 POC** |
-| [DD-008](../../design/DD-008-task-aggregation-and-archive.md) | Task 聚合、按 slug 去重、cap + 归档 | 已实现 |
-| [DD-009](../../design/DD-009-task-ownership-and-completion.md) | Task 绑定 session 所有权 + 语义去重 + AI 辅助完成态推断 | 已实施(部分被 DD-010 取代) |
-| [DD-010](../../design/DD-010-tasks-additive-only.md) | Task 是 AI-additive-only / 用户才能删除(2026-05-18 数据丢失事故后) | 已实施 |
+| [DD-008](../../design/DD-008-task-aggregation-and-archive.md) | Task 聚合、按 slug 去重、cap + 归档 | 被 DD-011 取代 |
+| [DD-009](../../design/DD-009-task-ownership-and-completion.md) | Task 绑定 session 所有权 + 语义去重 + AI 辅助完成态推断 | 被 DD-011 取代 |
+| [DD-010](../../design/DD-010-tasks-additive-only.md) | Task 是 AI-additive-only / 用户才能删除(2026-05-18 数据丢失事故后) | 被 DD-011 取代 |
+| [DD-011](../../design/DD-011-task-model-final.md) | Task 模型最终版：三态 status(pending/done/cancelled)、删除归档目录、AI 可以基于证据取消任务 | Accepted |
 
 ## 模板
 
