@@ -94,6 +94,11 @@ LOCALE = {
         "helper_online": "✓ helper :{}",
         "data_stale_banner": "↻ 服务端有新数据 — 点击应用",
         "manual_refresh": "🔄 触发 AI 重新分析",
+        "lifecycle_paused": "Pipeline 已暂停 — 后台 AI 不再运行",
+        "lifecycle_paused_reason_prefix": "原因:",
+        "lifecycle_resume": "恢复",
+        "lifecycle_resume_confirm": "恢复后,Stop hook 将再次触发 AI 流水线。继续?",
+        "lifecycle_resumed_toast": "Pipeline 已恢复",
         "refresh_started": "已触发后台刷新，稍后会有新数据提示",
         "toast_jumped": "已切换到 pane {}",
         "toast_already_focused": "已经在 pane {}",
@@ -195,6 +200,11 @@ LOCALE = {
         "helper_online": "✓ helper :{}",
         "data_stale_banner": "↻ Server has new data — click to load",
         "manual_refresh": "🔄 Run AI refresh",
+        "lifecycle_paused": "Pipeline paused — background AI is off",
+        "lifecycle_paused_reason_prefix": "Reason:",
+        "lifecycle_resume": "Resume",
+        "lifecycle_resume_confirm": "Resume the pipeline? Stop hooks will start firing AI work again.",
+        "lifecycle_resumed_toast": "Pipeline resumed",
         "refresh_started": "Background refresh kicked off; you'll see an update banner when done",
         "toast_jumped": "Focused pane {}",
         "toast_already_focused": "Already on pane {}",
@@ -634,6 +644,32 @@ article.card.archived { opacity: 0.7; }
 .card.has-modal-target:hover { border-color: var(--border-hover); }
 
 /* Detail modal */
+/* Lifecycle pause banner (DD-005). Stays at top of viewport when
+   pipeline is paused; resume button is only wired in server mode. */
+.lifecycle-banner {
+  position: sticky; top: 0; z-index: 900;
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 24px;
+  background: var(--red-bg, #fef2f2);
+  border-bottom: 2px solid var(--red, #dc2626);
+  color: var(--red, #b91c1c);
+  font-size: 13px;
+}
+.lifecycle-banner[hidden] { display: none; }
+.lifecycle-banner .lb-icon { font-size: 16px; }
+.lifecycle-banner .lb-text { display: flex; flex-direction: column; gap: 2px; }
+.lifecycle-banner .lb-title { font-weight: 600; }
+.lifecycle-banner .lb-reason { font-size: 12px; color: var(--text-dim); }
+.lifecycle-banner .lb-reason:empty { display: none; }
+.lifecycle-banner .lb-grow { flex: 1; }
+.lifecycle-banner .lb-resume {
+  background: var(--red, #dc2626); color: white;
+  border: none; padding: 6px 16px; border-radius: 6px;
+  font-size: 13px; cursor: pointer; font-weight: 500;
+}
+.lifecycle-banner .lb-resume:hover { filter: brightness(1.07); }
+.lifecycle-banner .lb-resume[disabled] { opacity: 0.5; cursor: wait; }
+
 .modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0,0,0,0.45);
@@ -874,6 +910,19 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 </head>
 <body>
 
+<!-- Pipeline lifecycle banner (DD-005). Hidden by default; JS shows it
+     when DATA.lifecycle.paused is true. Visible to both static and
+     server modes; the resume button is server-mode only. -->
+<div class="lifecycle-banner" id="lifecycle-banner" hidden>
+  <span class="lb-icon">⏸</span>
+  <span class="lb-text">
+    <strong class="lb-title">__LIFECYCLE_PAUSED__</strong>
+    <span class="lb-reason" id="lb-reason"></span>
+  </span>
+  <span class="lb-grow"></span>
+  <button class="lb-resume" id="lb-resume" type="button">__LIFECYCLE_RESUME__</button>
+</div>
+
 <header class="top">
   <h1>__HEADER__</h1>
   <span class="meta">__GENERATED__</span>
@@ -923,6 +972,10 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   // Archived items loaded from cache/archive/ — already removed from
   // mindmap.json but we keep them visible in the archive zone here.
   let ARCHIVED_PERSISTED = JSON.parse(document.getElementById('archived-data').textContent);
+  // Lifecycle state (DD-005). Embedded at render time so static mode
+  // reflects pause state on first paint; server mode updates it on
+  // every /api/data poll.
+  let LIFECYCLE = DATA.lifecycle || { paused: false };
   const STORAGE_KEY = 'claude-code-worktree:overrides:v1';
   const COLLAPSE_KEY = 'claude-code-worktree:ws-collapsed:v1';
   const FILTER_KEY = 'claude-code-worktree:filter:v1';
@@ -2062,15 +2115,76 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       LOCATIONS = payload.locations;
     }
     ARCHIVED_PERSISTED = payload.archived || [];
+    if (payload.lifecycle) LIFECYCLE = payload.lifecycle;
     lastGeneratedAt = DATA.generated_at || lastGeneratedAt;
     rebuildIndex();
     render();
+    updateLifecycleBanner();
     // Preserve scroll
     window.scrollTo({ top: scrollY, behavior: 'instant' });
     // Subtle toast so user knows data refreshed (skip on first apply at boot)
     if (window.__ccwBooted) toast('数据已更新');
     window.__ccwBooted = true;
   }
+
+  // ---------- Lifecycle banner (DD-005) -----------------------------------
+  const $lifecycleBanner = document.getElementById('lifecycle-banner');
+  const $lbReason = document.getElementById('lb-reason');
+  const $lbResume = document.getElementById('lb-resume');
+
+  function updateLifecycleBanner() {
+    if (!$lifecycleBanner) return;
+    if (!LIFECYCLE || !LIFECYCLE.paused) {
+      $lifecycleBanner.hidden = true;
+      return;
+    }
+    $lifecycleBanner.hidden = false;
+    const reason = (LIFECYCLE.reason || '').trim();
+    if ($lbReason) {
+      $lbReason.textContent = reason
+        ? `${I18N.lifecycle_paused_reason_prefix} ${reason}`
+        : '';
+    }
+    // Resume button is only meaningful in server mode (writes a file
+    // on the host). In file:// mode show the banner but disable the
+    // button, so users at least see the state.
+    if ($lbResume) {
+      $lbResume.disabled = !SERVER_MODE;
+      $lbResume.title = SERVER_MODE ? '' : 'Run `mindmap --resume` in your terminal';
+    }
+  }
+
+  if ($lbResume) {
+    $lbResume.addEventListener('click', async () => {
+      if (!SERVER_MODE) return;
+      const okText = I18N.lifecycle_resume || 'Resume';
+      const okayed = await confirmDialog(I18N.lifecycle_resume_confirm, { okText });
+      if (!okayed) return;
+      $lbResume.disabled = true;
+      try {
+        const r = await fetch(SERVER_ORIGIN + '/api/lifecycle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'resume' }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok) {
+          LIFECYCLE = j && typeof j.paused !== 'undefined' ? j : { paused: false };
+          updateLifecycleBanner();
+          toast(I18N.lifecycle_resumed_toast);
+        } else {
+          toast('resume failed: HTTP ' + r.status);
+        }
+      } catch (e) {
+        toast('resume failed: ' + (e.message || e));
+      } finally {
+        $lbResume.disabled = false;
+      }
+    });
+  }
+
+  // Initial paint
+  updateLifecycleBanner();
 
   if (SERVER_MODE) {
     // First poll runs slightly delayed so the boot render isn't fighting it.
@@ -2141,10 +2255,21 @@ def render_html(data: dict, L: dict, lang: str) -> str:
                 init_slim["tasks_archived_count"] = i["tasks_archived_count"]
             ws_copy["initiatives"].append(init_slim)
         workspaces.append(ws_copy)
+    # Embed lifecycle state so static (file://) mode also shows the
+    # pause banner on first paint. Server mode subsequently refreshes
+    # this via /api/data polling.
+    try:
+        sys.path.insert(0, str(REPO_ROOT / "bin"))
+        from _lifecycle import status as _lifecycle_status
+        lifecycle = _lifecycle_status()
+    except Exception:
+        lifecycle = {"paused": False}
+
     slim = {
         "schema_version": data.get("schema_version", 2),
         "generated_at": data.get("generated_at"),
         "workspaces": workspaces,
+        "lifecycle": lifecycle,
     }
 
     def json_for_script(obj):
@@ -2167,6 +2292,8 @@ def render_html(data: dict, L: dict, lang: str) -> str:
     out = out.replace("__NAV_TITLE__", html_lib.escape(L["nav_title"]))
     out = out.replace("__DATA_STALE__", html_lib.escape(L["data_stale_banner"]))
     out = out.replace("__MANUAL_REFRESH__", html_lib.escape(L["manual_refresh"]))
+    out = out.replace("__LIFECYCLE_PAUSED__", html_lib.escape(L["lifecycle_paused"]))
+    out = out.replace("__LIFECYCLE_RESUME__", html_lib.escape(L["lifecycle_resume"]))
     out = out.replace("__DATA_JSON__", json_for_script(slim))
     out = out.replace("__I18N_JSON__", json_for_script(i18n_for_js))
     out = out.replace("__LOCATIONS_JSON__", json_for_script(locations))

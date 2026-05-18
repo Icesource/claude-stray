@@ -8,11 +8,13 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   GET  /mindmap-tree.html -> serves cache/mindmap-tree.html
   GET  /cache/...         -> serves files from cache/ (json data, etc.)
   GET  /ping              -> health check + capabilities
-  GET  /api/data          -> current mindmap.json + locations + overrides
+  GET  /api/data          -> current mindmap.json + locations + overrides + lifecycle
   GET  /api/task-history  -> per-initiative full task archive (DD-008)
                              query: ?init_id=<initiative-id>
   POST /api/save          -> persist user overrides (task toggles, archive, delete)
   POST /api/refresh       -> trigger background AI refresh
+  POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
+                             body: {"action": "pause"|"resume", "reason": "..."}
   POST /focus             -> body {pane, session?} -> zellij focus-pane-id
   POST /newpane           -> body {sid, cwd?}      -> zellij run -- claude --resume
 
@@ -188,6 +190,13 @@ class Handler(BaseHTTPRequestHandler):
                                 "archived_at": rec.get("archived_at"),
                             })
             data["archived"] = archived
+            # Lifecycle state so the dashboard banner can hot-refresh.
+            try:
+                sys.path.insert(0, str(REPO_ROOT / "bin"))
+                from _lifecycle import status as _lifecycle_status
+                data["lifecycle"] = _lifecycle_status()
+            except Exception as e:
+                data["lifecycle"] = {"paused": False, "_err": str(e)}
             return self._reply(200, data)
         if path == "/api/task-history":
             # Per-initiative task archive (DD-008). Read-only.
@@ -227,7 +236,24 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/newpane":   return self._handle_newpane(body)
         if path == "/api/save":  return self._handle_save(body)
         if path == "/api/refresh": return self._handle_refresh(body)
+        if path == "/api/lifecycle": return self._handle_lifecycle(body)
         self._reply(404, {"error": "not found", "path": path})
+
+    def _handle_lifecycle(self, body: dict):
+        """Pause / resume the pipeline (DD-005). Body:
+            {"action": "pause" | "resume", "reason": "..." (optional)}
+        Returns the new state."""
+        action = (body.get("action") or "").lower()
+        if action == "pause":
+            reason = (body.get("reason") or "via dashboard").strip()
+            from _lifecycle import pause
+            state = pause(reason=reason, by="dashboard")
+            return self._reply(200, state)
+        if action == "resume":
+            from _lifecycle import resume
+            state = resume()
+            return self._reply(200, state)
+        return self._reply(400, {"error": "action must be 'pause' or 'resume'"})
 
     # ---- Zellij actions ----------------------------------------------------
 
@@ -369,7 +395,7 @@ def serve(open_browser: bool = True):
         print(f"        GET  /            (mindmap dashboard)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
         print(f"        GET  /ping        /api/data    /api/task-history?init_id=<id>")
-        print(f"        POST /api/save    /api/refresh  /focus  /newpane")
+        print(f"        POST /api/save    /api/refresh  /api/lifecycle  /focus  /newpane")
         print(f"[serve] Ctrl-C to stop.\n")
 
         if open_browser:

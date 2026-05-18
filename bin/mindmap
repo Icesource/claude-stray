@@ -19,9 +19,13 @@ DO_SERVE=0
 DO_DIAGNOSE=0
 DO_COST=0
 DO_BACKFILL=0
+DO_PAUSE=0
+DO_RESUME=0
+DO_STATUS=0
 NO_OPEN=0
 DIAG_ARG=""
 COST_ARG=""
+PAUSE_REASON=""
 
 # Pre-scan for --diagnose so we can capture its positional arg
 while [ $# -gt 0 ]; do
@@ -51,6 +55,18 @@ while [ $# -gt 0 ]; do
       ;;
     --backfill)
       DO_BACKFILL=1; shift ;;
+    --pause)
+      DO_PAUSE=1
+      shift
+      # Optional inline reason: --pause "weekend off"
+      if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then
+        PAUSE_REASON="$1"; shift
+      fi
+      ;;
+    --resume)
+      DO_RESUME=1; shift ;;
+    --status)
+      DO_STATUS=1; shift ;;
     -h|--help)
       cat <<EOF
 Usage: mindmap [--refresh] [--serve | --open | --html | --tree | --diagnose]
@@ -73,6 +89,12 @@ Without flags: render the cached mindmap to stdout as an ANSI tree.
                       Default (no arg): today + last 7 days table.
   --backfill          Re-summarize every session (one-shot migration).
                       Cost ~\$0.04 per session × ~200 sessions = ~\$8.
+  --pause [REASON]    Engage the kill switch. The pipeline stops
+                      processing on all subsequent hooks/triggers
+                      until --resume. Optional REASON shows on the
+                      dashboard banner.
+  --resume            Release the kill switch.
+  --status            Print current lifecycle JSON status.
 EOF
       exit 0
       ;;
@@ -98,6 +120,22 @@ if [ "$DO_COST" -eq 1 ]; then
   else
     exec python3 "$REPO_ROOT/bin/cost.py"
   fi
+fi
+
+if [ "$DO_PAUSE" -eq 1 ]; then
+  if [ -n "$PAUSE_REASON" ]; then
+    exec python3 "$REPO_ROOT/bin/_lifecycle.py" pause "$PAUSE_REASON"
+  else
+    exec python3 "$REPO_ROOT/bin/_lifecycle.py" pause
+  fi
+fi
+
+if [ "$DO_RESUME" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/_lifecycle.py" resume
+fi
+
+if [ "$DO_STATUS" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/_lifecycle.py" status
 fi
 
 if [ "$DO_BACKFILL" -eq 1 ]; then
