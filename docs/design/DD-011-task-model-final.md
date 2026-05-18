@@ -255,4 +255,4 @@ second run sees a missing `task_archive/` and exits cleanly.
   preserve historical `done` flips that were correct; would over-rely
   on Haiku for what's a deterministic schema rewrite.
 
-commit: (pending)
+commit: a47262d
