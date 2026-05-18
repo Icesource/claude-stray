@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
 """
-DD-009 one-shot migration: clean up cross-initiative task pollution.
+DD-009 / DD-010 task migration helper.
 
-DD-008 v1's "carry forward all PRIOR tasks" rule let mis-assigned
-tasks persist permanently. After classify.py was rewritten (DD-009
-§3.5) to require current-round evidence, the next classify run will
-naturally evict orphans. This script does the same locally — no AI
-call — so the user can preview / apply the cleanup immediately.
+Originally a cross-initiative-pollution cleanup tool (DD-009). The
+DD-010 amendment — "AI may never delete a task; only the user can" —
+makes eviction logic incorrect, so this script is now an idempotent
+backfill / merge:
 
-For each hot initiative in cache/mindmap.json:
-  1. Collect "canonical evidence" = the union of tasks[] in each
-     session-of-this-init's summary frontmatter.
-  2. Find PRIOR tasks whose slug is NOT in the canonical set →
-     these are evictees (cross-initiative pollution or stale work).
-  3. Rebuild init.tasks[] from the canonical set + done-monotone
-     state from PRIOR.
-  4. Append the evicted tasks to cache/task_archive/<id>.json with
-     eviction_reason="dd009_migration_no_evidence".
+  - Ensure every task has a stable `id` slug
+  - Union PRIOR + session-summary tasks (no PRIOR drop)
+  - Done-monotone is preserved
+  - Cap visible at MAX_VISIBLE_TASKS; overflow → archive
+  - Archive file load-then-merge-then-save (no overwrite)
 
 Cold initiatives are left alone (§5).
 
@@ -28,9 +23,7 @@ Usage:
   python3 bin/_migrate_dd009_tasks.py --dry-run
   python3 bin/_migrate_dd009_tasks.py
 
-Always safe to re-run — idempotent. After the first run, hot
-initiatives' tasks already reflect canonical evidence, so a
-subsequent --dry-run shows zero diff.
+Always safe to re-run — idempotent.
 """
 
 from __future__ import annotations
@@ -110,63 +103,63 @@ def _migrate_initiative(init: dict, *, dry_run: bool) -> dict:
         return {"init_id": init_id, "cold": True, "kept": len(prior_tasks),
                 "evicted": 0, "carried_done": 0}
 
-    # Index PRIOR by slug
+    # Index PRIOR by slug (carries forward; DD-010 forbids eviction).
     prior_by_slug: dict[str, dict] = {}
     for pt in prior_tasks:
         if not pt.get("title"):
             continue
         slug = pt.get("id") or slugify_task_title(pt["title"])
-        # Normalize stored id
         pt["id"] = slug
         prior_by_slug[slug] = pt
 
-    # Build new task set: every canonical slug
+    # Build new task set: union of PRIOR + canonical (session-summary)
+    # tasks. Under DD-010, PRIOR is preserved in full; sessions only
+    # add new items.
     kept_tasks: list[dict] = []
+    seen_slugs: set[str] = set()
+    # PRIOR first (preserved verbatim except for id/timestamps backfill)
+    for slug, pt in prior_by_slug.items():
+        rec = dict(pt)
+        rec["id"] = slug
+        if rec.get("done") and not rec.get("done_at"):
+            rec["done_at"] = _now_iso()
+        kept_tasks.append(rec)
+        seen_slugs.add(slug)
+    # Then canonical (only slugs not already in PRIOR)
     for slug, title in canonical_titles_by_slug.items():
-        pt = prior_by_slug.get(slug)
-        if pt:
-            # Carry done-monotone + existing timestamps
-            done = bool(pt.get("done")) or canonical_done.get(slug, False)
-            kept_tasks.append({
-                "id": slug,
-                "title": title,                          # latest wording
-                "done": done,
-                **({"done_evidence": pt["done_evidence"]}
-                   if pt.get("done_evidence") else {}),
-            })
-        else:
-            # Brand-new task surfaced by this round of session summaries
-            kept_tasks.append({
-                "id": slug,
-                "title": title,
-                "done": canonical_done.get(slug, False),
-            })
+        if slug in seen_slugs:
+            # Refresh title wording on the existing PRIOR entry; carry
+            # done-monotone if the session marks it done.
+            for r in kept_tasks:
+                if r["id"] == slug:
+                    r["title"] = title
+                    if canonical_done.get(slug) and not r.get("done"):
+                        r["done"] = True
+                        r["done_at"] = _now_iso()
+                    break
+            continue
+        kept_tasks.append({
+            "id": slug,
+            "title": title,
+            "done": canonical_done.get(slug, False),
+            **({"done_at": _now_iso()} if canonical_done.get(slug) else {}),
+        })
 
-    # Sort: not-done first (newest by alpha — best we can do here),
-    # then done; cap to MAX_VISIBLE_TASKS
+    # Sort: not-done first, then done; cap visible at MAX_VISIBLE_TASKS.
     not_done = [t for t in kept_tasks if not t["done"]]
     done_tasks = [t for t in kept_tasks if t["done"]]
     visible = not_done + done_tasks[:max(0, MAX_VISIBLE_TASKS - len(not_done))]
 
-    # Evicted: PRIOR slugs not in canonical
-    evicted = [pt for slug, pt in prior_by_slug.items()
-               if slug not in canonical_titles_by_slug]
-    # Also overflow from cap
+    # NO eviction under DD-010. Only overflow.
     overflow = kept_tasks[len(visible):]
 
     # Persist
     now = _now_iso()
     if not dry_run:
-        # Update init.tasks + tasks_archived_count
         init["tasks"] = visible
-        init["tasks_archived_count"] = len(evicted) + len(overflow)
-        # Append evicted to archive
+        init["tasks_archived_count"] = len(overflow)
         archive_existing = {a.get("id"): a for a in load_task_archive(init_id)
                             if a.get("id")}
-        for ev in evicted:
-            ev["evicted_at"] = now
-            ev["eviction_reason"] = "dd009_migration_no_evidence"
-            archive_existing[ev["id"]] = ev
         for ov in overflow:
             ov["evicted_at"] = now
             ov["eviction_reason"] = "overflow_capped"
@@ -181,9 +174,9 @@ def _migrate_initiative(init: dict, *, dry_run: bool) -> dict:
         "cold": False,
         "hot_sessions": hot_session_count,
         "kept": len(visible),
-        "evicted": len(evicted) + len(overflow),
+        "evicted": len(overflow),
         "carried_done": sum(1 for t in visible if t["done"]),
-        "evicted_titles": [t["title"] for t in evicted],
+        "evicted_titles": [],
         "overflow_titles": [t["title"] for t in overflow],
     }
 

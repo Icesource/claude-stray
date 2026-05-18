@@ -196,38 +196,40 @@ If empty, omit the `blockers` key.
 
 ## §7c — Aggregate tasks (hot initiatives only)
 
-DD-009 changed the task ownership model. Tasks are now bound to the
-initiative's **current** sessions; PRIOR's tasks no longer
-auto-carry-forward — they survive only when re-supported by current
-evidence. This stops cross-initiative pollution at the source.
+**Tasks are append-only from your perspective.** You may add new
+tasks (with hot-summary evidence) and you may flip a task's `done`
+from `false` to `true` (with §7d evidence). You may **NOT** drop a
+task, hide a task, or shrink the task list. A task's only path off
+an initiative is through the user clicking 🗑️ in the UI — that goes
+through DELETED_IDS, never your output.
 
-For each hot initiative, the `tasks[]` you emit must come from:
+For each hot initiative, the `tasks[]` you emit must include:
 
-1. **Hot session summaries' `tasks:` frontmatter** — each session in
-   this initiative's `sessions[]` has its own tasks block in its
-   summary. Those are the primary input.
-2. **PRIOR continuation** — when a PRIOR task is being described
-   anew (possibly with reworded title, possibly in a different
-   language), you may emit it WITH its PRIOR `id` field set. That's
-   how AI tells post-process "this is the same task, don't dedupe
-   into a separate slug." Without an `id`, post-process generates
-   one from `slugify(title)` — so reworded titles produce duplicates.
+1. **Every PRIOR task for this initiative** — carry them all forward,
+   even if no hot summary mentions them. They represent decisions /
+   work plan already accepted; you don't have permission to revoke.
+2. **New tasks from hot session summaries** — each session in this
+   initiative's `sessions[]` has its own `tasks:` frontmatter; add
+   anything not yet in PRIOR.
+3. **PRIOR continuations** — for a PRIOR task that's being described
+   anew (possibly reworded or translated), emit it WITH its PRIOR
+   `id` field set so post-process recognizes it as the same task
+   (instead of inserting a duplicate under a new slug).
 
 Hard rules:
 
 - **Reuse PRIOR's `id`** when a hot summary's task is semantically
   the same as a PRIOR task. Reworded titles, translations
   (中文 ↔ English), or expanded wordings all count as "same" if the
-  conceptual action is the same. The id field signals that
-  intent to post-process.
-- **Don't invent** tasks not present in any hot summary's tasks[]
-  AND not in PRIOR. (PRIOR-only tasks not re-evidenced get evicted
-  by post-process — that's intentional; see §3 of DD-009.)
+  conceptual action is the same.
 - **`done` is monotone** (§4): true wins forever. PRIOR done state
   is preserved by post-process even if you forget to emit done=true.
-- **Cap to 20 visible tasks**. Post-process performs the final cap
-  + archive write; you may emit up to ~25 if you're listing
-  recently-done as well as pending.
+- **Cap to 20 visible tasks** is enforced by post-process. You may
+  emit up to ~25 — extras get moved to the archive (still visible
+  via the "+N archived" UI expander, just collapsed by default).
+- **Output `tasks[]` count ≥ PRIOR `tasks[]` count.** A shrinking
+  count is the canonical signal that you tried to drop a task —
+  post-process will detect this and refuse the write.
 
 If neither PRIOR nor any hot summary has tasks for this initiative,
 omit the `tasks` key entirely (do NOT emit `[]`).
@@ -336,5 +338,8 @@ For your output, verify each of:
       PRIOR's `id`.
 - [ ] Every `done: true` flip from PRIOR's `done: false` has a
       `done_evidence` field with a short quote/paraphrase.
+- [ ] **`tasks[]` length ≥ PRIOR `tasks[]` length (DD-010 invariant).**
+      You cannot drop a task. If a shrink looks justified, leave it
+      to the user to delete via the UI — never delete via your output.
 
 If any check fails, fix and retry. **Never emit broken output**.
