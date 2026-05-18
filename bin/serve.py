@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import re
 import shutil
 import shlex
 import signal
@@ -52,6 +53,7 @@ RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
 TASK_ARCHIVE_DIR = CACHE_DIR / "task_archive"
+DERIVED_DIR = CACHE_DIR / "derived"
 
 PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
@@ -233,6 +235,45 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 data["cost_alarm"] = {"level": "ok", "_err": str(e)}
             return self._reply(200, data)
+        if path == "/api/derived":
+            # DD-006 derived feature payloads, all in one shot for the
+            # sidebar widgets. Each entry is the latest.json of that
+            # feature, or null if it hasn't been generated yet.
+            out = {}
+            for feat in ("suggestions", "tips", "wellness"):
+                f = DERIVED_DIR / feat / "latest.json"
+                try:
+                    out[feat] = json.loads(f.read_text()) if f.exists() else None
+                except Exception:
+                    out[feat] = None
+            # Weekly report: list available reports + most recent
+            weekly: dict = {"latest": None, "available": []}
+            reports_dir = DERIVED_DIR / "reports"
+            if reports_dir.is_dir():
+                md_files = sorted(reports_dir.glob("*.md"), reverse=True)
+                weekly["available"] = [f.stem for f in md_files][:12]
+                if md_files:
+                    weekly["latest"] = {
+                        "week": md_files[0].stem,
+                        "generated_at": json.loads(
+                            (reports_dir / ".last_run.json").read_text()
+                        ).get("at") if (reports_dir / ".last_run.json").exists() else None,
+                    }
+            out["weekly"] = weekly
+            return self._reply(200, out)
+        if path == "/api/weekly-report":
+            from urllib.parse import parse_qs as _pqs
+            qs = _pqs(urlparse(self.path).query)
+            week = (qs.get("week") or [""])[0]
+            if not re.match(r"^\d{4}-W\d{2}$", week):
+                return self._reply(400, {"error": "week must be YYYY-Www"})
+            md_path = DERIVED_DIR / "reports" / f"{week}.md"
+            if not md_path.exists():
+                return self._reply(404, {"error": "report not generated"})
+            return self._reply(200, {
+                "week": week,
+                "markdown": md_path.read_text(),
+            })
         if path == "/api/task-history":
             # Per-initiative task archive (DD-008). Read-only.
             qs = parse_qs(urlparse(self.path).query)

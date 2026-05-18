@@ -22,10 +22,15 @@ DO_BACKFILL=0
 DO_PAUSE=0
 DO_RESUME=0
 DO_STATUS=0
+DO_WEEKLY=0
+DO_NEXT_STEPS=0
+DO_TIPS=0
+DO_WELLNESS=0
 NO_OPEN=0
 DIAG_ARG=""
 COST_ARG=""
 PAUSE_REASON=""
+WEEKLY_ARG="1"
 
 # Pre-scan for --diagnose so we can capture its positional arg
 while [ $# -gt 0 ]; do
@@ -67,6 +72,20 @@ while [ $# -gt 0 ]; do
       DO_RESUME=1; shift ;;
     --status)
       DO_STATUS=1; shift ;;
+    --weekly-report)
+      DO_WEEKLY=1
+      shift
+      # Optional offset: --weekly-report 2 = 2 weeks ago
+      if [ $# -gt 0 ] && [ "${1:0:1}" != "-" ]; then
+        WEEKLY_ARG="$1"; shift
+      fi
+      ;;
+    --next-steps)
+      DO_NEXT_STEPS=1; shift ;;
+    --tips)
+      DO_TIPS=1; shift ;;
+    --wellness)
+      DO_WELLNESS=1; shift ;;
     -h|--help)
       cat <<EOF
 Usage: mindmap [--refresh] [--serve | --open | --html | --tree | --diagnose]
@@ -95,6 +114,16 @@ Without flags: render the cached mindmap to stdout as an ANSI tree.
                       dashboard banner.
   --resume            Release the kill switch.
   --status            Print current lifecycle JSON status.
+  --weekly-report [N] Generate weekly report for N weeks ago (default 1
+                      = last week). Output: cache/derived/reports/.
+                      Cost ~\$0.10-0.50 depending on week density.
+  --next-steps        Suggest 3 initiatives to focus on next.
+                      Cost ~\$0.05. Auto-runs after each classify.
+  --tips              Generate one data-anchored productivity tip.
+                      Cost ~\$0.03. Daily cadence recommended.
+  --wellness          Check for late-night / consecutive-day patterns
+                      and emit a kind nudge if any fire. Skips AI
+                      call entirely when no signal. Cost ~\$0.02 max.
 EOF
       exit 0
       ;;
@@ -136,6 +165,22 @@ fi
 
 if [ "$DO_STATUS" -eq 1 ]; then
   exec python3 "$REPO_ROOT/bin/_lifecycle.py" status
+fi
+
+if [ "$DO_WEEKLY" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/derived/weekly_report.py" --week "$WEEKLY_ARG"
+fi
+
+if [ "$DO_NEXT_STEPS" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/derived/next_steps.py"
+fi
+
+if [ "$DO_TIPS" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/derived/tips.py"
+fi
+
+if [ "$DO_WELLNESS" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/derived/wellness.py"
 fi
 
 if [ "$DO_BACKFILL" -eq 1 ]; then

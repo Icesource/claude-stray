@@ -103,6 +103,15 @@ LOCALE = {
         "archive_bucket_last_week": "上周归档",
         "archive_bucket_two_weeks_ago": "2 周前归档",
         "archive_bucket_older": "更早归档",
+        "weekly_label": "本周回顾",
+        "weekly_open_btn": "查看周报 ({})",
+        "weekly_loading": "加载中…",
+        "weekly_empty": "尚未生成,运行 mindmap --weekly-report 生成",
+        "weekly_modal_title": "周报 — {}",
+        "next_steps_label": "建议关注",
+        "next_steps_empty": "暂无建议",
+        "tip_label": "今日 tip",
+        "wellness_toast_prefix": "🌱 ",
         "refresh_started": "已触发后台刷新，稍后会有新数据提示",
         "toast_jumped": "已切换到 pane {}",
         "toast_already_focused": "已经在 pane {}",
@@ -213,6 +222,15 @@ LOCALE = {
         "archive_bucket_last_week": "Archived last week",
         "archive_bucket_two_weeks_ago": "Archived 2 weeks ago",
         "archive_bucket_older": "Archived earlier",
+        "weekly_label": "This week's recap",
+        "weekly_open_btn": "Open weekly report ({})",
+        "weekly_loading": "Loading…",
+        "weekly_empty": "Not generated yet — run `mindmap --weekly-report`",
+        "weekly_modal_title": "Weekly report — {}",
+        "next_steps_label": "Suggested focus",
+        "next_steps_empty": "No suggestions yet",
+        "tip_label": "Tip of the day",
+        "wellness_toast_prefix": "🌱 ",
         "refresh_started": "Background refresh kicked off; you'll see an update banner when done",
         "toast_jumped": "Focused pane {}",
         "toast_already_focused": "Already on pane {}",
@@ -672,6 +690,50 @@ article.card.archived { opacity: 0.7; }
 .card.has-modal-target:hover { border-color: var(--border-hover); }
 
 /* Detail modal */
+/* DD-006 derived sidebar widgets — server-mode only (payloads come
+   from cache/derived/, fetched via /api/derived). */
+.derived-widgets { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.derived-widget {
+  background: white; border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+  font-size: 12px;
+}
+.derived-widget .dw-head {
+  display: flex; align-items: center; gap: 6px;
+  margin-bottom: 6px;
+  font-weight: 500; color: var(--text);
+}
+.derived-widget .dw-label { font-size: 12px; }
+.derived-widget .dw-body { color: var(--text-dim); line-height: 1.55; }
+.derived-widget .dw-link {
+  background: var(--bg, #f7f8fa); border: none;
+  color: var(--accent, #2563eb); cursor: pointer;
+  font-size: 12px; padding: 4px 0; text-align: left; width: 100%;
+}
+.derived-widget .dw-link:hover { text-decoration: underline; }
+.derived-widget ul.dw-list { list-style: none; margin: 0; padding: 0; }
+.derived-widget ul.dw-list li {
+  padding: 6px 0; border-top: 1px dashed var(--border);
+  cursor: pointer;
+}
+.derived-widget ul.dw-list li:first-child { border-top: 0; }
+.derived-widget ul.dw-list li:hover .dw-init { color: var(--accent, #2563eb); }
+.derived-widget .dw-init { font-weight: 500; color: var(--text); }
+.derived-widget .dw-init-ws { font-size: 11px; color: var(--text-mute); }
+.derived-widget .dw-reason { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
+
+/* Weekly report rendered modal */
+.weekly-modal { max-width: 760px; }
+.weekly-modal .weekly-md { font-size: 13px; line-height: 1.7; }
+.weekly-modal .weekly-md h2 {
+  font-size: 14px; margin: 20px 0 6px; padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.weekly-modal .weekly-md h2:first-child { border-top: 0; padding-top: 0; }
+.weekly-modal .weekly-md h3 { font-size: 13px; margin: 12px 0 4px; }
+.weekly-modal .weekly-md ul { padding-left: 20px; }
+.weekly-modal .weekly-md a { color: var(--accent, #2563eb); }
+
 /* Lifecycle pause banner (DD-005). Stays at top of viewport when
    pipeline is paused; resume button is only wired in server mode. */
 .lifecycle-banner {
@@ -978,6 +1040,22 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   <aside class="nav-side">
     <div class="nav-title">__NAV_TITLE__</div>
     <ul class="ws-nav" id="ws-nav"></ul>
+    <!-- DD-006 derived widgets — only shown in server mode (the
+         payloads are fetched from cache/derived/). -->
+    <div class="derived-widgets" id="derived-widgets" hidden>
+      <div class="derived-widget" id="dw-weekly" hidden>
+        <div class="dw-head">📋 <span class="dw-label">__WEEKLY_LABEL__</span></div>
+        <button class="dw-link" id="dw-weekly-btn" type="button"></button>
+      </div>
+      <div class="derived-widget" id="dw-next" hidden>
+        <div class="dw-head">🎯 <span class="dw-label">__NEXT_STEPS_LABEL__</span></div>
+        <ul class="dw-list" id="dw-next-list"></ul>
+      </div>
+      <div class="derived-widget" id="dw-tip" hidden>
+        <div class="dw-head">💡 <span class="dw-label">__TIP_LABEL__</span></div>
+        <div class="dw-body" id="dw-tip-body"></div>
+      </div>
+    </div>
   </aside>
   <main class="board" id="board"></main>
 </div>
@@ -2299,6 +2377,148 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   // Initial paint
   updateLifecycleBanner();
 
+  // ---------- Derived widgets (DD-006) ----------------------------------
+  // Sidebar widgets for weekly report / next-steps / tips. Wellness is
+  // emitted as a top toast on dashboard load if a fresh nudge exists.
+  // Server-mode only — the payloads live under cache/derived/ and
+  // require /api/derived.
+  const $widgets = document.getElementById('derived-widgets');
+  const $dwNext = document.getElementById('dw-next');
+  const $dwNextList = document.getElementById('dw-next-list');
+  const $dwTip = document.getElementById('dw-tip');
+  const $dwTipBody = document.getElementById('dw-tip-body');
+  const $dwWeekly = document.getElementById('dw-weekly');
+  const $dwWeeklyBtn = document.getElementById('dw-weekly-btn');
+
+  async function loadDerived() {
+    if (!SERVER_MODE) return;
+    try {
+      const r = await fetch(SERVER_ORIGIN + '/api/derived');
+      if (!r.ok) return;
+      const d = await r.json();
+      let any = false;
+
+      // next-steps
+      if (d.suggestions && d.suggestions.items && d.suggestions.items.length) {
+        $dwNextList.innerHTML = '';
+        for (const it of d.suggestions.items) {
+          const li = document.createElement('li');
+          li.innerHTML =
+            '<div class="dw-init">' + esc(it.init_name || it.init_id) + '</div>' +
+            '<div class="dw-init-ws">' + esc(it.ws_name || '') + '</div>' +
+            '<div class="dw-reason">' + esc(it.reason || '') + '</div>';
+          li.addEventListener('click', () => {
+            const target = document.querySelector(
+              'article.card[data-init-id="' + CSS.escape(it.init_id) + '"]');
+            if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+          $dwNextList.appendChild(li);
+        }
+        $dwNext.hidden = false;
+        any = true;
+      }
+
+      // tip
+      if (d.tips && d.tips.tip) {
+        $dwTipBody.textContent = d.tips.tip;
+        $dwTip.hidden = false;
+        any = true;
+      }
+
+      // weekly
+      if (d.weekly && d.weekly.latest && d.weekly.latest.week) {
+        $dwWeeklyBtn.textContent =
+          I18N.weekly_open_btn.replace('{}', d.weekly.latest.week);
+        $dwWeeklyBtn.onclick = () => openWeeklyReport(d.weekly.latest.week);
+        $dwWeekly.hidden = false;
+        any = true;
+      }
+
+      $widgets.hidden = !any;
+
+      // Wellness — emit as one-time toast per generated_at
+      if (d.wellness && d.wellness.message) {
+        const seenKey = 'ccw-wellness-seen-' + (d.wellness.generated_at || '');
+        if (!localStorage.getItem(seenKey)) {
+          toast((I18N.wellness_toast_prefix || '') + d.wellness.message);
+          localStorage.setItem(seenKey, '1');
+        }
+      }
+    } catch (e) { /* server gone or transient */ }
+  }
+
+  async function openWeeklyReport(week) {
+    if (!SERVER_MODE) return;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+    const modal = document.createElement('div');
+    modal.className = 'modal weekly-modal';
+    modal.innerHTML =
+      '<div class="modal-head">' +
+        '<h2>' + esc(I18N.weekly_modal_title.replace('{}', week)) + '</h2>' +
+        '<button class="modal-close" type="button">×</button>' +
+      '</div>' +
+      '<div class="modal-section weekly-md">' + esc(I18N.weekly_loading) + '</div>';
+    overlay.appendChild(modal);
+    modal.querySelector('.modal-close').addEventListener('click', () => overlay.remove());
+    document.body.appendChild(overlay);
+
+    try {
+      const r = await fetch(
+        SERVER_ORIGIN + '/api/weekly-report?week=' + encodeURIComponent(week));
+      if (!r.ok) {
+        modal.querySelector('.weekly-md').textContent = 'HTTP ' + r.status;
+        return;
+      }
+      const j = await r.json();
+      // Minimal markdown renderer: headings + lists + links + paragraphs.
+      modal.querySelector('.weekly-md').innerHTML = renderSimpleMarkdown(j.markdown || '');
+    } catch (e) {
+      modal.querySelector('.weekly-md').textContent = 'load failed: ' + (e.message || e);
+    }
+  }
+
+  // Tiny markdown → HTML. Handles the subset our weekly report uses:
+  // # H1, ## H2, ### H3, * bullets, - bullets, [text](url), paragraphs,
+  // <!-- comments --> (stripped). Not a full md parser — that would
+  // bring in a dep we don't need.
+  function renderSimpleMarkdown(md) {
+    md = md.replace(/<!--[\s\S]*?-->/g, '').trim();
+    const lines = md.split('\n');
+    const out = [];
+    let inList = false;
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const linkify = (s) => esc(s)
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+               '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    for (let raw of lines) {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) { closeList(); continue; }
+      const h = /^(#{1,3})\s+(.+)/.exec(line);
+      if (h) {
+        closeList();
+        const lvl = Math.min(3, h[1].length + 1);   // # → h2, ## → h3 (h1 is page title)
+        out.push('<h' + lvl + '>' + linkify(h[2]) + '</h' + lvl + '>');
+        continue;
+      }
+      const b = /^[-*]\s+(.+)/.exec(line);
+      if (b) {
+        if (!inList) { out.push('<ul>'); inList = true; }
+        out.push('<li>' + linkify(b[1]) + '</li>');
+        continue;
+      }
+      closeList();
+      out.push('<p>' + linkify(line) + '</p>');
+    }
+    closeList();
+    return out.join('\n');
+  }
+
+  if (SERVER_MODE) loadDerived();
+
   if (SERVER_MODE) {
     // First poll runs slightly delayed so the boot render isn't fighting it.
     setTimeout(pollAndApply, 3000);
@@ -2407,6 +2627,9 @@ def render_html(data: dict, L: dict, lang: str) -> str:
     out = out.replace("__MANUAL_REFRESH__", html_lib.escape(L["manual_refresh"]))
     out = out.replace("__LIFECYCLE_PAUSED__", html_lib.escape(L["lifecycle_paused"]))
     out = out.replace("__LIFECYCLE_RESUME__", html_lib.escape(L["lifecycle_resume"]))
+    out = out.replace("__WEEKLY_LABEL__", html_lib.escape(L["weekly_label"]))
+    out = out.replace("__NEXT_STEPS_LABEL__", html_lib.escape(L["next_steps_label"]))
+    out = out.replace("__TIP_LABEL__", html_lib.escape(L["tip_label"]))
     out = out.replace("__DATA_JSON__", json_for_script(slim))
     out = out.replace("__I18N_JSON__", json_for_script(i18n_for_js))
     out = out.replace("__LOCATIONS_JSON__", json_for_script(locations))

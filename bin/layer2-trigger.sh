@@ -107,6 +107,14 @@ while :; do
   break
 done
 
+# DD-006: after a successful classify, trigger the derived next_steps
+# generator. It's debounced (default 30 min) so back-to-back classify
+# runs from a busy day won't spam AI calls. Best-effort — failures
+# are logged but don't break this script's exit code.
+if [ "$rc" -eq 0 ]; then
+  python3 "$REPO_ROOT/bin/derived/next_steps.py" >> "$LOG" 2>&1 || true
+fi
+
 # Lock released by EXIT trap.
 echo "[layer2-trigger] done ($runs runs, rc=$rc)" >> "$LOG"
 exit $rc
