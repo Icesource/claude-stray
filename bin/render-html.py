@@ -111,6 +111,11 @@ LOCALE = {
         "next_steps_label": "建议关注",
         "next_steps_empty": "暂无建议",
         "tip_label": "今日 tip",
+        "tip_ticker_hint": "点击切换下一条",
+        "tip_kind_work": "工作",
+        "tip_kind_wisdom": "感悟",
+        "tip_kind_rest": "休息",
+        "tip_kind_curiosity": "知识",
         "wellness_toast_prefix": "🌱 ",
         "refresh_started": "已触发后台刷新，稍后会有新数据提示",
         "toast_jumped": "已切换到 pane {}",
@@ -230,6 +235,11 @@ LOCALE = {
         "next_steps_label": "Suggested focus",
         "next_steps_empty": "No suggestions yet",
         "tip_label": "Tip of the day",
+        "tip_ticker_hint": "Click to cycle",
+        "tip_kind_work": "Work",
+        "tip_kind_wisdom": "Wisdom",
+        "tip_kind_rest": "Rest",
+        "tip_kind_curiosity": "Did you know",
         "wellness_toast_prefix": "🌱 ",
         "refresh_started": "Background refresh kicked off; you'll see an update banner when done",
         "toast_jumped": "Focused pane {}",
@@ -416,6 +426,41 @@ header.top {
 }
 header.top h1 { font-size: 15px; font-weight: 600; margin: 0; }
 header.top .meta { color: var(--text-dim); font-size: 12px; }
+/* DD-006 header tips ticker — rotates work/wisdom/rest/curiosity. */
+.tips-ticker {
+  display: flex; align-items: center; gap: 8px;
+  max-width: 520px; min-width: 200px;
+  padding: 5px 12px;
+  background: var(--bg, #f7f8fa);
+  border-radius: 999px;
+  font-size: 12px; color: var(--text-dim);
+  cursor: pointer; user-select: none;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+.tips-ticker[hidden] { display: none; }
+.tips-ticker:hover { background: var(--bg-mute, #eef0f4); }
+.tips-ticker .tt-kind {
+  flex-shrink: 0;
+  padding: 1px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 600;
+  background: white; color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+.tips-ticker .tt-kind.work       { background: #e0e7ff; color: #4338ca; }
+.tips-ticker .tt-kind.wisdom     { background: #fef3c7; color: #92400e; }
+.tips-ticker .tt-kind.rest       { background: #d1fae5; color: #065f46; }
+.tips-ticker .tt-kind.curiosity  { background: #fce7f3; color: #9d174d; }
+.tips-ticker .tt-text {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text);
+}
+.tips-ticker.cycling .tt-text { animation: tipFade 0.25s; }
+@keyframes tipFade {
+  0%   { opacity: 0; transform: translateY(-2px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
 header.top .grow { flex: 1; }
 header.top .status-pill {
   font-size: 11px; padding: 3px 10px;
@@ -723,16 +768,37 @@ article.card.archived { opacity: 0.7; }
 .derived-widget .dw-reason { color: var(--text-dim); font-size: 11px; margin-top: 2px; }
 
 /* Weekly report rendered modal */
-.weekly-modal { max-width: 760px; }
-.weekly-modal .weekly-md { font-size: 13px; line-height: 1.7; }
-.weekly-modal .weekly-md h2 {
-  font-size: 14px; margin: 20px 0 6px; padding-top: 6px;
-  border-top: 1px solid var(--border);
+.weekly-modal { max-width: 860px; }
+.weekly-modal .weekly-md {
+  font-size: 14px; line-height: 1.75; color: var(--text);
 }
-.weekly-modal .weekly-md h2:first-child { border-top: 0; padding-top: 0; }
-.weekly-modal .weekly-md h3 { font-size: 13px; margin: 12px 0 4px; }
-.weekly-modal .weekly-md ul { padding-left: 20px; }
-.weekly-modal .weekly-md a { color: var(--accent, #2563eb); }
+.weekly-modal .weekly-md > h2,
+.weekly-modal .weekly-md > h3 {
+  margin: 24px 0 8px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-weight: 600;
+}
+.weekly-modal .weekly-md > h2:first-child,
+.weekly-modal .weekly-md > h3:first-child {
+  border-top: 0; padding-top: 0; margin-top: 0;
+}
+.weekly-modal .weekly-md h2 { font-size: 16px; }
+.weekly-modal .weekly-md h3 { font-size: 14px; color: var(--text); }
+.weekly-modal .weekly-md p { margin: 8px 0; }
+.weekly-modal .weekly-md ul {
+  padding-left: 22px; margin: 8px 0;
+}
+.weekly-modal .weekly-md li { margin: 4px 0; }
+.weekly-modal .weekly-md strong { font-weight: 600; color: var(--text); }
+.weekly-modal .weekly-md code {
+  background: var(--bg, #f4f5f7); padding: 1px 6px;
+  border-radius: 4px; font-size: 12.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.weekly-modal .weekly-md a {
+  color: var(--accent, #2563eb); text-decoration: none;
+}
+.weekly-modal .weekly-md a:hover { text-decoration: underline; }
 
 /* Lifecycle pause banner (DD-005). Stays at top of viewport when
    pipeline is paused; resume button is only wired in server mode. */
@@ -1016,6 +1082,12 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 <header class="top">
   <h1>__HEADER__</h1>
   <span class="meta">__GENERATED__</span>
+  <!-- DD-006 tips ticker — rotates every 25s, click to advance.
+       Populated by loadDerived(); hidden until at least one tip arrives. -->
+  <div class="tips-ticker" id="tips-ticker" hidden title="__TIP_TICKER_HINT__">
+    <span class="tt-kind" id="tt-kind"></span>
+    <span class="tt-text" id="tt-text"></span>
+  </div>
   <span class="grow"></span>
   <button class="data-stale" id="data-stale" type="button">__DATA_STALE__</button>
   <button class="sync-btn" id="manual-refresh" type="button" title="__MANUAL_REFRESH__">🔄</button>
@@ -1050,10 +1122,6 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       <div class="derived-widget" id="dw-next" hidden>
         <div class="dw-head">🎯 <span class="dw-label">__NEXT_STEPS_LABEL__</span></div>
         <ul class="dw-list" id="dw-next-list"></ul>
-      </div>
-      <div class="derived-widget" id="dw-tip" hidden>
-        <div class="dw-head">💡 <span class="dw-label">__TIP_LABEL__</span></div>
-        <div class="dw-body" id="dw-tip-body"></div>
       </div>
     </div>
   </aside>
@@ -2395,10 +2463,47 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   const $widgets = document.getElementById('derived-widgets');
   const $dwNext = document.getElementById('dw-next');
   const $dwNextList = document.getElementById('dw-next-list');
-  const $dwTip = document.getElementById('dw-tip');
-  const $dwTipBody = document.getElementById('dw-tip-body');
   const $dwWeekly = document.getElementById('dw-weekly');
   const $dwWeeklyBtn = document.getElementById('dw-weekly-btn');
+  // Header tips ticker (DD-006 v2)
+  const $tipsTicker = document.getElementById('tips-ticker');
+  const $ttKind = document.getElementById('tt-kind');
+  const $ttText = document.getElementById('tt-text');
+  let _tipsPool = [];   // [{kind, text, pattern?}]
+  let _tipsIdx = 0;
+  let _tipsTimer = null;
+  const TIP_KIND_I18N = {
+    work:      I18N.tip_kind_work,
+    wisdom:    I18N.tip_kind_wisdom,
+    rest:      I18N.tip_kind_rest,
+    curiosity: I18N.tip_kind_curiosity,
+  };
+  function renderTipAt(i) {
+    if (!_tipsPool.length) return;
+    _tipsIdx = ((i % _tipsPool.length) + _tipsPool.length) % _tipsPool.length;
+    const t = _tipsPool[_tipsIdx];
+    $ttKind.className = 'tt-kind ' + (t.kind || '');
+    $ttKind.textContent = TIP_KIND_I18N[t.kind] || t.kind || '?';
+    $ttText.textContent = t.text || '';
+    $tipsTicker.title = (t.text || '') + '  ·  ' + (I18N.tip_ticker_hint || '');
+    // animate via class toggle
+    $tipsTicker.classList.remove('cycling');
+    void $tipsTicker.offsetWidth;
+    $tipsTicker.classList.add('cycling');
+  }
+  function scheduleTipsRotation() {
+    if (_tipsTimer) clearInterval(_tipsTimer);
+    if (_tipsPool.length < 2) return;
+    _tipsTimer = setInterval(() => renderTipAt(_tipsIdx + 1), 25 * 1000);
+  }
+  if ($tipsTicker) {
+    $tipsTicker.addEventListener('click', () => {
+      if (!_tipsPool.length) return;
+      renderTipAt(_tipsIdx + 1);
+      // reset auto-cycle so a manual click resets the 25s timer
+      scheduleTipsRotation();
+    });
+  }
 
   async function loadDerived() {
     if (!SERVER_MODE) return;
@@ -2428,11 +2533,20 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         any = true;
       }
 
-      // tip
-      if (d.tips && d.tips.tip) {
-        $dwTipBody.textContent = d.tips.tip;
-        $dwTip.hidden = false;
-        any = true;
+      // tips: header ticker, multi-category rotation
+      if (d.tips && Array.isArray(d.tips.tips) && d.tips.tips.length) {
+        _tipsPool = d.tips.tips.slice();
+        _tipsIdx = 0;
+        renderTipAt(0);
+        scheduleTipsRotation();
+        $tipsTicker.hidden = false;
+      } else if (d.tips && d.tips.tip) {
+        // Backward-compat with v1 schema (single-tip), in case an old
+        // tips/latest.json is still on disk.
+        _tipsPool = [{ kind: d.tips.pattern ? 'work' : 'wisdom',
+                       text: d.tips.tip }];
+        renderTipAt(0);
+        $tipsTicker.hidden = false;
       }
 
       // weekly
@@ -2492,36 +2606,49 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   }
 
   // Tiny markdown → HTML. Handles the subset our weekly report uses:
-  // # H1, ## H2, ### H3, * bullets, - bullets, [text](url), paragraphs,
-  // <!-- comments --> (stripped). Not a full md parser — that would
-  // bring in a dep we don't need.
+  // headings (# / ## / ###), bullet lists (- / *), [text](url),
+  // **bold**, `code`, paragraphs, HTML comments (stripped).
+  // Not a full markdown parser — bringing in marked.js would be
+  // overkill for one feature. Keeps escaping correct (esc first, then
+  // re-inject the allowed HTML for inline formatters).
   function renderSimpleMarkdown(md) {
     md = md.replace(/<!--[\s\S]*?-->/g, '').trim();
+    const inlineFmt = (s) => {
+      let out = esc(s);
+      // Links: [text](url)
+      out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+                        '<a href="$2" target="_blank" rel="noopener">$1</a>');
+      // Bold: **text** (not *text* because the report uses ** consistently
+      // and single-star can conflict with list bullets)
+      out = out.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+      // Inline code: `text` (avoid matching ``` fences which are
+      // pre-stripped by Haiku's output; this is a line-level regex)
+      out = out.replace(/`([^`]+?)`/g, '<code>$1</code>');
+      return out;
+    };
     const lines = md.split('\n');
     const out = [];
     let inList = false;
     const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
-    const linkify = (s) => esc(s)
-      .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
-               '<a href="$2" target="_blank" rel="noopener">$1</a>');
     for (let raw of lines) {
       const line = raw.replace(/\s+$/, '');
       if (!line.trim()) { closeList(); continue; }
       const h = /^(#{1,3})\s+(.+)/.exec(line);
       if (h) {
         closeList();
-        const lvl = Math.min(3, h[1].length + 1);   // # → h2, ## → h3 (h1 is page title)
-        out.push('<h' + lvl + '>' + linkify(h[2]) + '</h' + lvl + '>');
+        // # → h2, ## → h3, ### → h3 (h1 is reserved for modal title)
+        const lvl = Math.min(3, h[1].length + 1);
+        out.push('<h' + lvl + '>' + inlineFmt(h[2]) + '</h' + lvl + '>');
         continue;
       }
       const b = /^[-*]\s+(.+)/.exec(line);
       if (b) {
         if (!inList) { out.push('<ul>'); inList = true; }
-        out.push('<li>' + linkify(b[1]) + '</li>');
+        out.push('<li>' + inlineFmt(b[1]) + '</li>');
         continue;
       }
       closeList();
-      out.push('<p>' + linkify(line) + '</p>');
+      out.push('<p>' + inlineFmt(line) + '</p>');
     }
     closeList();
     return out.join('\n');
@@ -2640,6 +2767,7 @@ def render_html(data: dict, L: dict, lang: str) -> str:
     out = out.replace("__WEEKLY_LABEL__", html_lib.escape(L["weekly_label"]))
     out = out.replace("__NEXT_STEPS_LABEL__", html_lib.escape(L["next_steps_label"]))
     out = out.replace("__TIP_LABEL__", html_lib.escape(L["tip_label"]))
+    out = out.replace("__TIP_TICKER_HINT__", html_lib.escape(L["tip_ticker_hint"]))
     out = out.replace("__DATA_JSON__", json_for_script(slim))
     out = out.replace("__I18N_JSON__", json_for_script(i18n_for_js))
     out = out.replace("__LOCATIONS_JSON__", json_for_script(locations))

@@ -32,6 +32,8 @@ import re
 import shutil
 import shlex
 import signal
+import time
+from datetime import datetime, timezone
 import subprocess
 import sys
 import threading
@@ -112,6 +114,123 @@ def _emit_cost_alarm_if_worsened(snap: dict) -> None:
         # Always update last-seen so a sustained 'warn' eventually re-emits
         # only if it climbs to 'halt' (or back to warn after a brief 'ok').
         _last_alarm_level = new_level
+
+
+# ---------- DD-006 derived scheduler --------------------------------------
+#
+# Triggered from inside serve() so it lives only while the dashboard is
+# being served (matches the user's expectation: "AI works while I'm
+# looking; doesn't run silently in the background forever").
+#
+# - tips: run once on serve startup, then every 6h
+#         (tips.py also has its own 6h debounce, this is belt+suspenders)
+# - weekly_report: every Friday after 12:00 local, if this week's
+#         report hasn't been generated yet
+# - wellness: piggybacks on the tips tick — signal-gated, costs
+#         nothing when no late-nights / consecutive-days signal fires
+
+_TIPS_INTERVAL_SECS = 6 * 3600
+_SCHED_TICK_SECS = 60          # check every minute
+_WEEKLY_TRIGGER_HOUR = 12      # local time
+_WEEKLY_TRIGGER_WEEKDAY = 4    # Mon=0 ... Fri=4
+
+def _run_derived(script_name: str, extra_args: list[str] | None = None) -> None:
+    """Spawn a derived feature script in a worker process, log result.
+    Non-blocking from the scheduler's POV — we fire-and-wait inside the
+    scheduler thread, but the thread itself is detached from serve's
+    main loop."""
+    argv = ["python3", str(REPO_ROOT / "bin" / "derived" / script_name)]
+    if extra_args:
+        argv.extend(extra_args)
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=400)
+        if proc.returncode == 0:
+            # Last line of stderr is usually the "wrote ... cost=..." note
+            tail = proc.stderr.strip().splitlines()[-1:] if proc.stderr else []
+            for line in tail:
+                print(f"[sched] {script_name}: {line}", file=sys.stderr)
+        elif proc.returncode == 2:
+            pass   # skipped (debounced / no signal); no spam
+        else:
+            print(f"[sched] {script_name}: rc={proc.returncode}; "
+                  f"{(proc.stderr or '').strip()[:200]}", file=sys.stderr)
+    except subprocess.TimeoutExpired:
+        print(f"[sched] {script_name}: timeout", file=sys.stderr)
+    except Exception as e:
+        print(f"[sched] {script_name}: spawn failed: {e}", file=sys.stderr)
+
+
+def _is_friday_noon_window(now: datetime, last_weekly_iso: str | None) -> bool:
+    """True if it's after 12:00 on Friday AND this week's report hasn't
+    been generated yet. The week is identified by ISO week, so a single
+    successful Friday-afternoon run satisfies the whole week."""
+    local = now.astimezone()
+    if local.weekday() != _WEEKLY_TRIGGER_WEEKDAY:
+        return False
+    if local.hour < _WEEKLY_TRIGGER_HOUR:
+        return False
+    if not last_weekly_iso:
+        return True
+    try:
+        last = datetime.fromisoformat(last_weekly_iso.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    last_local = last.astimezone()
+    # Same ISO week → already generated
+    return local.isocalendar()[:2] != last_local.isocalendar()[:2]
+
+
+def _read_last_run(feature: str) -> str | None:
+    p = CACHE_DIR / "derived" / feature.split(".")[-1] / ".last_run.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text()).get("at")
+    except Exception:
+        return None
+
+
+def _derived_scheduler_loop(stop_event) -> None:
+    """Tick every minute; respect each feature's gating."""
+    # On startup: kick off tips immediately if it's overdue.
+    last_tips_at = _read_last_run("derived.tips")
+    if last_tips_at is None or (
+        datetime.now(timezone.utc)
+        - datetime.fromisoformat(last_tips_at.replace("Z", "+00:00"))
+    ).total_seconds() >= _TIPS_INTERVAL_SECS:
+        print("[sched] tips: due at startup", file=sys.stderr)
+        _run_derived("tips.py")
+    # Wellness piggybacks on the tips tick (cheap; signal-gated).
+    _run_derived("wellness.py")
+
+    while not stop_event.is_set():
+        # Sleep in small slices so we can exit promptly on shutdown.
+        if stop_event.wait(_SCHED_TICK_SECS):
+            return
+        now = datetime.now(timezone.utc)
+
+        # Tips: every 6h since last successful run.
+        last_tips_at = _read_last_run("derived.tips")
+        if last_tips_at:
+            try:
+                dt = datetime.fromisoformat(last_tips_at.replace("Z", "+00:00"))
+                elapsed = (now - dt).total_seconds()
+            except ValueError:
+                elapsed = _TIPS_INTERVAL_SECS
+            if elapsed >= _TIPS_INTERVAL_SECS:
+                print("[sched] tips: 6h elapsed", file=sys.stderr)
+                _run_derived("tips.py")
+                _run_derived("wellness.py")
+        else:
+            _run_derived("tips.py")
+
+        # Weekly: Friday 12:00 local, once per ISO week.
+        last_weekly_at = _read_last_run("derived.weekly_report")
+        if _is_friday_noon_window(now, last_weekly_at):
+            print("[sched] weekly_report: Friday noon window",
+                  file=sys.stderr)
+            _run_derived("weekly_report.py", ["--week", "0"])
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -505,9 +624,25 @@ def serve(open_browser: bool = True):
         signal.signal(signal.SIGINT, trigger_shutdown)
         signal.signal(signal.SIGTERM, trigger_shutdown)
 
+        # Background scheduler for DD-006 derived features.
+        # Lives for the lifetime of serve — when serve dies, the
+        # scheduler dies with it. Daemon thread so it can't keep the
+        # process alive past httpd.shutdown().
+        stop_scheduler = threading.Event()
+        sched_thread = threading.Thread(
+            target=_derived_scheduler_loop,
+            args=(stop_scheduler,),
+            daemon=True,
+            name="ccw-derived-sched",
+        )
+        sched_thread.start()
+        print("[serve] derived scheduler: tips every 6h, weekly Fri noon",
+              file=sys.stderr)
+
         try:
             httpd.serve_forever()
         finally:
+            stop_scheduler.set()
             httpd.server_close()
             print("[serve] stopped")
         return 0
