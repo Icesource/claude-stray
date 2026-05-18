@@ -87,6 +87,31 @@ def safe_dir_name(s: str) -> str:
     return "".join(c if c.isalnum() or c in "_.-" else "_" for c in (s or "unknown"))
 
 
+# Cost-alarm state for "emit on worsening only" — module-level so it
+# survives across requests.
+_LEVEL_ORDER = {"ok": 0, "warn": 1, "halt": 2}
+_last_alarm_level = "ok"
+_last_alarm_lock = threading.Lock()
+
+
+def _emit_cost_alarm_if_worsened(snap: dict) -> None:
+    """Print a stderr line only when level transitioned to a worse state.
+    No-op when level stayed the same or improved (improvement is good
+    news, no need to spam logs)."""
+    global _last_alarm_level
+    new_level = snap.get("level", "ok")
+    with _last_alarm_lock:
+        if _LEVEL_ORDER.get(new_level, 0) > _LEVEL_ORDER.get(_last_alarm_level, 0):
+            try:
+                from _cost_alarm import format_console_line
+                print(format_console_line(snap), file=sys.stderr)
+            except Exception:
+                pass
+        # Always update last-seen so a sustained 'warn' eventually re-emits
+        # only if it climbs to 'halt' (or back to warn after a brief 'ok').
+        _last_alarm_level = new_level
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ccw-helper/2"
 
@@ -190,13 +215,23 @@ class Handler(BaseHTTPRequestHandler):
                                 "archived_at": rec.get("archived_at"),
                             })
             data["archived"] = archived
+            sys.path.insert(0, str(REPO_ROOT / "bin"))
             # Lifecycle state so the dashboard banner can hot-refresh.
             try:
-                sys.path.insert(0, str(REPO_ROOT / "bin"))
                 from _lifecycle import status as _lifecycle_status
                 data["lifecycle"] = _lifecycle_status()
             except Exception as e:
                 data["lifecycle"] = {"paused": False, "_err": str(e)}
+            # Cost-alarm snapshot. Always include in response (future DD-004
+            # banner reads this). Console emits only when level WORSENS
+            # (avoids spam from repeated polls at the same level).
+            try:
+                from _cost_alarm import snapshot as _cost_snap, format_console_line
+                snap = _cost_snap()
+                data["cost_alarm"] = snap
+                _emit_cost_alarm_if_worsened(snap)
+            except Exception as e:
+                data["cost_alarm"] = {"level": "ok", "_err": str(e)}
             return self._reply(200, data)
         if path == "/api/task-history":
             # Per-initiative task archive (DD-008). Read-only.
@@ -397,6 +432,16 @@ def serve(open_browser: bool = True):
         print(f"        GET  /ping        /api/data    /api/task-history?init_id=<id>")
         print(f"        POST /api/save    /api/refresh  /api/lifecycle  /focus  /newpane")
         print(f"[serve] Ctrl-C to stop.\n")
+
+        # Cost-alarm snapshot at startup — prints to stderr only if not 'ok'
+        # (avoids noisy "all green" logs on healthy boots).
+        try:
+            from _cost_alarm import snapshot as _cost_snap, format_console_line
+            _snap = _cost_snap()
+            if _snap["level"] != "ok":
+                print(format_console_line(_snap), file=sys.stderr)
+        except Exception as e:
+            print(f"[serve] cost-alarm init failed: {e}", file=sys.stderr)
 
         if open_browser:
             try:
