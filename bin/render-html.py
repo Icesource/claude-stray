@@ -29,6 +29,21 @@ CONFIG_FILE = REPO_ROOT / "cache" / "config.json"
 LOCATIONS_FILE = REPO_ROOT / "cache" / "session_locations.json"
 ARCHIVE_DIR = REPO_ROOT / "cache" / "archive"
 OUTPUT_FILE = REPO_ROOT / "cache" / "mindmap.html"
+PET_SPRITE_FILE = REPO_ROOT / "bin" / "assets" / "pet" / "cat-walk.png"
+
+
+def _pet_data_url() -> str:
+    """Encode the walking-cat spritesheet as a data: URL so it ships
+    inline with the HTML (works in both static and server mode). See
+    bin/assets/pet/README.md for asset provenance and license."""
+    import base64
+    try:
+        b = PET_SPRITE_FILE.read_bytes()
+        return "data:image/png;base64," + base64.b64encode(b).decode("ascii")
+    except OSError:
+        # If the asset is missing, return empty — CSS will gracefully
+        # show no pet rather than a broken image.
+        return ""
 
 
 LOCALE = {
@@ -112,11 +127,19 @@ LOCALE = {
         "next_steps_label": "建议关注",
         "next_steps_empty": "暂无建议",
         "tip_label": "今日 tip",
-        "tip_ticker_hint": "点击切换下一条",
+        "tip_ticker_hint": "点一下听下一句",
         "tip_kind_work": "工作",
         "tip_kind_wisdom": "感悟",
         "tip_kind_rest": "休息",
         "tip_kind_curiosity": "知识",
+        "tip_emoji_work": "🧑‍💻",
+        "tip_emoji_wisdom": "🤔",
+        "tip_emoji_rest": "☕",
+        "tip_emoji_curiosity": "💡",
+        "tip_lead_work": "嘿,顺手说一句:",
+        "tip_lead_wisdom": "嗯…",
+        "tip_lead_rest": "歇会儿?",
+        "tip_lead_curiosity": "你知道吗:",
         "wellness_toast_prefix": "🌱 ",
         "refresh_started": "已触发后台刷新，稍后会有新数据提示",
         "toast_jumped": "已切换到 pane {}",
@@ -237,11 +260,19 @@ LOCALE = {
         "next_steps_label": "Suggested focus",
         "next_steps_empty": "No suggestions yet",
         "tip_label": "Tip of the day",
-        "tip_ticker_hint": "Click to cycle",
+        "tip_ticker_hint": "Tap for the next one",
         "tip_kind_work": "Work",
         "tip_kind_wisdom": "Wisdom",
         "tip_kind_rest": "Rest",
         "tip_kind_curiosity": "Did you know",
+        "tip_emoji_work": "🧑‍💻",
+        "tip_emoji_wisdom": "🤔",
+        "tip_emoji_rest": "☕",
+        "tip_emoji_curiosity": "💡",
+        "tip_lead_work": "Hey, quick one —",
+        "tip_lead_wisdom": "Hmm…",
+        "tip_lead_rest": "Psst, break?",
+        "tip_lead_curiosity": "Did you know:",
         "wellness_toast_prefix": "🌱 ",
         "refresh_started": "Background refresh kicked off; you'll see an update banner when done",
         "toast_jumped": "Focused pane {}",
@@ -428,40 +459,128 @@ header.top {
 }
 header.top h1 { font-size: 15px; font-weight: 600; margin: 0; }
 header.top .meta { color: var(--text-dim); font-size: 12px; }
-/* DD-006 header tips ticker — rotates work/wisdom/rest/curiosity. */
-.tips-ticker {
-  display: flex; align-items: center; gap: 8px;
-  max-width: 520px; min-width: 200px;
-  padding: 5px 12px;
-  background: var(--bg, #f7f8fa);
-  border-radius: 999px;
-  font-size: 12px; color: var(--text-dim);
+/* DD-006 tips bubble — floats in the top-right of the cards area as
+   a compact speech bubble. Emoji is the "speaker", balloon is the
+   bubble body with a tail pointing back at the emoji. Click to cycle. */
+.tips-bubble {
+  /* Top-right empty band, fixed. Sits in the negative space between
+     the toolbar (filter chips + search) and the first row of cards —
+     a natural transition strip on-axis with the user's first glance
+     when the page loads (top of Z-pattern). Doesn't overlap any
+     existing chrome or card content. */
+  position: fixed;
+  top: 150px;
+  right: 100px;
+  z-index: 6;
+  width: 320px;
+  display: flex; align-items: flex-end; gap: 4px;
+  padding: 0;
   cursor: pointer; user-select: none;
-  overflow: hidden;
-  transition: background 0.15s;
+  background: transparent;
 }
-.tips-ticker[hidden] { display: none; }
-.tips-ticker:hover { background: var(--bg-mute, #eef0f4); }
-.tips-ticker .tt-kind {
-  flex-shrink: 0;
-  padding: 1px 8px; border-radius: 999px;
-  font-size: 10px; font-weight: 600;
-  background: white; color: var(--text-dim);
-  letter-spacing: 0.02em;
+.tips-bubble[hidden] { display: none; }
+.tips-bubble { cursor: grab; }
+.tips-bubble.dragging { cursor: grabbing; }
+.tips-bubble.dragging .tt-balloon { box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
+.tips-bubble .tt-source {
+  display: inline-block; margin-left: 6px;
+  text-decoration: none; font-size: 13px;
+  color: var(--text-mute); opacity: 0.7;
+  border-radius: 6px; padding: 0 4px;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
-.tips-ticker .tt-kind.work       { background: #e0e7ff; color: #4338ca; }
-.tips-ticker .tt-kind.wisdom     { background: #fef3c7; color: #92400e; }
-.tips-ticker .tt-kind.rest       { background: #d1fae5; color: #065f46; }
-.tips-ticker .tt-kind.curiosity  { background: #fce7f3; color: #9d174d; }
-.tips-ticker .tt-text {
-  flex: 1; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.tips-bubble .tt-source[hidden] { display: none; }
+.tips-bubble .tt-source:hover {
+  opacity: 1; background: rgba(0,0,0,0.06);
   color: var(--text);
 }
-.tips-ticker.cycling .tt-text { animation: tipFade 0.25s; }
-@keyframes tipFade {
-  0%   { opacity: 0; transform: translateY(-2px); }
-  100% { opacity: 1; transform: translateY(0); }
+/* Pixel-art walking-cat companion. Sprite is a 432×60 sheet of 6
+   frames (72×60 each), shipped inline as a data: URL — see
+   bin/assets/pet/README.md for provenance. CSS `steps()` flips
+   through frames for the walk cycle; `image-rendering: pixelated`
+   keeps the art crisp at any zoom. */
+.tips-bubble .tt-pet {
+  flex-shrink: 0;
+  width: 72px; height: 60px;
+  background-image: url("__PET_DATA_URL__");
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 432px 60px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  animation: pet-walk 0.9s steps(6) infinite;
+  transform-origin: bottom center;
+  transition: transform 0.15s ease;
+}
+@keyframes pet-walk {
+  from { background-position:    0 0; }
+  to   { background-position: -432px 0; }
+}
+.tips-bubble:hover .tt-pet { transform: scale(1.1); }
+.tips-bubble.cycling .tt-pet {
+  /* Pause walk briefly + do a little hop when a new tip arrives. */
+  animation: pet-hop 0.55s cubic-bezier(0.34, 1.56, 0.64, 1),
+             pet-walk 0.9s steps(6) infinite 0.55s;
+}
+@keyframes pet-hop {
+  0%   { transform: translateY(0)    scale(1); }
+  40%  { transform: translateY(-10px) scale(1.05); }
+  70%  { transform: translateY(0)    scale(1, 0.95); }
+  100% { transform: translateY(0)    scale(1); }
+}
+.tips-bubble .tt-balloon {
+  position: relative;
+  flex: 1; min-width: 0;
+  padding: 10px 14px;
+  background: white;
+  border-radius: 16px 16px 16px 4px;   /* asymmetric — tail-side flat */
+  box-shadow: 0 4px 14px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.05);
+  font-size: 13px; line-height: 1.5;
+  color: var(--text);
+  word-break: break-word;
+}
+/* Tail pointing down-left toward the emoji avatar. */
+.tips-bubble .tt-balloon::before {
+  content: "";
+  position: absolute;
+  bottom: 0; left: -8px;
+  width: 0; height: 0;
+  border-style: solid;
+  border-width: 0 0 12px 12px;
+  border-color: transparent transparent white transparent;
+  filter: drop-shadow(-1px 1px 1px rgba(0,0,0,0.04));
+}
+.tips-bubble .tt-lead {
+  display: block; margin-bottom: 2px;
+  font-weight: 600; color: var(--text-dim);
+  font-size: 12px; letter-spacing: 0.02em;
+}
+.tips-bubble .tt-text { display: block; }
+/* Per-kind tint — same color used on balloon body and tail. */
+.tips-bubble[data-kind="work"]      .tt-balloon,
+.tips-bubble[data-kind="work"]      .tt-balloon::before { background: #eef2ff; }
+.tips-bubble[data-kind="work"]      .tt-balloon::before { border-bottom-color: #eef2ff; }
+.tips-bubble[data-kind="work"]      .tt-lead { color: #4338ca; }
+.tips-bubble[data-kind="wisdom"]    .tt-balloon,
+.tips-bubble[data-kind="wisdom"]    .tt-balloon::before { background: #fef9e0; }
+.tips-bubble[data-kind="wisdom"]    .tt-balloon::before { border-bottom-color: #fef9e0; }
+.tips-bubble[data-kind="wisdom"]    .tt-lead { color: #92400e; }
+.tips-bubble[data-kind="rest"]      .tt-balloon,
+.tips-bubble[data-kind="rest"]      .tt-balloon::before { background: #e6f9ee; }
+.tips-bubble[data-kind="rest"]      .tt-balloon::before { border-bottom-color: #e6f9ee; }
+.tips-bubble[data-kind="rest"]      .tt-lead { color: #065f46; }
+.tips-bubble[data-kind="curiosity"] .tt-balloon,
+.tips-bubble[data-kind="curiosity"] .tt-balloon::before { background: #fdeef5; }
+.tips-bubble[data-kind="curiosity"] .tt-balloon::before { border-bottom-color: #fdeef5; }
+.tips-bubble[data-kind="curiosity"] .tt-lead { color: #9d174d; }
+.tips-bubble.cycling .tt-balloon { animation: tipPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes tipPop {
+  0%   { opacity: 0.4; transform: scale(0.94); }
+  100% { opacity: 1;   transform: scale(1); }
+}
+/* On narrow viewports, shrink so it doesn't cover too much content. */
+@media (max-width: 900px) {
+  .tips-bubble { width: 240px; right: 14px; top: 96px; }
 }
 header.top .grow { flex: 1; }
 header.top .status-pill {
@@ -1063,12 +1182,6 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 <header class="top">
   <h1>__HEADER__</h1>
   <span class="meta">__GENERATED__</span>
-  <!-- DD-006 tips ticker — rotates every 25s, click to advance.
-       Populated by loadDerived(); hidden until at least one tip arrives. -->
-  <div class="tips-ticker" id="tips-ticker" hidden title="__TIP_TICKER_HINT__">
-    <span class="tt-kind" id="tt-kind"></span>
-    <span class="tt-text" id="tt-text"></span>
-  </div>
   <span class="grow"></span>
   <button class="data-stale" id="data-stale" type="button">__DATA_STALE__</button>
   <button class="sync-btn" id="manual-refresh" type="button" title="__MANUAL_REFRESH__">🔄</button>
@@ -1077,6 +1190,22 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   <button class="sync-btn" id="sync-toggle">__SYNC_CONNECT__</button>
   <span class="status-pill" id="helper-state"></span>
 </header>
+
+<!-- DD-006 tips bubble — playful speech-bubble. Click to cycle, drag to move.
+     Populated by loadDerived(); hidden until at least one tip arrives.
+     #tips-ticker id retained because JS references it.
+     The walking pixel cat (CC0, see bin/assets/pet/README.md) sits to
+     the left of the balloon — its emoji role is decorative; per-kind
+     variation lives in the bubble color + lead text. -->
+<div class="tips-bubble" id="tips-ticker" hidden title="__TIP_TICKER_HINT__">
+  <div class="tt-pet" id="tt-kind" aria-hidden="true"></div>
+  <div class="tt-balloon">
+    <span class="tt-lead" id="tt-lead"></span>
+    <span class="tt-text" id="tt-text"></span>
+    <a class="tt-source" id="tt-source" target="_blank" rel="noopener noreferrer"
+       hidden title="查看来源 · open source link">↗</a>
+  </div>
+</div>
 
 <nav class="toolbar">
   <div class="chips" id="status-chips">
@@ -2421,28 +2550,45 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   const $dwNextList = document.getElementById('dw-next-list');
   const $dwWeekly = document.getElementById('dw-weekly');
   const $dwWeeklyBtn = document.getElementById('dw-weekly-btn');
-  // Header tips ticker (DD-006 v2)
+  // DD-006 tips speech-bubble (playful redesign). The "mascot" slot
+  // (#tt-kind) is now a pixel-art walking cat rendered entirely via
+  // CSS; JS only updates the bubble color (data-kind) and the lead
+  // text. See bin/assets/pet/README.md for the sprite asset.
   const $tipsTicker = document.getElementById('tips-ticker');
-  const $ttKind = document.getElementById('tt-kind');
+  const $ttLead = document.getElementById('tt-lead');
   const $ttText = document.getElementById('tt-text');
-  let _tipsPool = [];   // [{kind, text, pattern?}]
+  const $ttSource = document.getElementById('tt-source');
+  let _tipsPool = [];   // [{kind, text, pattern?, source_url?}]
   let _tipsIdx = 0;
   let _tipsTimer = null;
-  const TIP_KIND_I18N = {
-    work:      I18N.tip_kind_work,
-    wisdom:    I18N.tip_kind_wisdom,
-    rest:      I18N.tip_kind_rest,
-    curiosity: I18N.tip_kind_curiosity,
+  const TIP_LEAD = {
+    work:      I18N.tip_lead_work,
+    wisdom:    I18N.tip_lead_wisdom,
+    rest:      I18N.tip_lead_rest,
+    curiosity: I18N.tip_lead_curiosity,
   };
   function renderTipAt(i) {
     if (!_tipsPool.length) return;
     _tipsIdx = ((i % _tipsPool.length) + _tipsPool.length) % _tipsPool.length;
     const t = _tipsPool[_tipsIdx];
-    $ttKind.className = 'tt-kind ' + (t.kind || '');
-    $ttKind.textContent = TIP_KIND_I18N[t.kind] || t.kind || '?';
+    const kind = t.kind || 'wisdom';
+    $tipsTicker.setAttribute('data-kind', kind);
+    const lead = TIP_LEAD[kind] || '';
+    $ttLead.textContent = lead;
+    $ttLead.style.display = lead ? 'block' : 'none';
     $ttText.textContent = t.text || '';
+    if ($ttSource) {
+      const url = t.source_url || '';
+      if (url && /^https?:\/\//i.test(url)) {
+        $ttSource.href = url;
+        $ttSource.hidden = false;
+      } else {
+        $ttSource.removeAttribute('href');
+        $ttSource.hidden = true;
+      }
+    }
     $tipsTicker.title = (t.text || '') + '  ·  ' + (I18N.tip_ticker_hint || '');
-    // animate via class toggle
+    // pet hops on every cycle
     $tipsTicker.classList.remove('cycling');
     void $tipsTicker.offsetWidth;
     $tipsTicker.classList.add('cycling');
@@ -2452,12 +2598,107 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     if (_tipsPool.length < 2) return;
     _tipsTimer = setInterval(() => renderTipAt(_tipsIdx + 1), 25 * 1000);
   }
+
+  // ---- Drag-to-position + click-to-cycle ----
+  // Click vs drag distinction: only consider it a drag once the mouse
+  // moves > DRAG_THRESHOLD pixels from the mousedown point. Smaller
+  // movements (or no movement at all) → it's a click; cycle the tip.
+  // Position is persisted to localStorage so reloads remember it.
+  // Default position is the CSS top/right anchor; user-positioned
+  // bubbles use left/top with right/bottom cleared.
+  const TIPS_POS_KEY = 'tips-bubble-pos';
+  const DRAG_THRESHOLD = 4;
+  function clampToViewport(left, top) {
+    const rect = $tipsTicker.getBoundingClientRect();
+    const maxLeft = Math.max(0, window.innerWidth  - rect.width  - 4);
+    const maxTop  = Math.max(0, window.innerHeight - rect.height - 4);
+    return {
+      left: Math.min(Math.max(0, left), maxLeft),
+      top:  Math.min(Math.max(0, top),  maxTop),
+    };
+  }
+  function applyAbsolutePosition(left, top) {
+    const c = clampToViewport(left, top);
+    // Translate transforms break getBoundingClientRect math, so we
+    // switch the bubble from "right/transform" anchor to pure left/top
+    // when the user starts positioning it manually.
+    $tipsTicker.style.left = c.left + 'px';
+    $tipsTicker.style.top = c.top + 'px';
+    $tipsTicker.style.right = 'auto';
+    $tipsTicker.style.bottom = 'auto';
+    $tipsTicker.style.transform = 'none';
+  }
+  // Restore saved position (after the bubble is laid out at least once)
+  try {
+    const saved = JSON.parse(localStorage.getItem(TIPS_POS_KEY) || 'null');
+    if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      // Defer one frame so the bubble has its computed size when we clamp
+      requestAnimationFrame(() => applyAbsolutePosition(saved.left, saved.top));
+    }
+  } catch (e) { /* ignore corrupt localStorage */ }
+
+  let _drag = null;     // active drag state
+  let _suppressClick = false;
   if ($tipsTicker) {
-    $tipsTicker.addEventListener('click', () => {
+    $tipsTicker.addEventListener('mousedown', (ev) => {
+      // Clicking the source-link should NOT start a drag.
+      if (ev.target.closest('.tt-source')) return;
+      if (ev.button !== 0) return;
+      const rect = $tipsTicker.getBoundingClientRect();
+      _drag = {
+        startX: ev.clientX, startY: ev.clientY,
+        origLeft: rect.left, origTop: rect.top,
+        moved: false,
+      };
+      ev.preventDefault();
+    });
+    document.addEventListener('mousemove', (ev) => {
+      if (!_drag) return;
+      const dx = ev.clientX - _drag.startX;
+      const dy = ev.clientY - _drag.startY;
+      if (!_drag.moved
+          && (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD)) {
+        _drag.moved = true;
+        $tipsTicker.classList.add('dragging');
+      }
+      if (_drag.moved) {
+        applyAbsolutePosition(_drag.origLeft + dx, _drag.origTop + dy);
+      }
+    });
+    document.addEventListener('mouseup', () => {
+      if (!_drag) return;
+      if (_drag.moved) {
+        $tipsTicker.classList.remove('dragging');
+        try {
+          const rect = $tipsTicker.getBoundingClientRect();
+          localStorage.setItem(TIPS_POS_KEY,
+            JSON.stringify({ left: rect.left, top: rect.top }));
+        } catch (e) { /* ignore quota errors */ }
+        _suppressClick = true;
+        // The synthetic click event fires AFTER mouseup; clear the
+        // flag on the next tick so it suppresses exactly one click.
+        setTimeout(() => { _suppressClick = false; }, 0);
+      }
+      _drag = null;
+    });
+    // Click cycles, but not when we just finished a drag and not when
+    // the click bubbled up from the source link.
+    $tipsTicker.addEventListener('click', (ev) => {
+      if (_suppressClick) return;
+      if (ev.target.closest('.tt-source')) return;
       if (!_tipsPool.length) return;
       renderTipAt(_tipsIdx + 1);
-      // reset auto-cycle so a manual click resets the 25s timer
       scheduleTipsRotation();
+    });
+    // After window resize, re-clamp the user position so the bubble
+    // doesn't end up off-screen.
+    window.addEventListener('resize', () => {
+      if (!$tipsTicker.style.left) return;  // still at default anchor
+      const left = parseFloat($tipsTicker.style.left);
+      const top  = parseFloat($tipsTicker.style.top);
+      if (Number.isFinite(left) && Number.isFinite(top)) {
+        applyAbsolutePosition(left, top);
+      }
     });
   }
 
@@ -2722,6 +2963,7 @@ def render_html(data: dict, L: dict, lang: str) -> str:
     out = out.replace("__NEXT_STEPS_LABEL__", html_lib.escape(L["next_steps_label"]))
     out = out.replace("__TIP_LABEL__", html_lib.escape(L["tip_label"]))
     out = out.replace("__TIP_TICKER_HINT__", html_lib.escape(L["tip_ticker_hint"]))
+    out = out.replace("__PET_DATA_URL__", _pet_data_url())
     out = out.replace("__DATA_JSON__", json_for_script(slim))
     out = out.replace("__I18N_JSON__", json_for_script(i18n_for_js))
     out = out.replace("__LOCATIONS_JSON__", json_for_script(locations))
