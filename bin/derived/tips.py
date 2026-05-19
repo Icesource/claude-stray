@@ -2,7 +2,8 @@
 """
 DD-006 derived feature: rotating tips ticker.
 
-Each invocation produces FOUR tips in different categories so the UI
+Each invocation produces TWENTY tips with an intentionally uneven
+split (curiosity 8, wisdom 6, work 3, rest 3) so the UI
 can cycle through them — keeps a single "today's tip" from getting
 stale and gives the user content that isn't just about work:
 
@@ -151,71 +152,133 @@ def _detect_work_patterns() -> list[dict]:
 
 def _build_prompt(work_patterns: list[dict], recent_history: list[dict],
                   lang: str) -> str:
-    """Ask for 4 tips, one per category. recent_history is the flat list
-    of recent tip texts so we can ask AI to avoid repetition."""
+    """Ask for 20 tips with intentionally uneven split: curiosity 8,
+    wisdom 6, work 3, rest 3 (rounded to 20). recent_history is the
+    flat list of recent tip texts so AI can avoid repetition."""
     work_block = (
         f"Work patterns observed in user's current data:\n"
         f"{json.dumps(work_patterns, indent=2, ensure_ascii=False)}"
         if work_patterns
-        else "No work patterns surfaced this round — skip the `work` tip "
-             "and pick a fresh general suggestion in its place "
-             '(kind: "wisdom", "rest", or "curiosity") — total still 4 tips, '
-             "no duplicates."
+        else "No work patterns surfaced this round — emit 0 `work` tips. "
+             "Backfill the 3 work slots into `curiosity` so the total stays "
+             "at 20 (curiosity becomes 11, wisdom 6, rest 3, work 0)."
     )
     recent_block = (
         f"\nRECENTLY SHOWN (avoid repeating these texts):\n"
-        f"{json.dumps([h['text'] for h in recent_history[:10]], ensure_ascii=False)}"
+        f"{json.dumps([h['text'] for h in recent_history[:40]], ensure_ascii=False)}"
         if recent_history else ""
     )
 
     if lang.startswith("zh"):
         lang_block = (
-            "全部 4 条用简体中文。tone:温和、口语化、不说教。每条 ≤ 50 字。"
+            "全部 20 条用简体中文。tone:温和、口语化、不说教。每条 ≤ 50 字。"
+            "wisdom 类的诗句保持原文文言/古文,不要翻译,但 — 字号后跟的"
+            "归属说明用现代汉语。"
         )
         kind_examples = """
-- work: 数据驱动的工作建议 (引用具体 initiative 名/数字)
+- work (3 条): 数据驱动的工作建议 (引用具体 initiative 名/数字)。无需 source_url。
   e.g. "hsf-hanging-mrs 已卡 3 天,瓶颈是 aone 发布。建议今天约一下排期。"
-- wisdom: 一句诗、名言、人生感悟。可以是古今中外的经典。
-  e.g. "结庐在人境,而无车马喧。问君何能尔?心远地自偏。— 陶渊明"
-- rest: 温和的休息提醒,不要假大空。
+
+- wisdom (6 条): 真实存在的诗句、闲适风格的人生感悟。**重点是放松/写景/生活意境,
+  不要励志说教。**
+  偏好题材:山水景色、四季时节、闲居琐事、日常感受、对自然的观察、淡然心境。
+  避免:励志自勉("莫等闲白了少年头")、勤学苦读("学而不思则罔")、修身齐家。
+  必须有明确出处,source_url 指向 Wikipedia / Wikiquote / 诗词作者页等可核验页面。
+  好的例子:
+    "采菊东篱下,悠然见南山。— 陶渊明《饮酒·其五》"
+        → https://zh.wikipedia.org/wiki/陶淵明
+    "明月松间照,清泉石上流。— 王维《山居秋暝》"
+        → https://zh.wikipedia.org/wiki/王維
+    "竹外桃花三两枝,春江水暖鸭先知。— 苏轼《惠崇春江晚景》"
+        → https://zh.wikipedia.org/wiki/蘇軾
+    "山光悦鸟性,潭影空人心。— 常建《题破山寺后禅院》"
+    "稻花香里说丰年,听取蛙声一片。— 辛弃疾《西江月·夜行黄沙道中》"
+
+- rest (3 条): 温和的休息提醒,基于常识可不带 URL,但不要鼓吹无稽的健康偏方。
   e.g. "屏幕看久了眼睛会涩,起身倒杯水,看 20 秒远处再回来。"
-- curiosity: 生活/语言/编程/科学/历史的小知识,带点惊喜感。
-  e.g. "鸭子的嘎嘎声其实有回声,只是它的频率让人耳听不清。"
+
+- curiosity (8 条): 真实可核验的小知识。每条 MUST 配 source_url(维基百科 / Etymonline /
+  Stanford Encyclopedia / MDN / 权威官网)。无法找到可信链接的不要写。
+  题材尽量发散:词源、生物、编程史、物理、食物、音乐、地理 — 让读者每条都有新发现。
+  反例 ❌ "鸭子嘎嘎声没有回声"(这是流传甚广的伪科学)。
+  正例 ✓ "'OK' 一词源自 1839 年波士顿一份报纸刊登的玩笑缩写 'oll korrect'。"
+         source_url: https://en.wikipedia.org/wiki/OK
 """
     else:
         lang_block = (
-            "All 4 in English. Tone: warm, conversational, never preachy. "
+            "All 20 in English. Tone: warm, conversational, never preachy. "
             "Each ≤ 90 chars."
         )
         kind_examples = """
-- work: data-anchored advice citing a specific initiative or number.
-- wisdom: a short quote or piece of life wisdom (any era/culture).
-- rest: gentle break reminder, no platitudes.
-- curiosity: a small surprising fact about life/language/programming.
+- work (3 tips): data-anchored advice citing a specific initiative / number.
+  No source_url needed.
+- wisdom (6 tips): a real quote or piece of life wisdom. **Bias toward
+  calm / scenic / observational tones — landscape, seasons, daily-life
+  reflection.** Avoid hustle-mode "seize the day" motivational lines.
+  Attribution must be verifiable; include source_url pointing to
+  Wikipedia / Wikiquote / primary text.
+- rest (3 tips): gentle break reminder. Common-sense items don't need
+  a URL, but never push unproven health claims.
+- curiosity (8 tips): a small surprising fact about life / language /
+  programming / science / history. EVERY curiosity tip MUST include
+  a source_url (Wikipedia, Etymonline, Stanford Encyclopedia, MDN,
+  official docs). If you cannot find a credible source for a claim,
+  drop the tip — don't fabricate. Avoid widely-repeated-but-false
+  trivia (e.g. the myth that ducks' quacks don't echo — debunked).
 """
 
-    return f"""Generate FOUR short tips for a developer's dashboard.
-Each in a different category. The UI rotates through them.
+    return f"""Generate TWENTY short tips for a developer's dashboard.
+Intentionally uneven split: curiosity gets the most rotation slots,
+wisdom second, work / rest equal and small.
+
+Default split:
+  - curiosity: 8
+  - wisdom:    6
+  - rest:      3
+  - work:      3
+  Total:      20
 
 Categories:
 {kind_examples}
 
-Return STRICT JSON of the form:
+Return STRICT JSON. Structure (order doesn't matter — counts do):
   {{
     "tips": [
-      {{"kind": "work",      "text": "...", "pattern": "<id-from-input>"}},
-      {{"kind": "wisdom",    "text": "..."}},
+      {{"kind": "curiosity", "text": "...", "source_url": "https://..."}},
+      ... 8 curiosity entries total — source_url REQUIRED ...
+      {{"kind": "wisdom",    "text": "...", "source_url": "https://..."}},
+      ... 6 wisdom entries total — source_url REQUIRED ...
       {{"kind": "rest",      "text": "..."}},
-      {{"kind": "curiosity", "text": "..."}}
+      ... 3 rest entries total — source_url optional ...
+      {{"kind": "work",      "text": "...", "pattern": "<id-from-input>"}},
+      ... 3 work entries total — no source_url ...
     ]
   }}
 
 Hard rules:
-- Exactly 4 tips total, one per category.
+- Aim for the split above. If you cannot fill a category with that
+  many *verifiable* entries (curiosity / wisdom), emit fewer in that
+  category and add the surplus to curiosity. Floor: 14 tips total.
 - {lang_block}
-- `work` tip MUST cite specific data from the patterns block. If no
-  patterns are listed below, omit `work` and emit a second non-work
-  tip in its place (still 4 total, no kind duplicates).
+- **No fabrication.** Every factual claim must be traceable. If you
+  are unsure whether a quote is correctly attributed, a fact is true,
+  or a URL exists, DROP the tip. Better a sparse round than a wrong
+  one.
+- `source_url` is REQUIRED on every `curiosity` tip and every `wisdom`
+  tip. The URL must be one you have high confidence is real and
+  on-topic. Prefer canonical references:
+    * Wikipedia / Wikiquote (zh.wikipedia.org / en.wikipedia.org)
+    * Etymonline.com for word origins
+    * Plato.stanford.edu for philosophy
+    * MDN / official language docs for programming history
+    * Standards bodies for science/math facts
+  If you can't find a stable canonical URL, drop the tip.
+- Every `work` tip MUST cite specific data from the patterns block —
+  a concrete initiative id, MR number, blocker count, etc. Skip
+  `source_url` (work tips are grounded in the user's own data).
+- Within a category, all tips must be meaningfully different —
+  different angle, mood, era, reference, or topic. Don't write
+  near-duplicates.
 - No generic platitudes ("take care of yourself", "stay focused").
 - No identical or near-identical text to RECENTLY SHOWN entries.
 
@@ -292,6 +355,19 @@ def generate(*, dry_run: bool = False, force: bool = False) -> int:
         entry = {"kind": kind, "text": text[:200]}
         if kind == "work" and t.get("pattern"):
             entry["pattern"] = str(t["pattern"])[:60]
+        url = (t.get("source_url") or "").strip()
+        # Sanity-check the URL — only accept http(s) on a domain that
+        # plausibly hosts factual references. Dropping malformed entries
+        # is cheap protection against AI hallucinating URLs.
+        if url.startswith(("http://", "https://")) and " " not in url \
+                and len(url) <= 300:
+            entry["source_url"] = url
+        elif kind == "curiosity":
+            # Curiosity tips REQUIRE a source URL per prompt rules. If
+            # AI omitted it, the tip is unverifiable — drop.
+            print(f"[tips] dropped curiosity tip without source_url: "
+                  f"{text[:60]!r}", file=sys.stderr)
+            continue
         new_tips.append(entry)
 
     if not new_tips:
