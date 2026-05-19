@@ -2558,7 +2558,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   const $ttLead = document.getElementById('tt-lead');
   const $ttText = document.getElementById('tt-text');
   const $ttSource = document.getElementById('tt-source');
-  let _tipsPool = [];   // [{kind, text, pattern?, source_url?}]
+  let _tipsPool = [];   // [{kind, text, pattern?, source_url?}], shuffled
   let _tipsIdx = 0;
   let _tipsTimer = null;
   const TIP_LEAD = {
@@ -2567,8 +2567,33 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     rest:      I18N.tip_lead_rest,
     curiosity: I18N.tip_lead_curiosity,
   };
+  // Fisher-Yates shuffle in place. After a full sequential walk over a
+  // shuffled pool, every tip plays exactly once before any repeat —
+  // better than pure random (which can show the same tip back-to-back)
+  // and far better than sequential (which clusters by kind: 8 curiosity
+  // in a row, then 6 wisdom, etc).
+  function shuffleTipsPool(prevKind) {
+    for (let i = _tipsPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [_tipsPool[i], _tipsPool[j]] = [_tipsPool[j], _tipsPool[i]];
+    }
+    // Avoid two same-kind tips touching across a wrap boundary: if the
+    // new head matches the previous tail's kind, swap head with the
+    // next non-matching position.
+    if (prevKind && _tipsPool.length > 1
+        && _tipsPool[0].kind === prevKind) {
+      for (let i = 1; i < _tipsPool.length; i++) {
+        if (_tipsPool[i].kind !== prevKind) {
+          [_tipsPool[0], _tipsPool[i]] = [_tipsPool[i], _tipsPool[0]];
+          break;
+        }
+      }
+    }
+  }
   function renderTipAt(i) {
     if (!_tipsPool.length) return;
+    const wrap = i >= _tipsPool.length;
+    if (wrap) shuffleTipsPool(_tipsPool[_tipsIdx]?.kind);
     _tipsIdx = ((i % _tipsPool.length) + _tipsPool.length) % _tipsPool.length;
     const t = _tipsPool[_tipsIdx];
     const kind = t.kind || 'wisdom';
@@ -2733,6 +2758,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       // tips: header ticker, multi-category rotation
       if (d.tips && Array.isArray(d.tips.tips) && d.tips.tips.length) {
         _tipsPool = d.tips.tips.slice();
+        shuffleTipsPool();   // randomize order so categories don't cluster
         _tipsIdx = 0;
         renderTipAt(0);
         scheduleTipsRotation();
