@@ -119,14 +119,14 @@ def _emit_cost_alarm_if_worsened(snap: dict) -> None:
 # being served (matches the user's expectation: "AI works while I'm
 # looking; doesn't run silently in the background forever").
 #
-# - tips: run once on serve startup, then every 6h
-#         (tips.py also has its own 6h debounce, this is belt+suspenders)
+# - tips: run once on serve startup, then every 2h
+#         (tips.py also has its own 2h debounce, this is belt+suspenders)
 # - weekly_report: every Friday after 12:00 local, if this week's
 #         report hasn't been generated yet
 # - wellness: piggybacks on the tips tick — signal-gated, costs
 #         nothing when no late-nights / consecutive-days signal fires
 
-_TIPS_INTERVAL_SECS = 6 * 3600
+_TIPS_INTERVAL_SECS = 2 * 3600
 _SCHED_TICK_SECS = 60          # check every minute
 _WEEKLY_TRIGGER_HOUR = 12      # local time
 _WEEKLY_TRIGGER_WEEKDAY = 4    # Mon=0 ... Fri=4
@@ -227,7 +227,7 @@ def _derived_scheduler_loop(stop_event) -> None:
             except ValueError:
                 elapsed = _TIPS_INTERVAL_SECS
             if elapsed >= _TIPS_INTERVAL_SECS:
-                print("[sched] tips: 6h elapsed", file=sys.stderr)
+                print("[sched] tips: 2h elapsed", file=sys.stderr)
                 _run_derived("tips.py")
                 _run_derived("wellness.py")
         else:
@@ -643,7 +643,7 @@ def serve(open_browser: bool = True):
             name="ccw-derived-sched",
         )
         sched_thread.start()
-        print("[serve] derived scheduler: tips every 6h, weekly Fri noon",
+        print("[serve] derived scheduler: tips every 2h, weekly Fri noon",
               file=sys.stderr)
 
         try:

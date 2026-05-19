@@ -55,7 +55,7 @@ OUT_DIR = DERIVED_DIR / "tips"
 OUT_FILE = OUT_DIR / "latest.json"
 FEATURE = "derived.tips"
 HISTORY_LIMIT = 6        # keep last 6 rotations
-MIN_HOURS_BETWEEN_RUNS = 6
+MIN_HOURS_BETWEEN_RUNS = 2
 
 
 # ---------- work-pattern detection (unchanged from v1) -------------------
