@@ -13,6 +13,8 @@ Conventions for changes in this repo. Aimed at future-me, not strangers.
 | Operational playbook | `docs/TROUBLESHOOTING.md` | New failure mode or new diagnostic capability |
 | Future plans | `docs/ROADMAP.md` | Decision to defer; record rationale |
 | Non-trivial design | `docs/design/DD-NNN-slug.md` | Anything that affects multiple files OR changes a data shape OR changes an external contract (hooks, prompts, API) |
+| Release / branching | `docs/RELEASE.md` | Anything about branch model, version bumps, the release checklist itself |
+| User-visible changes per release | `CHANGELOG.md` (root) | Every change as you make it — add to the `[Unreleased]` block, don't wait for release day |
 
 **Bias toward concise.** Each doc should pass the "scannable in 60s"
 test. If a doc would help five future readers but make the seven non-

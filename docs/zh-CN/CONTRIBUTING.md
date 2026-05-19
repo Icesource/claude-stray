@@ -13,6 +13,8 @@
 | 运维手册 | `docs/TROUBLESHOOTING.md` + 中文镜像 | 新的故障模式或新诊断能力 |
 | 未来计划 | `docs/ROADMAP.md` + 中文镜像 | 决定延后；写明原由 |
 | 非琐碎设计 | `docs/design/DD-NNN-slug.md` + 中文镜像 | 影响多文件、改 data 形状、或改外部 contract（hook、prompt、API） |
+| 发布 / 分支 | `docs/RELEASE.md` + 中文镜像 | 改了分支模型、版本规则、或 release 流程本身 |
+| 每个 release 的用户可见变更 | `CHANGELOG.md`（根目录） | 边改边记 — 加到 `[Unreleased]` 段，不要等发布前一次性补 |
 
 **精炼优先**。每份文档要过"60 秒可扫读"测试。如果一份文档能帮 5
 位未来读者但会让 7 位非读者不爽，宁可在 TROUBLESHOOTING 里加一条
