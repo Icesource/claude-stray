@@ -164,12 +164,16 @@ weight that risks drift.)
     that the user will want to follow up on. Walk `<turns>` and pull
     every distinct one out.
 
-    URL/pattern recognition (highest signal):
+    **URL pattern table — for RECOGNITION ONLY, not construction.**
+    These patterns help you *spot* a URL in `<turns>` and classify
+    its `type`. You must NEVER use them to synthesize a URL from
+    just an ID number. If the URL is not in the conversation
+    verbatim, omit the `url` field (see Hard rules below).
 
     | type | URL hint or pattern |
     |---|---|
     | `cr` | `aone.alibaba-inc.com/.../codereview/...`, `?cr=<id>`, `code.aone.alibaba.../cr/<id>` |
-    | `mr` | `gitlab.*/-/merge_requests/<id>`, `gitlab.alibaba-inc.com/.../merge_requests/<id>` |
+    | `mr` | `gitlab.*/-/merge_requests/<id>`, `gitlab.alibaba-inc.com/.../merge_requests/<id>`, `code.alibaba-inc.com/<group>/<repo>/codereview/<id>` |
     | `pr` | `github.com/<org>/<repo>/pull/<id>` |
     | `issue` | `github.com/<org>/<repo>/issues/<id>`, `aone.alibaba-inc.com/.../task/<id>`, JIRA-style `[A-Z]+-\d+` |
     | `branch` | `git checkout <name>`, `branch=<name>` mentioned in plan or PR url |
@@ -192,13 +196,21 @@ weight that risks drift.)
     | doc/other | `unknown` |
 
     Hard rules for artifacts:
-    - **At least `type`, `url`, `status` per entry.** title/ref_id are
-      nice-to-have. If you don't have a URL, prefer NOT to emit the
-      entry — strings alone aren't useful for follow-up.
+    - **NEVER synthesize a URL.** A `url` field is only valid if the
+      exact URL string appears verbatim in `<turns>`. If the user
+      mentioned only a number (e.g. "MR 27499051 已合并") without
+      pasting a link, do NOT construct a URL from the pattern table.
+      Emit the entry with `ref_id: "27499051"` and `type: mr` but
+      omit the `url` field entirely. The pattern table above is for
+      RECOGNIZING URLs the user pasted, not for building new ones.
+    - **Minimum per entry: `type` + `status` + (`url` OR `ref_id`).**
+      Title is nice-to-have. An entry with only `ref_id` is fine —
+      better a partial record than a hallucinated link.
     - **`status` from latest turn that talks about it.** If user said
       "CR passed review" 5 turns ago and nothing newer, status is
       `approved` (not `merged`). Don't infer further than evidence.
-    - **De-duplicate by url.** Same URL appearing 3 times = one entry.
+    - **De-duplicate.** First by `url` if both have one; otherwise by
+      (`type`, `ref_id`). Same artifact mentioned 3 times = one entry.
     - **`last_mentioned_at`** = ISO timestamp of the turn that most
       recently referenced this artifact. Omit the key if uncertain.
     - **No invention.** Don't emit a CR entry because "CR 评审" was

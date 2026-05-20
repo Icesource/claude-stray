@@ -61,7 +61,7 @@ output, with restricted modifications (see rule §5).**
               "type": "cr|mr|pr|issue|branch|commit|tag|deployment|doc|other",
               "title": "<≤60 chars or null>",
               "ref_id": "<platform id or null>",
-              "url": "<canonical URL>",
+              "url": "<exact URL from a hot summary; omit if none>",
               "status": "<see Layer 1 enum>",
               "last_mentioned_at": "<ISO or null>"
             }
@@ -167,12 +167,20 @@ the union of:
 
 Dedup rules:
 
-- **Primary key is `url`.** If two entries have the same URL, they're
-  the same artifact. Merge into one.
+- **Primary key is `url` when both entries have one.** Otherwise fall
+  back to (`type`, `ref_id`). Same artifact → one entry.
+- **Never synthesize a URL.** If a hot summary's artifact has only
+  `ref_id` (no `url`), keep it that way in the output — don't try to
+  build a URL from the ref_id and the pattern table. (The Layer 1
+  prompt has the same rule. URL pattern tables are for recognizing
+  URLs in transcripts, not for constructing them.)
+- **`url` field, if present, must be non-empty and start with
+  `http://` or `https://`.** If you'd otherwise emit an empty
+  string, omit the key.
 - **Status: most-recent-wins.** When merging, use the `status` from
   whichever source has the more recent `last_mentioned_at`. If a hot
-  session shows the same URL with `status: merged` but PRIOR shows
-  `pending`, the new status is `merged`.
+  session shows the same artifact with `status: merged` but PRIOR
+  shows `pending`, the new status is `merged`.
 - **Title/ref_id**: prefer non-null, then prefer the most recent
   mention.
 - **last_mentioned_at**: max of all sources.
@@ -368,8 +376,14 @@ For your output, verify each of:
       no legacy `done: true|false` booleans, no other strings.
 - [ ] Cold initiatives' name/summary/progress/tasks/artifacts/blockers
       unchanged.
-- [ ] All `artifacts[].url` values are non-empty strings (no nulls).
-- [ ] No duplicate `artifacts[]` entries (same URL) within one initiative.
+- [ ] Every `artifacts[]` entry has either a non-empty `http(s)://` URL
+      OR a `ref_id` (or both). An entry with no `url` and no `ref_id`
+      is useless and must be dropped.
+- [ ] Where `url` is present it starts with `http://` or `https://` and
+      contains the actual URL from a hot summary, never a synthesized
+      one built from an ID + pattern.
+- [ ] No duplicate `artifacts[]` entries within one initiative (dedup by
+      `url` if both have one, else by (`type`, `ref_id`)).
 - [ ] `blockers[]` strings are short (≤ 80 chars each) and deduped.
 - [ ] `tasks[]` items came from a hot summary or are PRIOR continuations
       with explicit `id` (no inventions); no two entries share the
