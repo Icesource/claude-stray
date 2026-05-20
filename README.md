@@ -1,189 +1,193 @@
 # claude-stray
 
-AI-powered terminal tree of your Claude Code work — auto-classifies sessions
-into projects with progress tracking.
+A local companion for Claude Code that turns your session history into a
+playful, AI-classified work dashboard. Cards, tasks, weekly recaps, cost
+tracking — plus a walking pixel cat who reads you poetry.
 
-[中文文档](docs/README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Roadmap](docs/ROADMAP.md)
+[中文文档](docs/README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Release model](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
+
+![dashboard preview](docs/assets/dashboard-preview.png)
+<!-- if the screenshot is missing, the dashboard ships at http://127.0.0.1:9876/ -->
 
 ## What it does
 
-Reads your Claude Code session history, uses AI to classify sessions into
-projects, and renders a live work overview right in your terminal:
+`claude-stray` watches your `~/.claude/projects/*.jsonl` session files,
+sends them through a 3-layer Haiku pipeline (extract → per-session
+summarize → cross-session classify), and renders the result as:
 
-```
-Claude Code Worktree  (generated 2m ago)
-────────────────────────────────────────────────────────────
-├── my-saas-app  [● active]  4m ago  6 sessions
-│   ~/code/my-saas-app
-│   Building user authentication and dashboard features.
-│   progress: OAuth integration done. Working on role-based
-│             access control for the admin panel.
-│   tasks:
-│     ├─ ✓ Set up OAuth2 login flow
-│     ├─ ✓ Design dashboard layout
-│     ├─ ○ Implement RBAC for admin panel
-│     └─ ○ Add unit tests for auth middleware
-│
-├── data-pipeline  [● active]  2h ago  8 sessions
-│   ~/code/data-pipeline
-│   ETL pipeline for processing analytics events from Kafka.
-│   progress: Kafka consumer and transform stages complete.
-│             Writing the BigQuery sink connector.
-│   tasks:
-│     ├─ ✓ Kafka consumer with offset tracking
-│     ├─ ✓ JSON schema validation stage
-│     ├─ ○ BigQuery sink connector
-│     └─ ○ Dead-letter queue handling
-│
-├── blog-redesign  [◐ paused]  5d ago  3 sessions
-│   ~/code/blog
-│   Migrating blog from Jekyll to Astro with new theme.
-│   progress: Content migration done. Paused waiting for
-│             design review from the team.
-│   tasks:
-│     ├─ ✓ Migrate markdown content
-│     ├─ ✓ Set up Astro project structure
-│     └─ ○ Apply new theme and deploy
-│
-└── archived (2)
-    ├─ dotfiles (shell config cleanup)    (10d ago, 2s)
-    └─ scratch-pad (one-off experiments)  (21d ago, 5s)
-```
+- A **dashboard** at `http://127.0.0.1:9876/` with one card per
+  initiative — summary, progress, tasks (tri-state: pending / done /
+  cancelled), blockers, artifacts (CR / MR / PR / issue / branch),
+  workspace sidebar, status filters, search.
+- A **weekly report** auto-generated every Friday at noon.
+- **Next-steps suggestions** — 3 data-anchored recommendations on
+  what to focus on.
+- A **tips bubble** with 20 curated, source-linked entries per batch
+  (poems, etymology, programming history) — rotates every 25 s, drag
+  the bubble anywhere on the page.
+- **Cost tracking** — `stray --cost` shows token spend per layer
+  per day / week / month.
+- **Lifecycle pause/resume** — kill switch on the dashboard banner
+  so AI doesn't run during demos / focused time.
+
+Nothing leaves your machine except outbound Anthropic API calls.
 
 ## Install
 
+### Option A — one-line install via SKILL (recommended)
+
+Paste this into Claude Code:
+
+```
+Read https://raw.githubusercontent.com/Icesource/claude-stray/main/SKILL.md and install it.
+```
+
+Claude Code will:
+
+1. Read the SKILL definition (see [`SKILL.md`](SKILL.md)) so it knows
+   when to activate the dashboard and which `stray` commands to call.
+2. Walk you through the `git clone` + `bin/install.sh` if you don't
+   have the repo yet.
+
+After install, ask Claude Code things like "what am I working on" or
+"how much have I spent this month" and the SKILL takes over.
+
+### Option B — manual install
+
 ```bash
-git clone https://github.com/Icesource/claude-stray.git ~/code/claude-stray
-cd ~/code/claude-stray
+git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
+cd ~/Code/claude-stray
 bash bin/install.sh
+bash bin/install-skill.sh    # optional — installs the SKILL so the main agent auto-uses stray
 ```
 
-One command does everything: installs slash commands, CLI wrapper, Claude Code
-hooks, and macOS LaunchAgent (if on macOS). No model calls during install.
+`bin/install.sh` sets up:
 
-Then open Claude Code and run:
+- Slash commands `/stray` and `/stray-refresh` (plus legacy `/mindmap*`
+  aliases, removed in v0.7)
+- `~/.local/bin/stray` shell wrapper (plus a `mindmap` alias)
+- Claude Code `Stop` + `SessionStart` hooks at
+  `~/.claude/settings.json`
+
+Then in Claude Code:
 
 ```
-/mindmap-refresh
+/stray-refresh
 ```
 
-This generates your first worktree (takes ~30–120s). You can see the
-model's classification progress in real time. After that, the tree
-refreshes automatically in the background — just use `mindmap` or
-`/mindmap` to view it.
+First refresh takes ~30–120 s. After that the dashboard updates on
+every session via the hooks; the in-process scheduler handles tips
+(every 2 h) and the weekly report (Fri noon).
+
+```bash
+stray --serve              # open http://127.0.0.1:9876/
+```
 
 ### Requirements
 
 - Python 3.9+
-- `claude` CLI installed and logged in
-- Active Claude Code subscription (Pro/Max) — uses your existing quota, no
-  separate API key needed
+- `claude` CLI logged in (Claude Code Pro/Max subscription works —
+  no separate API key needed)
 - macOS or Linux (Windows via WSL)
 
 ## Usage
 
-### Terminal (instant, zero model cost)
+### CLI
 
 ```bash
-mindmap              # show cached tree
-mindmap --refresh    # force refresh, then show
+stray --serve              # dashboard at http://127.0.0.1:9876/ (recommended)
+stray                      # terminal tree of current cache (zero AI call)
+stray --refresh            # force re-classify, then render
+stray --cost               # today + last-7-days cost breakdown
+stray --cost month         # full month breakdown
+stray --diagnose [SID]     # why doesn't session X show up?
+stray --pause "demo prep"  # kill switch — no background AI until --resume
+stray --resume             # release kill switch
+stray --weekly-report      # generate last week's report
+stray --next-steps         # 3 suggestions on what to focus on next
+stray --help               # full flag list
 ```
 
-Inside Claude Code, use `!` to get the same instant output:
+`mindmap` works as a legacy alias for every flag; both names point at
+the same script.
+
+### Slash commands
 
 ```
-!mindmap
-!mindmap --refresh
+/stray              # render cached dashboard tree in the chat
+/stray-refresh      # force refresh then render
 ```
 
-### Slash commands (tab-complete, goes through model)
+### Inside Claude Code
 
-```
-/mindmap             # show cached tree
-/mindmap-refresh     # force refresh, then show
-```
+The SKILL (see [Option A](#option-a--one-line-install-via-skill))
+makes the main Claude Code agent aware of stray. Once installed, you
+can just ask:
 
-## Auto-refresh
+- "What am I working on this week?"
+- "How much have I spent on Claude this month?"
+- "Show me what's blocked"
+- "Resume my HSF MR cleanup session from Tuesday"
 
-The tree stays fresh automatically — no manual refresh needed in normal use:
+Without explicit `stray` invocations.
 
-- **After every Claude Code response** — the `Stop` hook triggers a background
-  refresh
-- **On session start** — the `SessionStart` hook ensures data is current when
-  you return
-- **Every 2 hours** — macOS LaunchAgent fallback (Linux users can add a cron
-  job; see install output)
+## Costs
 
-All refreshes run in the background and never block your work.
+Three-layer pipeline runs lazily — only when a hook fires or the
+dashboard scheduler ticks. Per-layer typical costs (Haiku-4.5):
 
-## Cost & Performance
+| Layer | When | Per run |
+|---|---|---|
+| Layer 1 — summarize | Stop hook per session | ~$0.04 |
+| Layer 2 — classify | Coalesced; ~5×/day in active use | ~$0.17 |
+| Tips | Every 2 h while `--serve` is up | ~$0.08 |
+| Weekly report | Fri 12:00 local | $0.10–$0.50 |
+| Next-steps | After each classify | ~$0.05 |
+| Wellness | Piggybacks on tips; only fires if signal | ~$0.02 max |
 
-Classification uses **Haiku** by default — fast and cheap. Three layers of
-protection prevent unnecessary spending:
+Hard guards: 15-minute cooldown on classify, dirty-tracking skips
+unchanged sessions, daily budget cap via `--max-budget-usd` on every
+`claude -p` invocation.
 
-1. **Cooldown** (15 min) — skips AI call if last refresh was recent
-2. **Hash shortcut** — skips AI call if session data hasn't changed
-3. **Incremental extraction** — only reads new bytes from session files
+Watch live: `stray --cost` (default: today + 7-day table) or
+`stray --cost month`.
 
-| Scenario | Cost |
-|----------|------|
-| Within cooldown window | **$0** (AI call skipped) |
-| Session data unchanged | **$0** (hash shortcut) |
-| Typical refresh (~100 sessions) | ~$0.01–0.05 |
+Override defaults:
 
-Every AI call logs token usage to `~/Library/Logs/claude-stray.log`
-(macOS) or `~/.local/state/claude-stray/refresh.log` (Linux):
+| Env var | Default | Effect |
+|---|---|---|
+| `CLAUDE_WORKTREE_MODEL` | `claude-haiku-4-5-20251001` | Layer 2 model |
+| `CLAUDE_WORKTREE_COOLDOWN_SECS` | `900` | Min secs between classifies |
+| `CLAUDE_WORKTREE_TIMEOUT` | `600` | `claude -p` timeout |
 
-```
-[refresh] usage: in=18200 (+0 cache-create) out=1500 cost=$0.0234 prompt=42KB elapsed=15s
-```
+## Data model
 
-Override defaults via environment variables:
+Initiatives → sessions → tasks. The full schema and the design
+decisions behind it live in [`docs/design/`](docs/design/). Recent
+landmarks:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `CLAUDE_WORKTREE_COOLDOWN_SECS` | `900` (15 min) | Min seconds between AI calls |
-| `CLAUDE_WORKTREE_MODEL` | `claude-haiku-4-5-20251001` | Model for classification |
-| `CLAUDE_WORKTREE_TIMEOUT` | `600` (10 min) | Timeout for `claude -p` call |
-
-## Project Statuses
-
-| Status | Icon | When |
-|--------|------|------|
-| active | `●` | Activity within 3 days |
-| paused | `◐` | 3–14 days idle, or has resume signals |
-| done | `✓` | Explicitly finished |
-| archived | `▪` | >14 days idle, no resume signal |
-
-## Comparison
-
-| | claude-stray | [Claude Code Canvas](https://github.com/raulriera/claude-code-canvas) | [Claude Code Viewer](https://github.com/d-kimuson/claude-code-viewer) |
-|---|---|---|---|
-| AI project classification | Yes | No | No |
-| Progress / task tracking | Yes | No | No |
-| Terminal-native (zero deps) | Yes | No (browser) | No (browser) |
-| Auto background refresh | Yes | No | No |
-| Session replay | No | No | Yes |
-
-## How it works
-
-1. **`extract.py`** — Incrementally reads `~/.claude/projects/**/*.jsonl`,
-   writes per-session summaries. Prefers Claude Code's native `away_summary`
-   when present.
-2. **`aggregate.py`** — Filters noise, sorts by recency, emits compact JSON.
-3. **`refresh.sh`** — Feeds sessions + classifier prompt to `claude -p`
-   (reusing your subscription auth), produces `cache/mindmap.json`.
-4. **`render.py`** — Reads the JSON and prints a colored ANSI tree (stdlib
-   only, no pip).
+- [DD-002](docs/design/DD-002-ai-pipeline-redesign.md) — 3-layer
+  pipeline architecture
+- [DD-005](docs/design/DD-005-lifecycle.md) — opt-in pause/resume
+- [DD-006](docs/design/DD-006-card-derived-ai-features.md) — weekly /
+  next-steps / tips / wellness
+- [DD-011](docs/design/DD-011-task-model-final.md) — tri-state task
+  model, single-store data, no archive directory
 
 ## Troubleshooting
 
-- **"No mindmap cache found"** — run `mindmap --refresh` or
-  `bash bin/refresh.sh`.
-- **Hooks not firing** — verify with `jq .hooks ~/.claude/settings.json`.
-  Hooks only apply to sessions started *after* installation.
-- **"Not logged in"** — run `claude /login`.
-- **Stale data** — run `mindmap --refresh` and check the log for errors.
+Most issues are one of:
+
+1. **Dashboard empty** — run `stray --refresh` once
+2. **Card didn't update** — hooks may be missing; rerun `bin/install.sh`
+3. **Session missing** — `stray --diagnose <sid>` walks the pipeline
+   and tells you which step dropped it
+4. **Costs feel high** — `stray --cost month` for the per-layer
+   breakdown; common culprits documented in
+   [TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+
+The SKILL ([`SKILL.md`](SKILL.md)) embeds the full decision tree so
+Claude Code can walk users through it without `--diagnose`.
 
 ## Uninstall
 
@@ -191,9 +195,9 @@ Override defaults via environment variables:
 bash bin/uninstall.sh
 ```
 
-Removes slash commands, CLI wrapper, Claude Code hooks, and macOS LaunchAgent.
-The repo itself is left untouched — delete it manually if you want.
+Removes slash commands, CLI wrappers, hooks, and any leftover
+launchd plist. Repo itself is untouched — delete manually if you want.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

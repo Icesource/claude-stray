@@ -28,6 +28,16 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
+- **`SKILL.md` for one-line install via the main Claude Code agent.**
+  `bin/install-skill.sh` drops the markdown into
+  `~/.claude/skills/stray/`; the agent then auto-activates the right
+  `stray --X` call when the user asks "what am I working on" / "how
+  much have I spent" / "show me last week" / etc. Embeds a full
+  troubleshooting decision tree so the agent walks users through
+  problems without invoking `--diagnose` directly.
+- **README rewrite** (English + zh-CN) — dashboard-first framing,
+  SKILL install promoted as the recommended path, per-layer cost
+  table updated, troubleshooting points at `stray --diagnose`.
 - **`stable` branch + `v0.5.0` tag.** `docs/RELEASE.md` documents the
   branch model (`main` for dev / `stable` for daily-use / topic
   branches for features), SemVer rules, release checklist, and
