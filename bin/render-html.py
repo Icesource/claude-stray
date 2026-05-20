@@ -2393,7 +2393,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         const r = await fetch('http://127.0.0.1:' + port + '/ping', { method: 'GET', mode: 'cors' });
         if (r.ok) {
           const j = await r.json().catch(() => ({}));
-          if (j && j.service === 'claude-code-worktree') {
+          if (j && j.service === 'claude-stray') {
             helperPort = port;
             $helperState.textContent = I18N.helper_online.replace('{}', port);
             $helperState.classList.add('online');

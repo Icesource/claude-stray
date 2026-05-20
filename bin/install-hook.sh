@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Claude Code hooks for claude-code-worktree.
+# Install Claude Code hooks for claude-stray.
 # NOTE: install.sh already includes this step. This script exists for
 # re-installing hooks independently if needed.
 #

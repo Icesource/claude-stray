@@ -49,9 +49,9 @@ def head(msg: str) -> str: return c(BOLD, msg)
 
 def log_path() -> Path:
     if sys.platform == "darwin":
-        return HOME / "Library" / "Logs" / "claude-code-worktree.log"
+        return HOME / "Library" / "Logs" / "claude-stray.log"
     state_home = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local" / "state")
-    return state_home / "claude-code-worktree" / "refresh.log"
+    return state_home / "claude-stray" / "refresh.log"
 
 
 def find_most_recent_session() -> tuple[str, Path] | None:

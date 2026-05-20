@@ -46,9 +46,9 @@ mkdir -p "$LOCKS_DIR"
 
 # Log destination (platform-aware, same as refresh-bg.sh)
 if [ "$(uname)" = "Darwin" ]; then
-  LOG="$HOME/Library/Logs/claude-code-worktree.log"
+  LOG="$HOME/Library/Logs/claude-stray.log"
 else
-  LOG="${XDG_STATE_HOME:-$HOME/.local/state}/claude-code-worktree/refresh.log"
+  LOG="${XDG_STATE_HOME:-$HOME/.local/state}/claude-stray/refresh.log"
 fi
 mkdir -p "$(dirname "$LOG")"
 

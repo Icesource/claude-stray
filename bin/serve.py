@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified local server for claude-code-worktree.
+Unified local server for claude-stray.
 
 Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
 
@@ -325,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/ping":
             return self._reply(200, {
-                "service": "claude-code-worktree", "version": 2,
+                "service": "claude-stray", "version": 2,
                 "has_zellij": has_zellij(),
                 "can_write_disk": True,  # the server CAN write to cache/
             })
