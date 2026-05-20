@@ -15,6 +15,7 @@ For full design docs see [design/](design/).
 | P14 AI Pipeline redesign | Implemented | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
 | P15 Card detail + artifacts | Proposed | [DD-003](design/DD-003-card-detail-and-artifacts.md) |
 | P16 Tips quiz (spaced reinforcement) | Proposed (below) | — |
+| P17 Persona accretion ("digital twin" prompt) | Proposed (below) | — |
 | P13 (historical) two-pass classification | Superseded | [DD-001](design/DD-001-two-pass-classification.md) |
 
 ## P11.0 — Concurrency lock for cache writes
@@ -225,6 +226,65 @@ widget + persistent history + weekly cron). It only crosses the
 DD threshold (multi-file, schema change, prompt change) at
 implementation time. Logged here so the design rationale survives
 until then.
+
+## P17 — Persona accretion ("digital twin" prompt)
+
+**Why**: Every Stop hook today drives Layer 1 to summarize the session
+for the work-mindmap. The same hook could, at near-zero extra cost,
+also distill *how* the user worked — their tone, decision style,
+favored phrasings, what frustrates them, what they double-check, the
+shape of their corrections. Over hundreds of sessions this accretes
+into a persona file rich enough to seed a "digital twin" prompt:
+an AI agent that drafts in the user's voice and makes choices the way
+the user would.
+
+### Sketch
+
+- **Trigger**: piggyback on the existing Layer 1 Stop-hook run, or on
+  Layer 2 (so we see cross-session signal, not just one). A new prompt
+  emits a tiny patch:
+  ```yaml
+  - trait: "prefers terse code, no docstrings unless asked"
+    confidence: medium
+    evidence: "session abc123 turn 4: '别写注释' explicit"
+  - trait: "always verifies test passes before saying 'done'"
+    confidence: high
+    evidence: "12 sessions in last 30d, consistent"
+  ```
+- **Storage**: `cache/persona/traits.jsonl` (append-only), plus a
+  derived `cache/persona/digest.md` regenerated periodically — a
+  human-readable, deduplicated, ranked-by-confidence persona document.
+- **Decay**: traits not reinforced in N weeks lose confidence (people
+  change). The digest only surfaces traits above a confidence floor.
+- **Output**: a `claude-stray persona` CLI subcommand prints the
+  current digest, optionally as a system-prompt-ready block:
+  ```
+  $ claude-stray persona --as-system-prompt > /tmp/me.txt
+  ```
+  The user can then paste that into any new AI agent to seed it with
+  their voice.
+
+### Open design questions
+
+- **Privacy boundary**: the persona file is intimate. Should it live
+  in the regular `cache/` (gitignored) or in a separate
+  `~/.claude/persona/` outside the project? Encryption at rest?
+- **Drift detection**: how does the system mark "this trait used to
+  be true but the last 20 sessions contradict it"? Probably a
+  reinforcement score that decays on contradictory evidence.
+- **Caricature risk**: AI summarizing a person tends toward stereotypes.
+  Mitigation: confidence floor + evidence requirement + user can
+  manually mark a trait `disputed`.
+- **AI cost**: piggybacks on Layer 1 prompt — adding ~200 tokens of
+  output per session, ~$0.001 per hook fire. Negligible.
+- **Trust UI**: the dashboard probably needs a "what does my AI think
+  about me" panel so the user can audit, edit, or wipe.
+
+### Why a roadmap entry, not a DD yet
+
+The privacy posture, schema, and dashboard surface need real product
+thinking before we commit to a design. Captured here so the idea
+isn't lost between sessions.
 
 ## Not in roadmap
 

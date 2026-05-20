@@ -14,6 +14,7 @@
 | P14 AI Pipeline 重设计 | 已实施 | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
 | P15 卡片详情 + artifacts | Proposed | [DD-003](design/DD-003-card-detail-and-artifacts.md) |
 | P16 Tips 小测验（间隔强化记忆） | Proposed（下方） | — |
+| P17 Persona 累积（用户数字人 prompt） | Proposed（下方） | — |
 | P13 (历史) 两段式分类 | Superseded | [DD-001](design/DD-001-two-pass-classification.md) |
 
 ## P11.0 — cache 写入的并发锁
@@ -207,6 +208,60 @@ The mindmap SKILL lives at $(curl -s https://example.com/SKILL.URL.txt) .
 这是一个面向用户的特性,形态比较清晰(sidebar widget + 持久化历史
 + 周度调度),没有跨多文件 / schema 变更 / prompt 大改之前还到不
 了 DD 门槛。落地时再升 DD。
+
+## P17 — Persona 累积(用户的数字人 prompt)
+
+**为什么**: 当前每次 Stop hook 触发 Layer 1 总结 session,服务于工
+作 mindmap。同一个 hook 几乎零额外成本,可以同时蒸馏出**用户的工
+作方式** — 语气、决策风格、惯用措辞、什么让他烦、什么会反复 double-
+check、纠错时的句式。累积几百个 session 后,这份 persona 文件足够
+丰富,可以作为"数字人" prompt — 一个能用用户语气、按用户思路做决
+定的 AI agent。
+
+### 草案
+
+- **触发时机**: 蹭已有的 Layer 1 Stop-hook,或 Layer 2(看 cross-
+  session 信号、不只一个 session)。新 prompt 输出 patch:
+  ```yaml
+  - trait: "倾向于代码尽量精简,除非主动要求不写注释"
+    confidence: medium
+    evidence: "session abc123 turn 4 显式说'别写注释'"
+  - trait: "声明 'done' 前必跑测试"
+    confidence: high
+    evidence: "近 30 天 12 个 session 一致"
+  ```
+- **存储**: `cache/persona/traits.jsonl`(append-only),加一份周期
+  性重新生成的 `cache/persona/digest.md` — 去重 + 按 confidence 排
+  序的人类可读 persona 摘要。
+- **衰减**: 若干周没被强化的 trait 会降 confidence(人会变化)。
+  digest 只暴露超过 confidence 下限的 trait。
+- **输出**: `claude-stray persona` CLI 子命令打印当前摘要,可选导
+  出成 system-prompt 形态:
+  ```
+  $ claude-stray persona --as-system-prompt > /tmp/me.txt
+  ```
+  用户把这段贴进任何新 AI agent,就能种下自己的"语气基线"。
+
+### 待定设计问题
+
+- **隐私边界**: persona 文件高度个人化。放普通 `cache/`(已
+  gitignore),还是独立放到 `~/.claude/persona/`(脱离项目)?是否
+  静态加密?
+- **漂移检测**: 怎么标记"这个 trait 以前是对的,但最近 20 个
+  session 完全相反"?可能要 reinforcement score,遇到相反证据时
+  衰减。
+- **刻板化风险**: AI 总结一个人,容易偏向 caricature(脸谱化)。
+  Mitigation: confidence 下限 + 必须有 evidence + 用户可以手动
+  把某个 trait 标 `disputed`(有争议)。
+- **AI 成本**: 蹭 Layer 1 的 prompt,每个 session 多输出 ~200
+  token,约 $0.001/次。忽略不计。
+- **可信度 UI**: dashboard 需要一个"AI 觉得我是个怎样的人"面板,
+  让用户审计、编辑、或一键清空。
+
+### 为什么先 Roadmap 而非 DD
+
+隐私姿态、schema、dashboard 暴露面都需要真正的产品思考,这些没敲
+定之前不要落 DD。先在这里记住,避免 session 之间丢失。
 
 ## 不在 Roadmap 内
 
