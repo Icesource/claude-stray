@@ -8,6 +8,12 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
+(nothing yet — start of a new iteration cycle)
+
+## [v0.6.0] — 2026-05-20
+
+Rebrand + SKILL-based install + tips quality pass.
+
 ### Changed
 
 - **Rename: `claude-code-worktree` → `claude-stray`.** The project is
@@ -30,11 +36,16 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 - **`SKILL.md` for one-line install via the main Claude Code agent.**
   `bin/install-skill.sh` drops the markdown into
-  `~/.claude/skills/stray/`; the agent then auto-activates the right
-  `stray --X` call when the user asks "what am I working on" / "how
-  much have I spent" / "show me last week" / etc. Embeds a full
-  troubleshooting decision tree so the agent walks users through
-  problems without invoking `--diagnose` directly.
+  `~/.claude/skills/stray/`. The SKILL is deliberately restrained:
+  its frontmatter leads with "read primarily by the HUMAN, not by
+  you" so the agent doesn't try to narrate the dashboard. Activates
+  only for install/uninstall and the small set of management
+  actions (open, refresh, pause/resume the plugin, check this
+  plugin's own cost). Includes a "What this is NOT" table that
+  steers the agent away from over-reaching prompts like "how much
+  have I spent on Claude" (the plugin only tracks ITS OWN AI cost,
+  not total Claude usage) or "pause Claude" (the plugin can only
+  pause its own pipeline).
 - **README rewrite** (English + zh-CN) — dashboard-first framing,
   SKILL install promoted as the recommended path, per-layer cost
   table updated, troubleshooting points at `stray --diagnose`.
@@ -49,6 +60,26 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 - `bin/_migrate_to_stray.sh` — one-shot migration script that renames
   local cache files, updates `~/.claude/settings.json` hook paths,
   and moves `~/.claude/skills/mindmap/` if present.
+- `bin/uninstall.sh --purge` mode for squeaky-clean removal: also
+  wipes `cache/`, prompts y/N before deleting the Claude Code
+  session transcripts at
+  `~/.claude/projects/-Users-<you>-Code-claude-stray/`, and prints
+  the `rm -rf` command for the repo source itself. Default
+  uninstall now also removes `~/.claude/skills/stray/` (was leaking
+  before) and warns if `bin/serve.py` is still running.
+
+### Fixed
+
+- **Artifact URL synthesis.** Layer 1 (`prompts/summarize-session.md`)
+  was reading the URL-pattern table as a construction template
+  whenever a session mentioned an MR/CR/issue by number only.
+  Result: hallucinated URLs like
+  `code.aone.alibaba-inc.com/merge_requests/<id>` for environments
+  whose real Aone host is
+  `code.alibaba-inc.com/<group>/<repo>/codereview/<id>`. Both prompts
+  now lead with "NEVER synthesize a URL" and accept artifacts with
+  `ref_id` but no `url`. Layer 2 dedup falls back to (`type`,
+  `ref_id`) when `url` is absent on either side.
 
 ### Roadmap
 
@@ -127,5 +158,6 @@ commits weren't grouped under a tag.
   suppression on `window.confirm` — replaced with a custom in-page
   modal.
 
-[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.6.0...HEAD
+[v0.6.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.5.0
