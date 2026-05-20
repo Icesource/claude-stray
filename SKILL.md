@@ -66,8 +66,8 @@ curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/qui
 Or, for users who want to inspect first:
 
 ```bash
-git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
-cd ~/Code/claude-stray
+git clone https://github.com/Icesource/claude-stray.git ~/.claude-stray
+cd ~/.claude-stray
 bash bin/install.sh
 bash bin/install-skill.sh    # makes this SKILL active locally
 ```
@@ -107,7 +107,7 @@ than memorizing.
 ## Uninstall
 
 ```bash
-cd ~/Code/claude-stray
+cd ~/.claude-stray
 bash bin/uninstall.sh           # default — safe, leaves user data
 bash bin/uninstall.sh --purge   # also wipes cache + (y/N) session transcripts
 ```
@@ -119,8 +119,11 @@ any leftover macOS launchd plist. Repo source, local cache, and the
 user's Claude Code session transcripts are intentionally kept.
 
 `--purge` additionally wipes the local `cache/` and prompts before
-deleting `~/.claude/projects/-Users-<you>-Code-claude-stray/`
-(the user's actual conversation transcripts — irreversible).
+deleting the matching Claude Code session transcripts under
+`~/.claude/projects/` (Claude Code encodes the install path with
+`/` → `-`, so e.g. `~/.claude-stray` becomes the directory
+`-Users-<you>-.claude-stray`). Those are your conversation history
+— deletion is irreversible.
 
 ## Repository
 

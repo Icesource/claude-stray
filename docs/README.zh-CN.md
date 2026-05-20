@@ -37,8 +37,14 @@ curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/qui
 ```
 
 纯 shell,不经过 Claude Code。脚本会做依赖检查 → clone 到
-`~/Code/claude-stray`(`INSTALL_DIR=<path>` 可改)→ 跑 `bin/install.sh`
+`~/.claude-stray/`(`INSTALL_DIR=<path>` 可改)→ 跑 `bin/install.sh`
 → 安装 SKILL 到 `~/.claude/skills/stray/`。
+
+> **关于 `~/.claude-stray/`**。这是工具自己的家目录,跟 `~/.fzf`、
+> `~/.nvm`、`~/.oh-my-zsh` 一个约定。**别手动 `mv` 别 `rm`** —— slash
+> 命令、hook、`stray` CLI 都把绝对路径写进里面了。升级用
+> `cd ~/.claude-stray && git pull`(或者重跑 curl pipe)。要换位置,
+> 先跑 `bin/uninstall.sh` 卸,然后用 `INSTALL_DIR=<新路径>` 重装。
 
 想先看脚本再 pipe?
 [`bin/quick-install.sh`](../bin/quick-install.sh) 是源。
@@ -46,8 +52,8 @@ curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/qui
 支持的环境变量(放在 pipe 前面):
 
 ```bash
-INSTALL_DIR=~/dev/claude-stray \
-INSTALL_REF=v0.6.0 \
+INSTALL_DIR=~/code/claude-stray \
+INSTALL_REF=v0.6.1 \
 LANG_CHOICE=en \
 NO_SKILL=1 \
   curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
@@ -56,8 +62,8 @@ NO_SKILL=1 \
 ### 方式 B —— 手动,完全透明
 
 ```bash
-git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
-cd ~/Code/claude-stray
+git clone https://github.com/Icesource/claude-stray.git ~/.claude-stray
+cd ~/.claude-stray
 bash bin/install.sh
 bash bin/install-skill.sh    # 可选 — 装 SKILL 让主 agent 自动调 stray
 ```

@@ -8,6 +8,16 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
+(nothing yet — start of a new iteration cycle)
+
+## [v0.6.1] — 2026-05-20
+
+Hotfix: safer install story. v0.6.0's recommended "paste `Read URL
+and install it` into Claude Code" pattern is correctly blocked by
+Claude Code's prompt-injection guard and shouldn't have been the
+default. Replaced with a plain `curl | bash` flow, and moved the
+default install location out of the user's project directory.
+
 ### Added
 
 - **`bin/quick-install.sh`** — one-line installer. Standard usage:
@@ -15,19 +25,25 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
   curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
   ```
   Pre-flight checks (git, python3 ≥ 3.9, claude CLI), clones to
-  `~/Code/claude-stray` (override via `INSTALL_DIR`), runs
+  `~/.claude-stray/` (override via `INSTALL_DIR`), runs
   `bin/install.sh` + `bin/install-skill.sh`. Tweakable via
   `INSTALL_REF` (branch/tag), `LANG_CHOICE`, `NO_SKILL=1`.
 
 ### Changed
 
+- **Default install location: `~/.claude-stray/`** (was `~/Code/claude-stray/`).
+  Matches the `~/.fzf` / `~/.nvm` / `~/.oh-my-zsh` convention — the
+  directory is the tool's own home, not the user's dev workspace.
+  Existing installs at the old path keep working (install.sh
+  operates on whatever directory it's run from); the change applies
+  only to new installs via `quick-install.sh`.
 - **README install path** (en + zh-CN): "Option A" is now the
   `curl … | bash` one-liner. The "Read URL and install it" prompt-
   in-Claude-Code pattern is gone — Claude Code correctly flags it as
   prompt injection.
 - **SKILL.md** Install section: instructs the agent to send users to
   a terminal command, NOT to suggest pasting "Read URL and install"
-  into the chat.
+  into the chat. Install path references updated to `~/.claude-stray/`.
 
 ## [v0.6.0] — 2026-05-20
 
@@ -177,6 +193,7 @@ commits weren't grouped under a tag.
   suppression on `window.confirm` — replaced with a custom in-page
   modal.
 
-[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.6.1...HEAD
+[v0.6.1]: https://github.com/Icesource/claude-stray/releases/tag/v0.6.1
 [v0.6.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.6.0
 [v0.5.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.5.0

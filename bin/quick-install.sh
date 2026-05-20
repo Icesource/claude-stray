@@ -13,7 +13,9 @@
 #   5. Print next-step hints
 #
 # Knobs (set as env vars BEFORE the pipe, e.g. `INSTALL_DIR=~/foo curl ... | bash`):
-#   INSTALL_DIR    where to clone the repo  (default: ~/Code/claude-stray)
+#   INSTALL_DIR    where to clone the repo  (default: ~/.claude-stray —
+#                  same convention as ~/.fzf, ~/.nvm, ~/.oh-my-zsh; the
+#                  tool manages this directory, users don't touch it)
 #   INSTALL_REF    branch/tag to checkout   (default: stable — the released line)
 #   LANG_CHOICE    zh-CN | en               (default: zh-CN)
 #   NO_SKILL=1     skip SKILL install
@@ -24,7 +26,7 @@
 set -euo pipefail
 
 # --- knobs -------------------------------------------------------------------
-INSTALL_DIR="${INSTALL_DIR:-$HOME/Code/claude-stray}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.claude-stray}"
 INSTALL_REF="${INSTALL_REF:-stable}"
 LANG_CHOICE="${LANG_CHOICE:-zh-CN}"
 NO_SKILL="${NO_SKILL:-0}"

@@ -41,9 +41,17 @@ curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/qui
 ```
 
 This is plain shell — Claude Code is not involved in the install path.
-The script does pre-flight checks, clones the repo to
-`~/Code/claude-stray` (override with `INSTALL_DIR=/your/path`), runs
+The script does pre-flight checks, clones the repo into
+`~/.claude-stray/` (override with `INSTALL_DIR=/your/path`), runs
 `bin/install.sh`, and installs the SKILL into `~/.claude/skills/stray/`.
+
+> **About `~/.claude-stray/`.** This is the tool's own home directory
+> — same convention as `~/.fzf`, `~/.nvm`, `~/.oh-my-zsh`. Don't
+> `mv` it or `rm -rf` it manually; the slash commands, the hooks,
+> and the `stray` CLI all hold absolute paths into it. Updates are
+> `cd ~/.claude-stray && git pull` (or rerun the curl-pipe). To
+> change location, use `bin/uninstall.sh` first then reinstall with
+> `INSTALL_DIR=<new path>`.
 
 Want to read the script before piping?
 [`bin/quick-install.sh`](bin/quick-install.sh).
@@ -51,8 +59,8 @@ Want to read the script before piping?
 Tweakable via env vars before the pipe:
 
 ```bash
-INSTALL_DIR=~/dev/claude-stray \
-INSTALL_REF=v0.6.0 \
+INSTALL_DIR=~/code/claude-stray \
+INSTALL_REF=v0.6.1 \
 LANG_CHOICE=en \
 NO_SKILL=1 \
   curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
@@ -61,8 +69,8 @@ NO_SKILL=1 \
 ### Option B — manual, fully transparent
 
 ```bash
-git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
-cd ~/Code/claude-stray
+git clone https://github.com/Icesource/claude-stray.git ~/.claude-stray
+cd ~/.claude-stray
 bash bin/install.sh
 bash bin/install-skill.sh    # optional — installs the SKILL so the main agent auto-uses stray
 ```
