@@ -1,251 +1,116 @@
 ---
 name: stray
 description: |
-  A local Claude Code companion that turns the user's ~200+ session
-  history into a card-style dashboard of "initiatives" (work themes /
-  projects-in-flight). Activate when the user asks "what am I working
-  on", "where did I leave off", "what's blocked", "how much have I
-  spent on Claude Code", or needs to navigate / resume a past Claude
-  Code session. Also relevant for weekly summaries, paused/stalled
-  work review, and lifecycle pause/resume of the AI pipeline.
+  claude-stray is a local web dashboard at http://127.0.0.1:9876/
+  that visualizes the user's Claude Code session history as cards.
+  It is read primarily by the HUMAN, not by you. Activate this SKILL
+  when the user wants to (1) install or uninstall claude-stray, or
+  (2) ask you to perform a small management action on the dashboard
+  — open it, refresh its cache, pause/resume the plugin's own AI
+  pipeline, or check how much THIS PLUGIN has spent. Do NOT activate
+  for general Claude Code questions, total Claude usage costs, or
+  agent-driven analysis of the user's work — none of those are what
+  this tool does.
 ---
 
-# stray — Claude Code dashboard
+# stray — Claude Code dashboard (human-facing)
 
-`stray` reads every `~/.claude/projects/*/*.jsonl` (the Claude Code
-session transcripts), runs a three-layer AI pipeline (extract →
-per-session summarize → cross-session classify) on Haiku-4.5, and
-emits a card dashboard at `http://127.0.0.1:9876/` with:
+## What this is
 
-- **Initiatives** — semantic groupings of sessions ("HSF MR cleanup",
-  "claude-stray dashboard", "documentation refactor", etc.)
-- **Tasks** with tri-state status (`pending` / `done` / `cancelled`)
-- **Artifacts** (CR / MR / PR / issue / branch URLs extracted from
-  each session)
-- **Blockers** ("等 reviewer 评审", "等 CI 通过", etc.)
-- **Weekly report** auto-generated each Friday at noon
-- **Tips bubble** — a playful walking pixel cat that surfaces curated
-  knowledge (poems, etymology, programming history) every 25s, all
-  with source URLs
+A self-hosted web dashboard at `http://127.0.0.1:9876/` that turns
+the user's Claude Code session jsonl files into a cards view. The
+**user reads it** — there's a sidebar, status filters, blocker chips,
+weekly report, tips bubble, a walking pixel cat, etc. It is a
+**visualization tool for the human**, not a query interface for an
+AI agent.
 
-The pipeline only runs when Claude Code's Stop / SessionStart hooks
-fire, or when the dashboard's in-process scheduler ticks — never as a
-background daemon when no one is looking.
+## What this is NOT (be honest with the user)
 
-## When to activate this skill
-
-Listen for prompts like:
-
-| User says | What to do |
+| If the user says | This SKILL does NOT do that |
 |---|---|
-| "What am I working on", "What's on my plate" | `stray` (terminal tree) or open `http://127.0.0.1:9876/` |
-| "Where did I leave off" | `stray --serve` then point at the most-recently-active card |
-| "What's blocked", "What's waiting on me" | open the dashboard and filter status=paused, or look at blocker chips |
-| "How much have I spent on Claude / Haiku" | `stray --cost` (no arg = today + last 7d) |
-| "Refresh / re-run the AI pipeline" | `stray --refresh` (forces a classify even if cache is hot) |
-| "Pause / stop the AI", "Stop running in background" | `stray --pause` with optional reason |
-| "Resume" / "Turn AI back on" | `stray --resume` |
-| "Show me last week's recap" | `stray --weekly-report` (or open dashboard, click the weekly widget) |
-| "What should I focus on next" | `stray --next-steps` (3 data-anchored suggestions) |
-| "Diagnose / why isn't session X showing up" | `stray --diagnose [SID]` (SID optional) |
-| "Resume claude session", "Reopen session Y" | open the dashboard, click 🆕 next to the session id; or `cd <cwd> && claude --resume <full-uuid>` |
+| "What am I working on" | We can offer to open the dashboard so they see it themselves. We do NOT narrate the cards. |
+| "How much have I spent on Claude this month" | We only track AI costs from claude-stray's own pipeline calls — Layer 1 summarize / Layer 2 classify / derived features. The user's broader Claude Code usage is not tracked here. Say so explicitly. |
+| "Pause Claude / stop the AI" | We can only pause **this plugin's** background pipeline. Claude Code itself keeps running normally. |
+| "Tell me about my HSF MR work" | We can open the dashboard. We do NOT summarize the cards in chat — the dashboard already does that. |
 
-## Command reference
+When ambiguous, ask: "Do you mean the claude-stray plugin, or
+Claude Code overall?"
 
-All commands are sub-flags of the single `stray` binary. They print to
-stdout / open browser / write to `cache/` as documented. None mutates
-anything outside the repo unless explicitly noted.
+## When to activate
 
-| Command | What it does | Cost |
-|---|---|---|
-| `stray` | Render the cached dashboard as an ANSI tree in the terminal | $0 |
-| `stray --serve` | **Recommended.** Start http://127.0.0.1:9876/, auto-open browser. Runs the in-process derived scheduler (tips / weekly). | $0 to start |
-| `stray --refresh` | Force re-run of Layer 2 (cross-session classify). Use when the dashboard feels stale. | ~$0.17 per run with Haiku-4.5 |
-| `stray --open` | Regenerate HTML and open via `file://` (no server) | $0 |
-| `stray --tree` | Open the markmap tree view (alternate visualization) | $0 |
-| `stray --html` | Regenerate HTML only, don't open anything | $0 |
-| `stray --diagnose [SID]` | Decision tree: why might a session not appear in the dashboard? Without SID picks most-recent. | $0 |
-| `stray --cost [PERIOD]` | AI call cost breakdown. PERIOD ∈ `today` (default+7d table) / `week` / `month` / `all` / `log` / `json`. | $0 |
-| `stray --backfill` | One-shot: re-summarize EVERY session in `~/.claude/projects/`. | ~$8 (one-time) |
-| `stray --pause [REASON]` | Engage kill switch — all subsequent hook fires become no-ops until `--resume`. Banner shows on dashboard. | $0 |
-| `stray --resume` | Release kill switch | $0 |
-| `stray --status` | Print lifecycle JSON | $0 |
-| `stray --weekly-report [N]` | Generate weekly report for `N` weeks ago (default 1 = last week). Auto-runs Fri 12:00 local. | $0.10–$0.50 |
-| `stray --next-steps` | Suggest 3 initiatives to focus on next, with rationale | ~$0.05 |
-| `stray --tips` | Generate one fresh batch of 20 tips (curiosity-heavy). Auto-runs every 2h while `--serve` is up. | ~$0.08 |
-| `stray --wellness` | Check for late-night / consecutive-day patterns; emit a kind nudge only if a signal fires. Silent (and free) otherwise. | ~$0.02 max |
+Narrow triggers — only these:
 
-Backward-compat: `mindmap` is a symlink to `stray`. Same flags, same
-behavior. (Will be dropped in v0.7.)
+1. **Install / uninstall** — user wants to set up claude-stray on
+   their machine, or remove it.
+2. **Open the dashboard** — user wants the browser tab opened (`stray --serve`).
+3. **Refresh the cache** — user wants the latest sessions reflected
+   on the dashboard (`stray --refresh`).
+4. **Pause / resume the plugin** — user wants to temporarily stop
+   this plugin's background AI pipeline (e.g. before a demo).
+5. **Check the plugin's own cost** — user asks specifically about
+   this plugin's AI spend.
 
-## How it works (1-paragraph summary)
+If you're not sure the user is talking about this plugin, **ask**
+before invoking commands.
 
-Claude Code's `Stop` hook triggers `bin/refresh-bg.sh`, which forks
-`bin/pipeline-run.sh` into the background. Layer 1 (`summarize.py`)
-turns each dirty session's raw jsonl into a structured markdown
-summary under `cache/summaries/<sid>.md`. Layer 2 (`classify.py`) is
-coalesced (only one runs at a time) and feeds all "hot" summaries
-(touched in the last 48h) plus the PRIOR `cache/dashboard.json` to
-Haiku, which returns the new `dashboard.json`. The dashboard HTML
-(`cache/dashboard.html`) is regenerated by `render-html.py` whenever
-data changes. `serve.py` is the local HTTP front and also runs an
-in-process scheduler that fires the "derived" features
-(tips/weekly/next-steps/wellness) on a clock.
-
-Data sovereignty: nothing leaves the user's machine except outbound
-Anthropic API calls. All cache lives at `cache/` inside the repo.
-
-## Troubleshooting decision tree
-
-When the user reports a problem, walk through this in order:
-
-1. **"Dashboard is empty" / first-run**
-   - Did `stray --refresh` ever complete? Check `cache/cost_log.jsonl`
-     for at least one `layer: classify` entry.
-   - If never: `stray --refresh` (takes 30–120s on first run)
-
-2. **"Card didn't update after my session"**
-   - Is the Stop hook installed? Look in `~/.claude/settings.json`
-     for an entry with `bin/refresh-bg.sh` under `hooks.Stop`.
-   - Is the pipeline paused? `stray --status` — look for `"paused": true`.
-     If yes: `stray --resume`.
-   - Is layer 1 lagging? Check `cache/summaries/<sid>.md` exists for
-     the session id; if not, the extract or summarize step failed.
-     `stray --diagnose <sid>` for the full breakdown.
-
-3. **"Session X is missing"**
-   - `stray --diagnose <full-uuid>` and read the output. Common causes:
-     it's `is_automation: true` (filtered), it's `last_activity_at`
-     older than the hot window (48h — only stays via PRIOR continuity),
-     or its initiative was archived.
-
-4. **"Costs feel high"**
-   - `stray --cost month` — look at the per-layer breakdown.
-   - Layer 2 (classify) at ~$0.17 × ~5 runs/day = ~$25/mo is normal.
-   - Layer 1 (summarize) at ~$0.04 × N new sessions/day. If high,
-     check if `--backfill` ran recently.
-
-5. **"AI keeps marking my tasks done that aren't done"**
-   - DD-011's terminal-monotone makes AI's done-flag stick. Click the
-     checkbox in the dashboard to manually un-toggle (overrides AI).
-   - To delete a task entirely so AI can't recreate it: 🗑️ in the UI →
-     puts it in `cache/user_overrides.json` deleted_tasks tombstones.
-
-6. **"The cat is gone / tips bubble disappeared"**
-   - Check localStorage `tips-bubble-pos` — if dragged off-screen,
-     `localStorage.removeItem("tips-bubble-pos")` in DevTools console
-     resets to default (top-right corner).
-
-## Examples
-
-### User: "I have no idea what I was doing yesterday, help"
-
-```
-stray --serve
-# point browser at http://127.0.0.1:9876/
-# filter status=active, scan the top cards by last_activity_at
-```
-
-If that's not enough context, the card detail modal (click the card title)
-shows artifacts, blockers, and a full session list with `🆕` resume buttons.
-
-### User: "How much have I spent this month on the AI for this thing?"
-
-```
-stray --cost month
-```
-
-Shows a table broken down by layer (summarize / classify / derived) with
-per-day totals.
-
-### User: "Stop running AI in the background, I'm about to give a demo"
-
-```
-stray --pause "demo prep — back in 1h"
-```
-
-The dashboard banner shows the reason. `stray --resume` when done.
-
-### User: "Resume the session from the HSF MR work I did last Tuesday"
-
-Open the dashboard, find the relevant card (HSF MR cleanup-ish title),
-expand the session list, click 🆕 on the matching session id.
-
-## Uninstall — squeaky clean
-
-If the user asks to remove claude-stray entirely, walk them through
-this. The repo's `bin/uninstall.sh` does the bulk of the work.
-
-### Default uninstall (safe — leaves user data alone)
+## Install
 
 ```bash
-cd ~/Code/claude-stray            # or wherever the repo lives
-bash bin/uninstall.sh
+git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
+cd ~/Code/claude-stray
+bash bin/install.sh
+bash bin/install-skill.sh    # makes this SKILL active locally
 ```
 
-This removes (5 things):
+`bin/install.sh` sets up: slash commands `/stray` + `/stray-refresh`,
+shell wrapper `~/.local/bin/stray`, and Claude Code Stop +
+SessionStart hooks (so the dashboard updates automatically as the
+user finishes sessions). It does not run any AI calls.
 
-1. Slash commands `/stray`, `/stray-refresh`, plus legacy `/mindmap*`
-   aliases (`~/.claude/commands/*.md`)
-2. Shell wrappers `~/.local/bin/{stray,mindmap}`
-3. The SKILL itself: `~/.claude/skills/stray/`
-4. Stop + SessionStart hook entries in `~/.claude/settings.json`
-   (settings.json is backed up to `.bak.<timestamp>` first)
-5. Any leftover macOS launchd plist from older installs
+After install, suggest the user open the dashboard:
 
-Intentionally NOT removed by default:
-- The repo source tree (e.g. `~/Code/claude-stray/`)
-- The local cache (`cache/` inside the repo) — your dashboard data
-- The user's **Claude Code session transcripts** at
-  `~/.claude/projects/-Users-<you>-Code-claude-stray/`. Those are
-  your conversation history with Claude Code, not data we created.
+```bash
+stray --serve
+```
 
-After running it, the user can still `rm -rf ~/Code/claude-stray` if
-they want to remove the source too. The script prints the exact
-command.
+— this opens `http://127.0.0.1:9876/` in their default browser.
 
-### Full purge — including local cache + repo + session transcripts
+## Management commands (use sparingly, on user request)
+
+| User asks | Run |
+|---|---|
+| "Open the dashboard" | `stray --serve` (background it if user is mid-task) |
+| "Refresh the dashboard / re-classify" | `stray --refresh` (~$0.17 with Haiku) |
+| "Pause the claude-stray plugin" (with optional reason) | `stray --pause "<reason>"` |
+| "Resume the claude-stray plugin" | `stray --resume` |
+| "How much has this plugin cost me?" | `stray --cost` (default = today + last 7 days) |
+| "Diagnose why session X isn't on the dashboard" | `stray --diagnose <session-id>` |
+
+Full flag list is in `bin/stray --help` — read it on demand rather
+than memorizing.
+
+## Uninstall
 
 ```bash
 cd ~/Code/claude-stray
-bash bin/uninstall.sh --purge
+bash bin/uninstall.sh           # default — safe, leaves user data
+bash bin/uninstall.sh --purge   # also wipes cache + (y/N) session transcripts
 ```
 
-`--purge` additionally:
+Default removes the 5 things claude-stray put on the user's machine:
+slash commands, shell wrappers, this SKILL (`~/.claude/skills/stray/`),
+the Stop/SessionStart hook entries in `~/.claude/settings.json`, and
+any leftover macOS launchd plist. Repo source, local cache, and the
+user's Claude Code session transcripts are intentionally kept.
 
-- Deletes `cache/` (dashboard data, summaries, cost log, archived
-  initiatives — gone)
-- Prompts y/N before deleting `~/.claude/projects/-Users-<you>-Code-claude-stray/`
-  (your Claude Code conversation transcripts for sessions started
-  from this project directory — **irreversible**)
-- Prints the `rm -rf <repo>` command to run for the source tree
-  itself (can't `rm` it while inside the script)
-
-### What the user should also do manually
-
-- Stop any running `bin/serve.py` before uninstalling so port 9876
-  releases cleanly. The script prints a warning if it sees one running.
-- If they used the legacy `~/.claude/projects/-Users-<you>-Code-claude-code-worktree/`
-  path (pre-rename), the migration script may have left an empty
-  directory shell. Safe to `rmdir` if present.
-
-### Confirmation that uninstall worked
-
-After `bin/uninstall.sh`:
-
-```bash
-ls ~/.local/bin/stray ~/.local/bin/mindmap 2>&1      # should say "No such file"
-ls ~/.claude/skills/stray 2>&1                       # should say "No such file"
-ls ~/.claude/commands/stray.md 2>&1                  # should say "No such file"
-grep -c "claude-stray\|claude-code-worktree" ~/.claude/settings.json
-                                                     # should print 0
-```
+`--purge` additionally wipes the local `cache/` and prompts before
+deleting `~/.claude/projects/-Users-<you>-Code-claude-stray/`
+(the user's actual conversation transcripts — irreversible).
 
 ## Repository
 
-Source: <https://github.com/Icesource/claude-stray>
+<https://github.com/Icesource/claude-stray>
 
-Install: `git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray && bash ~/Code/claude-stray/bin/install.sh`
-
-For end-to-end one-line install via this SKILL, see the install
-section of the repo README.
+For deeper docs (architecture, design decisions, troubleshooting),
+read the repo's `docs/` tree on demand. Don't preload that context
+unless the user is actively troubleshooting.
