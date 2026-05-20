@@ -8,7 +8,26 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
-(nothing yet — start of a new iteration cycle)
+### Added
+
+- **`bin/quick-install.sh`** — one-line installer. Standard usage:
+  ```
+  curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
+  ```
+  Pre-flight checks (git, python3 ≥ 3.9, claude CLI), clones to
+  `~/Code/claude-stray` (override via `INSTALL_DIR`), runs
+  `bin/install.sh` + `bin/install-skill.sh`. Tweakable via
+  `INSTALL_REF` (branch/tag), `LANG_CHOICE`, `NO_SKILL=1`.
+
+### Changed
+
+- **README install path** (en + zh-CN): "Option A" is now the
+  `curl … | bash` one-liner. The "Read URL and install it" prompt-
+  in-Claude-Code pattern is gone — Claude Code correctly flags it as
+  prompt injection.
+- **SKILL.md** Install section: instructs the agent to send users to
+  a terminal command, NOT to suggest pasting "Read URL and install"
+  into the chat.
 
 ## [v0.6.0] — 2026-05-20
 

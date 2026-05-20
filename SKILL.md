@@ -55,6 +55,16 @@ before invoking commands.
 
 ## Install
 
+Tell the user to run this in a terminal **outside** Claude Code (NOT
+in the chat as a prompt — that triggers prompt-injection protection
+and is the wrong shape anyway):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
+```
+
+Or, for users who want to inspect first:
+
 ```bash
 git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
 cd ~/Code/claude-stray
@@ -62,10 +72,15 @@ bash bin/install.sh
 bash bin/install-skill.sh    # makes this SKILL active locally
 ```
 
-`bin/install.sh` sets up: slash commands `/stray` + `/stray-refresh`,
-shell wrapper `~/.local/bin/stray`, and Claude Code Stop +
-SessionStart hooks (so the dashboard updates automatically as the
-user finishes sessions). It does not run any AI calls.
+Both routes set up: slash commands `/stray` + `/stray-refresh`, shell
+wrapper `~/.local/bin/stray`, and Claude Code Stop + SessionStart
+hooks (so the dashboard updates automatically as the user finishes
+sessions). No AI calls during install.
+
+**Do NOT suggest** the user paste a `Read <URL> and install it` style
+prompt into Claude Code — that pattern is correctly rejected by
+Claude Code's prompt-injection guard. Always send the user to a
+terminal command.
 
 After install, suggest the user open the dashboard:
 

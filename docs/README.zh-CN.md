@@ -30,24 +30,30 @@ pipeline（extract → 单 session 总结 → 跨 session 分类），产出：
 
 ## 安装
 
-### 方式 A —— 一行命令通过 SKILL 安装（推荐）
+### 方式 A —— 一行命令安装（推荐）
 
-在 Claude Code 里粘贴：
-
-```
-Read https://raw.githubusercontent.com/Icesource/claude-stray/main/SKILL.md and install it.
+```bash
+curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
 ```
 
-Claude Code 会：
+纯 shell,不经过 Claude Code。脚本会做依赖检查 → clone 到
+`~/Code/claude-stray`(`INSTALL_DIR=<path>` 可改)→ 跑 `bin/install.sh`
+→ 安装 SKILL 到 `~/.claude/skills/stray/`。
 
-1. 读取 SKILL 定义（见 [`SKILL.md`](../SKILL.md)），知道何时激活
-   dashboard、该调哪些 `stray` 命令。
-2. 引导你 `git clone` + `bin/install.sh`（如果你还没有 repo）。
+想先看脚本再 pipe?
+[`bin/quick-install.sh`](../bin/quick-install.sh) 是源。
 
-装完之后，问 Claude Code "我在做什么" / "这个月花了多少钱" 之类的话题
-就会自动走 SKILL。
+支持的环境变量(放在 pipe 前面):
 
-### 方式 B —— 手动安装
+```bash
+INSTALL_DIR=~/dev/claude-stray \
+INSTALL_REF=v0.6.0 \
+LANG_CHOICE=en \
+NO_SKILL=1 \
+  curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
+```
+
+### 方式 B —— 手动,完全透明
 
 ```bash
 git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
@@ -64,18 +70,21 @@ bash bin/install-skill.sh    # 可选 — 装 SKILL 让主 agent 自动调 stray
 - Claude Code 的 `Stop` + `SessionStart` hook 写入
   `~/.claude/settings.json`
 
-随后在 Claude Code 里：
+### 安装后
 
 ```
-/stray-refresh
+/stray-refresh          # 在 Claude Code 里跑,首次约 30-120s
+stray --serve           # 终端启动,自动开 http://127.0.0.1:9876/
 ```
 
-首次 refresh 约 30–120 秒。之后每个 session 都通过 hook 自动更新；
-in-process 调度器负责 tips（每 2 h）和周报（周五 12:00）。
+首次 refresh 之后,每个 session 都通过 hook 自动更新;in-process 调
+度器负责 tips(每 2h)和周报(周五 12:00)。
 
-```bash
-stray --serve              # 打开 http://127.0.0.1:9876/
-```
+> **关于"让 Claude Code 帮我装"这条路。** README 早期版本曾建议在
+> Claude Code 里粘贴 `Read <SKILL URL> and install it`。Claude Code
+> (正确地)把这种模式当作 prompt 注入向量,会拒绝。安装必须走 shell;
+> SKILL 的作用是**装完之后**让主 Claude Code agent 知道这个工具,不是
+> 用来当安装入口。
 
 ### 依赖
 

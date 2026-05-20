@@ -34,25 +34,31 @@ Nothing leaves your machine except outbound Anthropic API calls.
 
 ## Install
 
-### Option A — one-line install via SKILL (recommended)
+### Option A — one-line install (recommended)
 
-Paste this into Claude Code:
-
-```
-Read https://raw.githubusercontent.com/Icesource/claude-stray/main/SKILL.md and install it.
+```bash
+curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
 ```
 
-Claude Code will:
+This is plain shell — Claude Code is not involved in the install path.
+The script does pre-flight checks, clones the repo to
+`~/Code/claude-stray` (override with `INSTALL_DIR=/your/path`), runs
+`bin/install.sh`, and installs the SKILL into `~/.claude/skills/stray/`.
 
-1. Read the SKILL definition (see [`SKILL.md`](SKILL.md)) so it knows
-   when to activate the dashboard and which `stray` commands to call.
-2. Walk you through the `git clone` + `bin/install.sh` if you don't
-   have the repo yet.
+Want to read the script before piping?
+[`bin/quick-install.sh`](bin/quick-install.sh).
 
-After install, ask Claude Code things like "what am I working on" or
-"how much have I spent this month" and the SKILL takes over.
+Tweakable via env vars before the pipe:
 
-### Option B — manual install
+```bash
+INSTALL_DIR=~/dev/claude-stray \
+INSTALL_REF=v0.6.0 \
+LANG_CHOICE=en \
+NO_SKILL=1 \
+  curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash
+```
+
+### Option B — manual, fully transparent
 
 ```bash
 git clone https://github.com/Icesource/claude-stray.git ~/Code/claude-stray
@@ -69,19 +75,23 @@ bash bin/install-skill.sh    # optional — installs the SKILL so the main agent
 - Claude Code `Stop` + `SessionStart` hooks at
   `~/.claude/settings.json`
 
-Then in Claude Code:
+### After install
 
 ```
-/stray-refresh
+/stray-refresh        # in Claude Code — first refresh takes ~30-120s
+stray --serve         # in terminal — opens http://127.0.0.1:9876/
 ```
 
-First refresh takes ~30–120 s. After that the dashboard updates on
-every session via the hooks; the in-process scheduler handles tips
-(every 2 h) and the weekly report (Fri noon).
+After the first refresh, the dashboard updates on every session via
+the hooks; the in-process scheduler handles tips (every 2h) and the
+weekly report (Fri noon).
 
-```bash
-stray --serve              # open http://127.0.0.1:9876/
-```
+> **A note on installing via Claude Code prompts.** Earlier drafts of
+> this README suggested pasting `Read <SKILL URL> and install it` into
+> Claude Code. Claude Code (rightly) treats that pattern as a prompt-
+> injection vector and refuses. The install must run in plain shell;
+> the SKILL only kicks in after install to help the main Claude Code
+> agent use the tool naturally.
 
 ### Requirements
 
