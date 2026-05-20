@@ -8,7 +8,16 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
-(nothing yet — start of a new iteration cycle)
+### Added
+
+- **Promo screenshots** for both English and Chinese README
+  (`docs/assets/screenshots/{en,zh-CN}/01-overview.png` ... `05-filter-active.png`).
+- **Reproducer kit** at `bin/_screenshots/` — mock-data generators
+  (`make-mock-zh-CN.py`, `make-mock-en.py`), the Playwright capture
+  script (`playwright-shots.js`), and a README that walks through the
+  "pause + stash + RO-lock + shoot + restore" dance. Run it after a
+  UI change to refresh the screenshots without leaking real session
+  data.
 
 ## [v0.6.1] — 2026-05-20
 

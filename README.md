@@ -6,8 +6,19 @@ tracking — plus a walking pixel cat who reads you poetry.
 
 [中文文档](docs/README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Roadmap](docs/ROADMAP.md) · [Release model](docs/RELEASE.md) · [Changelog](CHANGELOG.md)
 
-![dashboard preview](docs/assets/dashboard-preview.png)
-<!-- if the screenshot is missing, the dashboard ships at http://127.0.0.1:9876/ -->
+![dashboard preview](docs/assets/screenshots/en/01-overview.png)
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![card detail](docs/assets/screenshots/en/02-card-detail.png) | Card detail: blockers, artifacts, tri-state tasks, sessions to resume |
+| ![tips bubble](docs/assets/screenshots/en/03-tips-bubble.png) | Walking pixel cat + the rotating tips bubble (drag it anywhere, click to cycle) |
+| ![weekly report](docs/assets/screenshots/en/04-weekly-modal.png) | Auto-generated weekly report (Fri 12:00 local) |
+| ![status filter](docs/assets/screenshots/en/05-filter-active.png) | Status filter + sidebar workspaces |
+
+</details>
 
 ## What it does
 
