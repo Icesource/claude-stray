@@ -14,6 +14,7 @@ For full design docs see [design/](design/).
 | P11.2 SKILL.md | Proposed (below) | — |
 | P14 AI Pipeline redesign | Implemented | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
 | P15 Card detail + artifacts | Proposed | [DD-003](design/DD-003-card-detail-and-artifacts.md) |
+| P16 Tips quiz (spaced reinforcement) | Proposed (below) | — |
 | P13 (historical) two-pass classification | Superseded | [DD-001](design/DD-001-two-pass-classification.md) |
 
 ## P11.0 — Concurrency lock for cache writes
@@ -166,6 +167,64 @@ Single-line file containing the URL. Lets the install pattern be:
 ```
 The mindmap SKILL lives at $(curl -s https://example.com/SKILL.URL.txt) .
 ```
+
+## P16 — Tips quiz (spaced reinforcement)
+
+**Why**: The tips bubble (DD-006, post-v0.5.0) cycles through 20
+curated entries per batch — Tang/Song poems, etymology facts,
+programming history, etc. The user's stated intent for tips was
+"扩充知识面" (broaden general knowledge), but the current UX is purely
+ambient: a tip flashes for 25 seconds, then rotates away. Without
+any reinforcement loop, those quotes and facts don't stick.
+
+This roadmap item adds a lightweight quiz/recall layer on top of the
+tip pool so the content actually lands.
+
+### Sketch
+
+- **Persist every tip ever shown** to `cache/derived/tips/history.jsonl`
+  (append-only). Today only the last `HISTORY_LIMIT` (6) rotations
+  live in `latest.json`'s `history[]`; quiz needs a longer tail.
+- **Generate a quiz every N days** (configurable, e.g. weekly). The
+  source is a sample of past wisdom + curiosity entries (no work or
+  rest tips — those aren't memorizable). Quiz formats AI picks per
+  entry:
+  - **Cloze**: hide a word/phrase, ask user to fill in. ("竹外桃花
+    三两枝,___ 鸭先知。") for poems.
+  - **Multiple choice**: who wrote it, what's the source, etymology.
+  - **Free recall**: "What does CC0 mean?" with the persisted answer
+    + source URL on reveal.
+- **Quiz delivery**: a sidebar widget `📚 复习一下` that opens a
+  small modal with one card at a time. User answers, sees the
+  correct answer with the original source link, marks
+  "remembered" / "forgot" — feeds a SuperMemo-2-style spacing
+  curve so forgotten items resurface sooner.
+- **Source URL is the trust anchor**: every quiz answer shows the
+  same `↗` source the original tip had. The quiz can't drift into
+  fabrication because every question is grounded in a previously-
+  shown, source-verified tip.
+
+### Open design questions (defer until implementation)
+
+- One quiz per week or on-demand? Probably weekly default + manual
+  "give me one now" button.
+- How does the cat react? Pet sprite could play a different
+  animation during quizzes ("教学姿势").
+- Persistence schema for spaced-repetition state: per-tip
+  `next_review_at` + `interval_days` + `streak`. Where to store —
+  alongside history.jsonl or in a separate `quiz_state.json`?
+- AI prompt for quiz generation: needs to handle Chinese poetry's
+  cloze format separately from English-language curiosity facts.
+- Cost: a quiz-generation call hits Haiku once a week with ~30 tip
+  entries as context. Negligible compared to classify (~$0.02 / run).
+
+### Why a roadmap entry, not a DD yet
+
+The scope is one user-facing feature with a known shape (sidebar
+widget + persistent history + weekly cron). It only crosses the
+DD threshold (multi-file, schema change, prompt change) at
+implementation time. Logged here so the design rationale survives
+until then.
 
 ## Not in roadmap
 

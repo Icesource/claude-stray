@@ -13,6 +13,7 @@
 | P11.2 SKILL.md | Proposed（下方） | — |
 | P14 AI Pipeline 重设计 | 已实施 | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
 | P15 卡片详情 + artifacts | Proposed | [DD-003](design/DD-003-card-detail-and-artifacts.md) |
+| P16 Tips 小测验（间隔强化记忆） | Proposed（下方） | — |
 | P13 (历史) 两段式分类 | Superseded | [DD-001](design/DD-001-two-pass-classification.md) |
 
 ## P11.0 — cache 写入的并发锁
@@ -158,6 +159,54 @@ mindmap 工具——不用每次 session 手动教它。
 ```
 The mindmap SKILL lives at $(curl -s https://example.com/SKILL.URL.txt) .
 ```
+
+## P16 — Tips 小测验（间隔强化记忆）
+
+**为什么**：tips 气泡(DD-006、v0.5.0 之后)每轮播 20 条精选内容 —
+唐诗宋词、词源、编程史、自然小知识等。用户最初提 tips 的初衷是
+"扩充知识面",但当前 UX 完全是 ambient:一条 tip 显示 25 秒就转走,
+没有任何复习闭环,看到的诗句和事实其实留不住。
+
+本条 roadmap 加一个轻量的小测验/回忆层,让那些内容真的能"沉下来"。
+
+### 设计草案
+
+- **持久化所有曾经展示过的 tip** 到 `cache/derived/tips/history.jsonl`
+  (append-only)。当前 `latest.json` 的 `history[]` 只保留最近
+  `HISTORY_LIMIT` (6) 轮,小测验需要更长的尾巴。
+- **每 N 天生成一次小测验**(可配,默认每周一次)。素材是过去 wisdom
+  + curiosity 条目的抽样(work 和 rest 不算 — 不需要记忆)。AI 给每
+  条选合适的题型:
+  - **填空(cloze)**: 挖一个词/短语,让用户填。例如 "竹外桃花
+    三两枝,___ 鸭先知。"
+  - **选择题**: 作者是谁、出处是什么、词源。
+  - **自由回忆**: "CC0 是什么意思?",揭示时给出答案 + 原 source
+    URL。
+- **测验入口**: sidebar 加一个 widget `📚 复习一下`,点开弹个小
+  modal,一次一题。用户作答 → 看到正确答案 + 原始 source 链接 → 标
+  记"记住了"/"忘了" → 反馈到 SuperMemo-2 风格的间隔曲线,忘了的会
+  更早再出现。
+- **source URL 是信任锚点**: 每道题的答案 reveal 时显示原 tip 的
+  `↗` 来源链接。因为每个题都源自之前已经验证过来源的 tip,小测验
+  本身不会进入幻觉空间。
+
+### 待定设计问题(实施时再敲)
+
+- 每周一次还是按需触发?默认每周 + 手动"再来一题"按钮。
+- 小猫做什么反应?Pet sprite 可以在测验时切换姿势("教学模式")。
+- 间隔重复状态的存储 schema:每个 tip 加 `next_review_at` /
+  `interval_days` / `streak`。存哪里 — 跟 history.jsonl 放一起还是
+  单独 `quiz_state.json`?
+- 出题 prompt:中文诗词的 cloze 题型和英文 trivia 不一样,要分开处
+  理。
+- 成本:每周触发一次出题,Haiku 看 ~30 条 tip 作为 context,可忽略
+  (~$0.02/轮),远小于 classify 一轮。
+
+### 为什么先放 Roadmap 而非 DD
+
+这是一个面向用户的特性,形态比较清晰(sidebar widget + 持久化历史
++ 周度调度),没有跨多文件 / schema 变更 / prompt 大改之前还到不
+了 DD 门槛。落地时再升 DD。
 
 ## 不在 Roadmap 内
 
