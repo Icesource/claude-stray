@@ -82,7 +82,7 @@ dispatcher 前面先把 flag 解析为 `DO_*` boolean，再按固定优先级分
   不变量加上自检段落 **和** `refresh.sh` 里的后处理修复（双保险）
 
 prompt 改动后 force 一次真实 refresh 看 DIFF 输出
-（`mindmap --refresh && tail Library/Logs/claude-code-worktree.log`）。
+（`mindmap --refresh && tail Library/Logs/claude-stray.log`）。
 如果 `DIFF vs prior` 显示 initiative `id` 被改名或 `done` 反弹回
 `false`，说明 prompt 改动破坏了连续性。
 

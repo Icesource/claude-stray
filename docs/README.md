@@ -1,4 +1,4 @@
-# claude-code-worktree docs
+# claude-stray docs
 
 Internal documentation. User-facing install/usage lives in the top-level
 [`README.md`](../README.md). The Chinese mirror of the user README is

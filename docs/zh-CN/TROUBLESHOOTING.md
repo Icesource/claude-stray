@@ -48,8 +48,8 @@ mindmap --refresh    # refresh.sh 内部置 CLAUDE_WORKTREE_FORCE=1
 观察日志：
 
 ```bash
-tail -f ~/Library/Logs/claude-code-worktree.log              # macOS
-tail -f ~/.local/state/claude-code-worktree/refresh.log       # Linux
+tail -f ~/Library/Logs/claude-stray.log              # macOS
+tail -f ~/.local/state/claude-stray/refresh.log       # Linux
 ```
 
 成功跑完会以 `[refresh] wrote ... N workspaces, M initiatives` 加一段
@@ -154,8 +154,8 @@ worker thread 调 shutdown + `daemon_threads=True`。还是老行为就 pull。
 
 | 平台 | 路径 |
 |---|---|
-| macOS | `~/Library/Logs/claude-code-worktree.log` |
-| Linux | `${XDG_STATE_HOME:-~/.local/state}/claude-code-worktree/refresh.log` |
+| macOS | `~/Library/Logs/claude-stray.log` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/claude-stray/refresh.log` |
 
 每条 `[hook] <ISO timestamp>` 开启一次 invocation；到下一条 `[hook]`
 之前的所有输出都属于这次 invocation。

@@ -77,5 +77,5 @@ commits weren't grouped under a tag.
   suppression on `window.confirm` — replaced with a custom in-page
   modal.
 
-[Unreleased]: https://github.com/Icesource/claude-code-worktree/compare/v0.5.0...HEAD
-[v0.5.0]: https://github.com/Icesource/claude-code-worktree/releases/tag/v0.5.0
+[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.5.0

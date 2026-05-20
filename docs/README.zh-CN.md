@@ -1,4 +1,4 @@
-# claude-code-worktree
+# claude-stray
 
 AI 驱动的终端工作树 — 自动将 Claude Code 会话分类为项目并追踪进度。
 
@@ -41,8 +41,8 @@ Claude Code Worktree  (generated 2m ago)
 ## 安装
 
 ```bash
-git clone https://github.com/Icesource/claude-code-worktree.git ~/code/claude-code-worktree
-cd ~/code/claude-code-worktree
+git clone https://github.com/Icesource/claude-stray.git ~/code/claude-stray
+cd ~/code/claude-stray
 bash bin/install.sh
 ```
 

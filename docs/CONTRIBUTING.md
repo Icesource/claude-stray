@@ -94,7 +94,7 @@ classifier. Two failure modes to defend against:
   (belt + suspenders)
 
 After any prompt change, force a real refresh and inspect the DIFF
-output (`mindmap --refresh && tail Library/Logs/claude-code-worktree.log`).
+output (`mindmap --refresh && tail Library/Logs/claude-stray.log`).
 If `DIFF vs prior` shows initiative `id`s being renamed or `done` flipping
 back to `false`, the prompt change broke continuity.
 

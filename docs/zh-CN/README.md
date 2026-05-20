@@ -1,4 +1,4 @@
-# claude-code-worktree 文档（中文）
+# claude-stray 文档（中文）
 
 内部开发文档。用户向的安装/使用说明在根目录的 [`README.md`](../../README.md)；
 对应中文版是 [`docs/README.zh-CN.md`](../README.zh-CN.md)。

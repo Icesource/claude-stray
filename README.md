@@ -1,4 +1,4 @@
-# claude-code-worktree
+# claude-stray
 
 AI-powered terminal tree of your Claude Code work — auto-classifies sessions
 into projects with progress tracking.
@@ -53,8 +53,8 @@ Claude Code Worktree  (generated 2m ago)
 ## Install
 
 ```bash
-git clone https://github.com/Icesource/claude-code-worktree.git ~/code/claude-code-worktree
-cd ~/code/claude-code-worktree
+git clone https://github.com/Icesource/claude-stray.git ~/code/claude-stray
+cd ~/code/claude-stray
 bash bin/install.sh
 ```
 
@@ -131,8 +131,8 @@ protection prevent unnecessary spending:
 | Session data unchanged | **$0** (hash shortcut) |
 | Typical refresh (~100 sessions) | ~$0.01–0.05 |
 
-Every AI call logs token usage to `~/Library/Logs/claude-code-worktree.log`
-(macOS) or `~/.local/state/claude-code-worktree/refresh.log` (Linux):
+Every AI call logs token usage to `~/Library/Logs/claude-stray.log`
+(macOS) or `~/.local/state/claude-stray/refresh.log` (Linux):
 
 ```
 [refresh] usage: in=18200 (+0 cache-create) out=1500 cost=$0.0234 prompt=42KB elapsed=15s
@@ -157,7 +157,7 @@ Override defaults via environment variables:
 
 ## Comparison
 
-| | claude-code-worktree | [Claude Code Canvas](https://github.com/raulriera/claude-code-canvas) | [Claude Code Viewer](https://github.com/d-kimuson/claude-code-viewer) |
+| | claude-stray | [Claude Code Canvas](https://github.com/raulriera/claude-code-canvas) | [Claude Code Viewer](https://github.com/d-kimuson/claude-code-viewer) |
 |---|---|---|---|
 | AI project classification | Yes | No | No |
 | Progress / task tracking | Yes | No | No |
