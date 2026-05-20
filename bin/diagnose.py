@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
-MINDMAP_FILE = CACHE_DIR / "mindmap.json"
+DASHBOARD_FILE = CACHE_DIR / "dashboard.json"
 COST_LOG = CACHE_DIR / "cost_log.jsonl"
 KILL_SWITCH = CACHE_DIR / ".refresh-disabled"
 
@@ -199,15 +199,15 @@ def main() -> int:
         else:
             print(bad("waiting on Stage 1 (extract); Layer 1 will run after"))
 
-    # ---- 4. mindmap.json ------------------------------------------------
-    print("\n" + head("[4] Stage 3: AI classification (cache/mindmap.json)"))
-    if MINDMAP_FILE.exists():
+    # ---- 4. dashboard.json ------------------------------------------------
+    print("\n" + head("[4] Stage 3: AI classification (cache/dashboard.json)"))
+    if DASHBOARD_FILE.exists():
         try:
-            mm = json.loads(MINDMAP_FILE.read_text())
+            mm = json.loads(DASHBOARD_FILE.read_text())
         except json.JSONDecodeError:
             mm = {}
         gen = mm.get("generated_at", "?")
-        print(info(f"mindmap.json generated_at: {gen} (file mtime {humanize_age(MINDMAP_FILE.stat().st_mtime)})"))
+        print(info(f"dashboard.json generated_at: {gen} (file mtime {humanize_age(DASHBOARD_FILE.stat().st_mtime)})"))
         found_init = None
         found_ws = None
         for ws in (mm.get("workspaces") or []):
@@ -223,10 +223,10 @@ def main() -> int:
             print(info(f"  initiative id: {found_init.get('id')}"))
             print(info(f"  status: {found_init.get('status')}"))
         else:
-            print(bad("session_id is NOT in any initiative in mindmap.json"))
+            print(bad("session_id is NOT in any initiative in dashboard.json"))
             print(info("Causes: AI hasn't run since this session existed, OR AI ignored it (rare)."))
     else:
-        print(bad("mindmap.json missing — never ran a refresh"))
+        print(bad("dashboard.json missing — never ran a refresh"))
 
     # ---- 5. Kill switch + recent AI activity (from cost_log.jsonl) -------
     print("\n" + head("[5] Pipeline health"))
@@ -325,8 +325,8 @@ def main() -> int:
     elif not summary_md_ok:
         print(warn("Stage 2 (Layer 1 summarize) hasn't summarized this session."))
         print(info("Causes: is_automation, user_message_count<1, or not yet processed."))
-    elif not (MINDMAP_FILE.exists() and any(target_sid in (i.get('sessions') or []) for ws in (json.loads(MINDMAP_FILE.read_text()).get('workspaces') or []) for i in (ws.get('initiatives') or []))):
-        print(warn("Session is summarized but isn't in mindmap.json yet."))
+    elif not (DASHBOARD_FILE.exists() and any(target_sid in (i.get('sessions') or []) for ws in (json.loads(DASHBOARD_FILE.read_text()).get('workspaces') or []) for i in (ws.get('initiatives') or []))):
+        print(warn("Session is summarized but isn't in dashboard.json yet."))
         print(info("Cause: Layer 2 (classify) hasn't run with this summary yet."))
         print(info(f"→ Force classify: mindmap --refresh"))
     else:

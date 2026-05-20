@@ -2,7 +2,7 @@
 Shared helpers for DD-006 derived features.
 
 The four derived features (weekly report, next-steps, tips, wellness)
-all consume the same upstream data (cache/mindmap.json + summaries +
+all consume the same upstream data (cache/dashboard.json + summaries +
 cost_log) and produce different artifacts under cache/derived/. This
 module centralizes:
 
@@ -36,7 +36,7 @@ CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
-MINDMAP_FILE = CACHE_DIR / "mindmap.json"
+DASHBOARD_FILE = CACHE_DIR / "dashboard.json"
 COST_LOG = CACHE_DIR / "cost_log.jsonl"
 DERIVED_DIR = CACHE_DIR / "derived"
 PROMPTS_DIR = REPO_ROOT / "prompts"
@@ -202,9 +202,9 @@ def _read_summary(sid: str) -> dict | None:
 
 
 def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
-    """Walk cache/summaries, cache/mindmap.json, and cache/archive to
+    """Walk cache/summaries, cache/dashboard.json, and cache/archive to
     assemble all evidence of work in `week`. Per DD-011, tasks live
-    only in mindmap.json — no task_archive directory is consulted."""
+    only in dashboard.json — no task_archive directory is consulted."""
     week = week or WeekRange.for_date()
     sig = WeeklySignal(week=week)
 
@@ -239,9 +239,9 @@ def compute_weekly_signal(week: WeekRange | None = None) -> WeeklySignal:
             })
 
     # ---- Mindmap-derived signals (active initiatives, artifacts, tasks) ----
-    if MINDMAP_FILE.exists():
+    if DASHBOARD_FILE.exists():
         try:
-            mm = json.loads(MINDMAP_FILE.read_text())
+            mm = json.loads(DASHBOARD_FILE.read_text())
         except json.JSONDecodeError:
             mm = {}
         hot_sids = {s["sid"] for s in sig.hot_sessions}

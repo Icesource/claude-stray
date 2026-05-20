@@ -47,7 +47,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from derived._shared import (  # noqa: E402
-    DERIVED_DIR, MINDMAP_FILE, get_lang, call_claude, log_cost,
+    DERIVED_DIR, DASHBOARD_FILE, get_lang, call_claude, log_cost,
     atomic_write_json, ensure_dir, read_last_run, write_last_run,
     hours_since, now_utc_iso,
 )
@@ -63,10 +63,10 @@ MIN_HOURS_BETWEEN_RUNS = 2
 
 def _detect_work_patterns() -> list[dict]:
     """Returns a list of work-pattern dicts (may be empty)."""
-    if not MINDMAP_FILE.exists():
+    if not DASHBOARD_FILE.exists():
         return []
     try:
-        mm = json.loads(MINDMAP_FILE.read_text())
+        mm = json.loads(DASHBOARD_FILE.read_text())
     except json.JSONDecodeError:
         return []
 

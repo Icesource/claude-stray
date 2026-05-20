@@ -3,7 +3,7 @@
 Regression test for DD-011 task-persistence invariants.
 
 DD-011 contract:
-  - Tasks live ONLY in mindmap.json (no task_archive/).
+  - Tasks live ONLY in dashboard.json (no task_archive/).
   - Each task has {id, title, status: pending|done|cancelled,
     evidence?, terminal_at?}.
   - AI is additive: PRIOR tasks must survive every classify round.
@@ -57,7 +57,7 @@ def _patch_classify_paths():
     classify.CACHE_DIR = TMP_CACHE
     classify.SESSIONS_DIR = TMP_CACHE / "sessions"
     classify.SUMMARIES_DIR = TMP_SUMMARIES
-    classify.MINDMAP_FILE = TMP_CACHE / "mindmap.json"
+    classify.DASHBOARD_FILE = TMP_CACHE / "dashboard.json"
     return classify
 
 

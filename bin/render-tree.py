@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Render cache/mindmap.json as a single-file markmap (mind-map view).
+Render cache/dashboard.json as a single-file markmap (mind-map view).
 
 This is the EXPORT/visualization view. The primary UI is the card-based
 dashboard rendered by render-html.py. The tree view is useful for:
@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MINDMAP_FILE = REPO_ROOT / "cache" / "mindmap.json"
+DASHBOARD_FILE = REPO_ROOT / "cache" / "dashboard.json"
 CONFIG_FILE = REPO_ROOT / "cache" / "config.json"
 OUTPUT_FILE = REPO_ROOT / "cache" / "mindmap-tree.html"
 
@@ -218,7 +218,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <body>
 <div id="root">
   <header>
-    <a class="back" href="mindmap.html">__BACK__</a>
+    <a class="back" href="dashboard.html">__BACK__</a>
     <h1>__HEADER__</h1>
     <span class="meta">__GENERATED__</span>
     <span class="hint">__HINT__</span>
@@ -249,10 +249,10 @@ def render_html(data: dict, L: dict, lang: str) -> str:
 
 
 def main() -> int:
-    if not MINDMAP_FILE.exists():
-        print(f"No mindmap cache found at {MINDMAP_FILE}", file=sys.stderr)
+    if not DASHBOARD_FILE.exists():
+        print(f"No mindmap cache found at {DASHBOARD_FILE}", file=sys.stderr)
         return 1
-    data = json.loads(MINDMAP_FILE.read_text())
+    data = json.loads(DASHBOARD_FILE.read_text())
     lang = get_lang()
     html = render_html(data, LOCALE[lang], lang)
     OUTPUT_FILE.write_text(html, encoding="utf-8")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Render cache/mindmap.json as a shell-style tree with ANSI colors.
+Render cache/dashboard.json as a shell-style tree with ANSI colors.
 
 Supports both schemas:
   v1 (legacy): {"projects": [{...tasks: [...]}]}     — 2 levels
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MINDMAP_FILE = REPO_ROOT / "cache" / "mindmap.json"
+DASHBOARD_FILE = REPO_ROOT / "cache" / "dashboard.json"
 CONFIG_FILE = REPO_ROOT / "cache" / "config.json"
 
 USE_COLOR = sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
@@ -399,13 +399,13 @@ def render(data: dict) -> str:
 
 
 def main() -> int:
-    if not MINDMAP_FILE.exists():
+    if not DASHBOARD_FILE.exists():
         print(
             c(YELLOW, L["no_cache"]) + "\n  mindmap --refresh",
             file=sys.stderr,
         )
         return 1
-    data = json.loads(MINDMAP_FILE.read_text())
+    data = json.loads(DASHBOARD_FILE.read_text())
     print(render(data))
     return 0
 
