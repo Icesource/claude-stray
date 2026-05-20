@@ -5,7 +5,7 @@ Predecessors: DD-002 (3-layer pipeline), DD-003 (artifacts/blockers),
 DD-008 (task aggregation + archive)
 Trigger: 2026-05-15 — user observed that
 `mw-cli-hsf-qos-commands` card had:
-1. 13 tasks from a different initiative (`claude-code-worktree-dashboard`)
+1. 13 tasks from a different initiative (`claude-stray-dashboard`)
    stuck on it permanently;
 2. 5 pairs of en/zh duplicates of the same task;
 3. Several "real" tasks staying ✗ even after the user shipped them.
@@ -25,7 +25,7 @@ initiative. If at any past round AI mis-assigned task T to
 initiative A, T stays in A forever.
 
 This actually happened on 2026-05-15: during chaotic concurrent
-testing, the `claude-code-worktree-dashboard` initiative was briefly
+testing, the `claude-stray-dashboard` initiative was briefly
 archived, leaving its session `940413c0` looking orphaned to AI's
 next classify run. AI placed 940413c0's tasks under
 `mw-cli-hsf-qos-commands` for one round. The dashboard was

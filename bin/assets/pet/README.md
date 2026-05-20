@@ -19,4 +19,4 @@ next to). Background is chroma-keyed transparent.
 Render-time, `bin/render-html.py` base64-encodes this PNG into the
 generated HTML as a `data:` URL — so the sprite ships inline with
 the page and there is no extra HTTP fetch (or path-resolution
-headache between static `file://` mode and `mindmap --serve` mode).
+headache between static `file://` mode and `stray --serve` mode).

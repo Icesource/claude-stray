@@ -1,5 +1,5 @@
 ---
-description: Show the cached Claude Code work mindmap
+description: Show the cached Claude Code work dashboard
 allowed-tools: Bash(python3:*)
 ---
 

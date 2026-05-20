@@ -8,7 +8,47 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
-(nothing yet — start of a new iteration cycle)
+### Changed
+
+- **Rename: `claude-code-worktree` → `claude-stray`.** The project is
+  rebranded to `claude-stray` — short, references the pixel cat
+  mascot, and (intentionally) signals "Claude Code companion tool" via
+  the `claude-` prefix. Touches the project name, the CLI binary
+  (`mindmap` → `stray`), slash commands (`/mindmap*` → `/stray*`), and
+  canonical data files (`cache/mindmap.json` → `cache/dashboard.json`,
+  `cache/mindmap.html` → `cache/dashboard.html`).
+- Tips additions: rotation cadence is 2h (was 6h), batch size is 20
+  with intentional 8/6/3/3 split (curiosity-heavy), required
+  `source_url` on curiosity + wisdom tips, anti-fabrication prompt
+  rule, scenic wisdom tone.
+- Tips bubble UI: walking pixel cat mascot (CC0 sprite from
+  OpenGameArt), draggable position with localStorage persistence,
+  inline `↗` source link per tip, Fisher-Yates shuffle so categories
+  don't cluster across rotations.
+
+### Added
+
+- **`stable` branch + `v0.5.0` tag.** `docs/RELEASE.md` documents the
+  branch model (`main` for dev / `stable` for daily-use / topic
+  branches for features), SemVer rules, release checklist, and
+  hotfix path. Daily use should now run `git checkout stable`.
+- Legacy aliases preserved through the rename: `~/.local/bin/mindmap`
+  symlinks to `bin/stray`, and `/mindmap` + `/mindmap-refresh` slash
+  commands install alongside `/stray` + `/stray-refresh`. Both will
+  be removed in v0.7.0.
+- `bin/_migrate_to_stray.sh` — one-shot migration script that renames
+  local cache files, updates `~/.claude/settings.json` hook paths,
+  and moves `~/.claude/skills/mindmap/` if present.
+
+### Roadmap
+
+- `P16 — Tips quiz (spaced reinforcement)`: persist every shown tip,
+  weekly cloze / MC / free-recall quiz so the rotating content
+  actually sticks. Source URL is the trust anchor on every answer.
+- `P17 — Persona accretion (digital twin prompt)`: hook-driven
+  distillation of the user's tone, style, frustration triggers into
+  an accumulating persona file that can seed any future agent with
+  the user's voice.
 
 ## [v0.5.0] — 2026-05-19
 
@@ -77,5 +117,5 @@ commits weren't grouped under a tag.
   suppression on `window.confirm` — replaced with a custom in-page
   modal.
 
-[Unreleased]: https://github.com/Icesource/claude-code-worktree/compare/v0.5.0...HEAD
-[v0.5.0]: https://github.com/Icesource/claude-code-worktree/releases/tag/v0.5.0
+[Unreleased]: https://github.com/Icesource/claude-stray/compare/v0.5.0...HEAD
+[v0.5.0]: https://github.com/Icesource/claude-stray/releases/tag/v0.5.0

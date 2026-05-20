@@ -79,7 +79,7 @@ If an agent commits to git, the commit author is the user. If an
 agent posts a comment to a PR, it's under the user's identity. This
 needs to be made visible in every artifact:
 - Commit messages prefixed `[agent-run: <run-id>]`
-- PR comments prefixed `🤖 Auto-driven by claude-code-worktree`
+- PR comments prefixed `🤖 Auto-driven by claude-stray`
 - A separate audit log: `cache/agent-runs/<run-id>/transcript.jsonl`
 
 ### 2.6 — Resumability

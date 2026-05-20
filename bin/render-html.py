@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Render cache/mindmap.json as a single-file dashboard HTML.
+Render cache/dashboard.json as a single-file dashboard HTML.
 
 Layout: card-based, no third-party UI lib. Each initiative is a card
 under its workspace section. Cards self-contain all actions (toggle task,
@@ -11,7 +11,7 @@ Persistence:
 - Optional: File System Access API writes back to cache/ so the next AI
   refresh sees the user's edits.
 
-Single-file output: cache/mindmap.html
+Single-file output: cache/dashboard.html
 """
 
 from __future__ import annotations
@@ -24,11 +24,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-MINDMAP_FILE = REPO_ROOT / "cache" / "mindmap.json"
+DASHBOARD_FILE = REPO_ROOT / "cache" / "dashboard.json"
 CONFIG_FILE = REPO_ROOT / "cache" / "config.json"
 LOCATIONS_FILE = REPO_ROOT / "cache" / "session_locations.json"
 ARCHIVE_DIR = REPO_ROOT / "cache" / "archive"
-OUTPUT_FILE = REPO_ROOT / "cache" / "mindmap.html"
+OUTPUT_FILE = REPO_ROOT / "cache" / "dashboard.html"
 PET_SPRITE_FILE = REPO_ROOT / "bin" / "assets" / "pet" / "cat-walk.png"
 
 
@@ -239,7 +239,7 @@ LOCALE = {
         "sync_connected": "✓ connected",
         "sync_download": "📥 Download patch",
         "sync_unsupported": "Browser lacks File System Access — using download fallback",
-        "helper_offline": "Helper offline (run `mindmap --serve` for jump)",
+        "helper_offline": "Helper offline (run `stray --serve` for jump)",
         "helper_online": "✓ helper :{}",
         "data_stale_banner": "↻ Server has new data — click to load",
         "manual_refresh": "🔄 Run AI refresh",
@@ -255,7 +255,7 @@ LOCALE = {
         "weekly_label": "This week's recap",
         "weekly_open_btn": "Open weekly report ({})",
         "weekly_loading": "Loading…",
-        "weekly_empty": "Not generated yet — run `mindmap --weekly-report`",
+        "weekly_empty": "Not generated yet — run `stray --weekly-report`",
         "weekly_modal_title": "Weekly report — {}",
         "next_steps_label": "Suggested focus",
         "next_steps_empty": "No suggestions yet",
@@ -374,7 +374,7 @@ def load_archived_items() -> list:
     """
     Load all archived initiatives from cache/archive/<workspace>/<id>.json.
 
-    These were physically removed from mindmap.json by the classifier but
+    These were physically removed from dashboard.json by the classifier but
     the full initiative payload is preserved on disk. The HTML needs them
     so the archive zone keeps showing items even after the AI refresh
     that consumed them.
@@ -1254,7 +1254,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   const I18N = JSON.parse(document.getElementById('i18n-data').textContent);
   let LOCATIONS = JSON.parse(document.getElementById('locations-data').textContent);
   // Archived items loaded from cache/archive/ — already removed from
-  // mindmap.json but we keep them visible in the archive zone here.
+  // dashboard.json but we keep them visible in the archive zone here.
   let ARCHIVED_PERSISTED = JSON.parse(document.getElementById('archived-data').textContent);
   // Lifecycle state (DD-005). Embedded at render time so static mode
   // reflects pause state on first paint; server mode updates it on
@@ -1499,7 +1499,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     });
 
     // Also pull in items persisted to cache/archive/ (already swept from
-    // mindmap.json by the classifier). They are in initById tagged as `persisted`.
+    // dashboard.json by the classifier). They are in initById tagged as `persisted`.
     // Persisted (user-archived to disk) entries already carry
     // entry.archived_at from cache/archive/<ws>/<id>.json. Merge them
     // into archivedList here, preserving that timestamp for grouping.
@@ -2053,7 +2053,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
   function taskStatus(t) {
     // DD-011: prefer `status`; fall back to legacy `done: bool` for any
-    // mindmap.json snapshot written before the migration ran.
+    // dashboard.json snapshot written before the migration ran.
     let s = t.status;
     if (s !== 'pending' && s !== 'done' && s !== 'cancelled') {
       s = t.done ? 'done' : 'pending';
@@ -2422,7 +2422,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   if (!SERVER_MODE) setInterval(pingHelper, 30000);
 
   // ---------- Data freshness — silent hot-refresh (server mode) ---------
-  // When the pipeline runs in the background, mindmap.json changes. We poll
+  // When the pipeline runs in the background, dashboard.json changes. We poll
   // /api/data every 8s and swap in the new data + re-render silently.
   // No banner, no reload — the page just updates in place. Scroll position
   // is preserved across re-renders.
@@ -2504,7 +2504,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // button, so users at least see the state.
     if ($lbResume) {
       $lbResume.disabled = !SERVER_MODE;
-      $lbResume.title = SERVER_MODE ? '' : 'Run `mindmap --resume` in your terminal';
+      $lbResume.title = SERVER_MODE ? '' : 'Run `stray --resume` in your terminal';
     }
   }
 
@@ -2998,11 +2998,11 @@ def render_html(data: dict, L: dict, lang: str) -> str:
 
 
 def main() -> int:
-    if not MINDMAP_FILE.exists():
-        print(f"No mindmap cache found at {MINDMAP_FILE}", file=sys.stderr)
+    if not DASHBOARD_FILE.exists():
+        print(f"No mindmap cache found at {DASHBOARD_FILE}", file=sys.stderr)
         print("Run: mindmap --refresh", file=sys.stderr)
         return 1
-    data = json.loads(MINDMAP_FILE.read_text())
+    data = json.loads(DASHBOARD_FILE.read_text())
     lang = get_lang()
     L = LOCALE[lang]
     html = render_html(data, L, lang)

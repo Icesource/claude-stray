@@ -78,7 +78,7 @@ fitting** cwd as primary; others go under `linked_cwds`.
 ## 3. Repository layout
 
 ```
-claude-code-worktree/
+claude-stray/
 ├── bin/                          # All executables
 │   ├── install.sh                # One-shot installer (slash + hook)
 │   ├── install-hook.sh           # Re-install only the hooks
@@ -498,7 +498,7 @@ Locking is layer-scoped, no longer global:
 All mkdir locks include stale-lock cleanup (`find -mmin +N` before
 acquire) and `trap rmdir EXIT` to release on crash. `flock(1)` is NOT
 used — it's util-linux-only and missing on stock macOS (lesson from
-P14 ship bug, [feedback_macos_portability](../../.claude/projects/-Users-bby-Code-claude-code-worktree/memory/feedback_macos_portability.md)).
+P14 ship bug, [feedback_macos_portability](../../.claude/projects/-Users-bby-Code-claude-stray/memory/feedback_macos_portability.md)).
 
 ---
 

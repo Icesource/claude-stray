@@ -1,5 +1,5 @@
 ---
-description: Force refresh the mindmap cache then show it
+description: Force refresh the dashboard cache then show it
 allowed-tools: Bash(bash:*), Bash(python3:*)
 ---
 

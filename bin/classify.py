@@ -4,7 +4,7 @@ Layer 2 of the AI pipeline (per DD-002).
 
 Reads:
   - cache/summaries/*.md             (Layer 1 outputs)
-  - cache/mindmap.json               (PRIOR_MINDMAP — sole task store, DD-011)
+  - cache/dashboard.json               (PRIOR_MINDMAP — sole task store, DD-011)
   - cache/deleted_ids.json           (DELETED_IDS)
   - cache/user_overrides.json        (applied to PRIOR before AI call)
   - cache/archive/<ws>/<id>.json     (used to strip archived ids from PRIOR)
@@ -12,9 +12,9 @@ Reads:
 Calls Haiku with prompts/classify-cross-session.md.
 
 Writes:
-  - cache/mindmap.json               (replaces; atomic tmp+rename)
+  - cache/dashboard.json               (replaces; atomic tmp+rename)
   - cache/cost_log.jsonl             (via _cost_log helper)
-  - cache/mindmap.html (regen)       (best-effort, non-fatal)
+  - cache/dashboard.html (regen)       (best-effort, non-fatal)
   - cache/mindmap-tree.html (regen)
 
 Concurrency:
@@ -26,7 +26,7 @@ Concurrency:
 Usage:
   python3 bin/classify.py                 # do the thing
   python3 bin/classify.py --dry-run       # build prompt, don't call AI
-  python3 bin/classify.py --output FILE   # write to FILE instead of mindmap.json
+  python3 bin/classify.py --output FILE   # write to FILE instead of dashboard.json
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ CACHE_DIR = REPO_ROOT / "cache"
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
-MINDMAP_FILE = CACHE_DIR / "mindmap.json"
+DASHBOARD_FILE = CACHE_DIR / "dashboard.json"
 DELETED_FILE = CACHE_DIR / "deleted_ids.json"
 OVERRIDES_FILE = CACHE_DIR / "user_overrides.json"
 CONFIG_FILE = CACHE_DIR / "config.json"
@@ -273,10 +273,10 @@ def is_hot(fm: dict, now: datetime) -> bool:
 
 
 def load_prior() -> dict | None:
-    if not MINDMAP_FILE.exists():
+    if not DASHBOARD_FILE.exists():
         return None
     try:
-        return json.loads(MINDMAP_FILE.read_text(encoding="utf-8"))
+        return json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -715,7 +715,7 @@ def aggregate_tasks(new_mm: dict, prior: dict,
                     hot_summaries: list) -> int:
     """DD-011 — tri-state, single-store task aggregation.
 
-    Tasks live solely in mindmap.json. AI is additive-only: it may add
+    Tasks live solely in dashboard.json. AI is additive-only: it may add
     new tasks and may flip PRIOR `pending` to `done` or `cancelled`
     with evidence, but never deletes and never reverts terminal status.
     Only the user can delete or revive (via user_overrides.json).
@@ -980,10 +980,10 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="build prompt, print summary, do not call AI")
     ap.add_argument("--output", type=Path, default=None,
-                    help=f"write result to FILE instead of {MINDMAP_FILE}")
+                    help=f"write result to FILE instead of {DASHBOARD_FILE}")
     args = ap.parse_args()
 
-    output_path = args.output or MINDMAP_FILE
+    output_path = args.output or DASHBOARD_FILE
 
     # ---- 1. Load + clean PRIOR ----
     prior = load_prior() or {"schema_version": 2, "workspaces": []}
@@ -1122,8 +1122,8 @@ def main() -> int:
     emit_diff(prior, new_mm)
     log_cost(envelope, duration, ok=True)
 
-    # ---- 7. Regen HTML (only when writing to canonical mindmap.json) ----
-    if output_path == MINDMAP_FILE:
+    # ---- 7. Regen HTML (only when writing to canonical dashboard.json) ----
+    if output_path == DASHBOARD_FILE:
         regen_html()
 
     return 0

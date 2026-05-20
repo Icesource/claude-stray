@@ -158,7 +158,7 @@ hand-explain commands each session.
    so it activates on the current machine
 
 4. Hosted URL: publish at a stable raw URL (GitHub Pages or
-   `raw.githubusercontent.com/Icesource/claude-code-worktree/main/SKILL.md`)
+   `raw.githubusercontent.com/Icesource/claude-stray/main/SKILL.md`)
    so other machines can install with one prompt to their main Agent
 
 ### Optional companion: `SKILL.URL.txt`

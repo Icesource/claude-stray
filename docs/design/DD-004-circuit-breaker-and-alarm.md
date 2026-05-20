@@ -4,8 +4,8 @@ Status: **proposed** (not implemented)
 Predecessor: DD-002 §12 (cost-aware operation), DD-003 (card surface)
 Trigger: 2026-05-14 runaway incident (1700+ self-recursive `summarize.py`
 calls in 4 hours, $51 lost) — see post-incident notes in
-[`feedback_macos_portability`](../../../.claude/projects/-Users-bby-Code-claude-code-worktree/memory/feedback_macos_portability.md)
-and [`feedback_verify_before_claim`](../../../.claude/projects/-Users-bby-Code-claude-code-worktree/memory/feedback_verify_before_claim.md).
+[`feedback_macos_portability`](../../../.claude/projects/-Users-bby-Code-claude-stray/memory/feedback_macos_portability.md)
+and [`feedback_verify_before_claim`](../../../.claude/projects/-Users-bby-Code-claude-stray/memory/feedback_verify_before_claim.md).
 
 ## 1 — Problem
 

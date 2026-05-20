@@ -4,11 +4,11 @@ Unified local server for claude-code-worktree.
 
 Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
 
-  GET  /                  -> serves cache/mindmap.html
+  GET  /                  -> serves cache/dashboard.html
   GET  /mindmap-tree.html -> serves cache/mindmap-tree.html
   GET  /cache/...         -> serves files from cache/ (json data, etc.)
   GET  /ping              -> health check + capabilities
-  GET  /api/data          -> current mindmap.json + locations + overrides + lifecycle
+  GET  /api/data          -> current dashboard.json + locations + overrides + lifecycle
   POST /api/save          -> persist user overrides (task toggles, archive, delete)
   POST /api/refresh       -> trigger background AI refresh
   POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
@@ -42,9 +42,9 @@ from urllib.parse import urlparse, parse_qs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / "cache"
-HTML_FILE = CACHE_DIR / "mindmap.html"
+HTML_FILE = CACHE_DIR / "dashboard.html"
 TREE_FILE = CACHE_DIR / "mindmap-tree.html"
-MINDMAP_JSON = CACHE_DIR / "mindmap.json"
+DASHBOARD_JSON = CACHE_DIR / "dashboard.json"
 LOCATIONS_JSON = CACHE_DIR / "session_locations.json"
 OVERRIDES_JSON = CACHE_DIR / "user_overrides.json"
 DELETED_JSON = CACHE_DIR / "deleted_ids.json"
@@ -189,9 +189,9 @@ def _read_last_run(feature: str) -> str | None:
 
 
 def _mindmap_mtime() -> float:
-    """Return mindmap.json mtime, or 0 if missing."""
+    """Return dashboard.json mtime, or 0 if missing."""
     try:
-        return MINDMAP_JSON.stat().st_mtime
+        return DASHBOARD_JSON.stat().st_mtime
     except OSError:
         return 0.0
 
@@ -233,13 +233,13 @@ def _derived_scheduler_loop(stop_event) -> None:
         else:
             _run_derived("tips.py")
 
-        # next_steps: regenerate when mindmap.json was updated (a fresh
+        # next_steps: regenerate when dashboard.json was updated (a fresh
         # classify ran in the background). next_steps.py has its own
         # 30-minute debounce so noisy mindmap rewrites don't burst the
         # AI call.
         current_mtime = _mindmap_mtime()
         if current_mtime > last_mindmap_mtime:
-            print(f"[sched] next_steps: mindmap.json changed "
+            print(f"[sched] next_steps: dashboard.json changed "
                   f"({current_mtime:.0f} > {last_mindmap_mtime:.0f})",
                   file=sys.stderr)
             _run_derived("next_steps.py")
@@ -279,9 +279,9 @@ class Handler(BaseHTTPRequestHandler):
         with the underlying data even if the pipeline bumped the JSON
         without re-running render-html."""
         try:
-            if not MINDMAP_JSON.exists():
+            if not DASHBOARD_JSON.exists():
                 return
-            data_mtime = MINDMAP_JSON.stat().st_mtime
+            data_mtime = DASHBOARD_JSON.stat().st_mtime
             if path == HTML_FILE or path == TREE_FILE:
                 html_mtime = path.stat().st_mtime if path.exists() else 0
                 if data_mtime > html_mtime:
@@ -310,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path in ("/", "/index", "/index.html", "/mindmap.html"):
+        if path in ("/", "/index", "/index.html", "/dashboard.html"):
             return self._serve_file(HTML_FILE, "text/html")
         if path == "/mindmap-tree.html":
             return self._serve_file(TREE_FILE, "text/html")
@@ -331,12 +331,12 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path == "/api/data":
             data = {}
-            try: data["mindmap"] = json.load(open(MINDMAP_JSON))
+            try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
             except Exception: data["mindmap"] = None
             try: data["locations"] = json.load(open(LOCATIONS_JSON))
             except Exception: data["locations"] = None
             # Archived items from cache/archive/<ws>/<id>.json — these are
-            # outside mindmap.json so we surface them explicitly so the
+            # outside dashboard.json so we surface them explicitly so the
             # browser's hot-refresh shows newly archived items immediately.
             archived = []
             if ARCHIVE_DIR.is_dir():
@@ -550,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
                 (ws_dir / f"{init_id}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
 
-            # Regenerate HTML so a reload reflects the save (mindmap.json is
+            # Regenerate HTML so a reload reflects the save (dashboard.json is
             # untouched until next refresh; the HTML uses overrides to compute
             # the effective view at runtime, so this regen mainly ensures any
             # nav/initial state is fresh).
@@ -594,7 +594,7 @@ def serve(open_browser: bool = True):
         url = f"http://{BIND}:{port}/"
         print(f"\n  ▸ {url}\n")
         print(f"[serve] endpoints:")
-        print(f"        GET  /            (mindmap dashboard)")
+        print(f"        GET  /            (dashboard)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
         print(f"        GET  /ping        /api/data")
         print(f"        POST /api/save    /api/refresh  /api/lifecycle  /focus  /newpane")

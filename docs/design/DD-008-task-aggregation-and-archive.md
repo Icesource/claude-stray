@@ -2,7 +2,7 @@
 
 Status: **accepted** (implementation immediately follows)
 Predecessors: DD-002 (3-layer pipeline), DD-003 (artifacts/blockers)
-Trigger: 2026-05-15 — user observed claude-code-worktree's tasks list
+Trigger: 2026-05-15 — user observed claude-stray's tasks list
 missed recent work (DD-005/006/007, ARCHITECTURE rewrite, commits)
 while `progress` was accurate. Investigation showed Layer 1 summaries
 contain the tasks but Layer 2 has no rule to mine, dedup, cap, or
@@ -11,7 +11,7 @@ archive them.
 ## 1 — Problem
 
 Comparing `mindmap.json:tasks[]` against `cache/summaries/<sid>.md` for
-the claude-code-worktree initiative on 2026-05-15:
+the claude-stray initiative on 2026-05-15:
 
 - Summary's `# 任务（建议）` section had 7 clean checkbox tasks for
   today's design-doc work.
@@ -155,7 +155,7 @@ Path: `cache/task_archive/<initiative_id>.json`
 
 ```json
 {
-  "initiative_id": "claude-code-worktree-dashboard",
+  "initiative_id": "claude-stray-dashboard",
   "updated_at": "2026-05-15T04:30:00Z",
   "tasks": [
     {
@@ -247,7 +247,7 @@ Reads `cache/task_archive/<id>.json` directly. No mutation.
 (they fit within cap). On next classify run, archive file is created
 with all current tasks seeded with `first_seen_at = generated_at`.
 
-**Existing initiatives with N>20 tasks** (e.g. our claude-code-worktree
+**Existing initiatives with N>20 tasks** (e.g. our claude-stray
 case with 43 tasks): on next classify, post-process dedups +
 caps. Visible drops to ≤20; the rest spill into the archive file.
 Badge shows `+N archived`.
@@ -301,6 +301,6 @@ prompt + code + UI but each part is small):
 4. Render-html: badge suffix + modal "view archived" toggle
 5. Serve: `/api/task-history` endpoint
 6. Trigger a real classify run on the live data, verify the
-   claude-code-worktree initiative drops to ≤20 visible + archive
+   claude-stray initiative drops to ≤20 visible + archive
    file appears
 7. Index DD-008 in design READMEs

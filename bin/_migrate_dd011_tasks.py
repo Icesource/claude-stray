@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-DD-011 one-shot migration: collapse cache/task_archive/ into mindmap.json.
+DD-011 one-shot migration: collapse cache/task_archive/ into dashboard.json.
 
 Reads every cache/task_archive/<id>.json, finds the matching initiative
-in cache/mindmap.json, and merges archive entries into init["tasks"]
+in cache/dashboard.json, and merges archive entries into init["tasks"]
 under the DD-011 schema:
 
     {id, title, status: pending|done|cancelled, evidence?, terminal_at?}
@@ -16,7 +16,7 @@ Field rewrites:
     first_seen_at, last_seen_at, sessions, evicted_at,
     eviction_reason  → DROPPED
 
-After a successful write to mindmap.json, the task_archive/ directory
+After a successful write to dashboard.json, the task_archive/ directory
 is renamed to task_archive.bak/ (rollback). Run the script a second
 time and it exits cleanly — no archive directory found.
 
@@ -42,7 +42,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "bin"))
 
 from classify import (
-    MINDMAP_FILE, CACHE_DIR, slugify_task_title, atomic_write_json,
+    DASHBOARD_FILE, CACHE_DIR, slugify_task_title, atomic_write_json,
     TASK_STATUSES, TASK_TERMINAL,
 )
 
@@ -102,11 +102,11 @@ def _load_archive_entries() -> dict[str, list[dict]]:
 def main() -> int:
     dry_run = "--dry-run" in sys.argv
 
-    if not MINDMAP_FILE.exists():
-        print(f"no mindmap.json at {MINDMAP_FILE}", file=sys.stderr)
+    if not DASHBOARD_FILE.exists():
+        print(f"no dashboard.json at {DASHBOARD_FILE}", file=sys.stderr)
         return 1
 
-    mm = json.loads(MINDMAP_FILE.read_text())
+    mm = json.loads(DASHBOARD_FILE.read_text())
 
     if not TASK_ARCHIVE_DIR.is_dir():
         # Idempotent: archive already gone. Still normalize mindmap so any
@@ -177,8 +177,8 @@ def main() -> int:
         print("\n  (dry-run; re-run without --dry-run to apply)")
         return 0
 
-    atomic_write_json(MINDMAP_FILE, mm)
-    print(f"\n  wrote {MINDMAP_FILE}")
+    atomic_write_json(DASHBOARD_FILE, mm)
+    print(f"\n  wrote {DASHBOARD_FILE}")
 
     if TASK_ARCHIVE_DIR.is_dir():
         if ARCHIVE_BAK_DIR.exists():

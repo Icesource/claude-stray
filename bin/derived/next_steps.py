@@ -2,7 +2,7 @@
 """
 DD-006 derived feature: next-step suggestions.
 
-Reads cache/mindmap.json's active + paused initiatives plus their
+Reads cache/dashboard.json's active + paused initiatives plus their
 blockers/last_activity, and asks Haiku to pick 3 the user should
 focus on next. Cheap (~$0.05/run) and runs after every classify
 finish, debounced to once per 30 minutes.
@@ -30,7 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from derived._shared import (  # noqa: E402
-    DERIVED_DIR, MINDMAP_FILE, get_lang, call_claude, log_cost,
+    DERIVED_DIR, DASHBOARD_FILE, get_lang, call_claude, log_cost,
     atomic_write_json, ensure_dir, read_last_run, write_last_run,
     hours_since, now_utc_iso,
 )
@@ -44,10 +44,10 @@ DEBOUNCE_MINUTES = 30
 
 def _gather_candidates() -> list[dict]:
     """Pull active + paused initiatives. AI picks 3."""
-    if not MINDMAP_FILE.exists():
+    if not DASHBOARD_FILE.exists():
         return []
     try:
-        mm = json.loads(MINDMAP_FILE.read_text())
+        mm = json.loads(DASHBOARD_FILE.read_text())
     except json.JSONDecodeError:
         return []
     items = []

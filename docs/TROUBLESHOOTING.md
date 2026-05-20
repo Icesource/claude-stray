@@ -48,8 +48,8 @@ mindmap --refresh    # sets CLAUDE_WORKTREE_FORCE=1 inside refresh.sh
 Watch the log:
 
 ```bash
-tail -f ~/Library/Logs/claude-code-worktree.log    # macOS
-tail -f ~/.local/state/claude-code-worktree/refresh.log    # Linux
+tail -f ~/Library/Logs/claude-stray.log    # macOS
+tail -f ~/.local/state/claude-stray/refresh.log    # Linux
 ```
 
 A successful run ends with `[refresh] wrote ... N workspaces, M
@@ -162,8 +162,8 @@ pull.
 
 | Platform | Path |
 |---|---|
-| macOS | `~/Library/Logs/claude-code-worktree.log` |
-| Linux | `${XDG_STATE_HOME:-~/.local/state}/claude-code-worktree/refresh.log` |
+| macOS | `~/Library/Logs/claude-stray.log` |
+| Linux | `${XDG_STATE_HOME:-~/.local/state}/claude-stray/refresh.log` |
 
 Every `[hook] <ISO timestamp>` line opens one invocation; everything
 after until the next `[hook]` line is that invocation's output.

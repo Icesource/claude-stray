@@ -150,7 +150,7 @@ mindmap 工具——不用每次 session 手动教它。
    让当前机器立即生效
 
 4. Hosted URL：发布在稳定 raw URL（GitHub Pages 或
-   `raw.githubusercontent.com/Icesource/claude-code-worktree/main/SKILL.md`）
+   `raw.githubusercontent.com/Icesource/claude-stray/main/SKILL.md`）
    让别的机器一句话告诉主 Agent 就能安装
 
 ### 可选搭档：`SKILL.URL.txt`
