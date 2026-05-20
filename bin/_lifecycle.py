@@ -8,7 +8,7 @@ UI and CLI can display *why* the pipeline was paused.
 
 `bin/refresh-bg.sh` already exits early when the kill-switch file
 exists; this module is purely about adding context + a programmatic
-way to flip the switch (used by `mindmap --pause/--resume` and
+way to flip the switch (used by `stray --pause/--resume` and
 `POST /api/lifecycle`).
 
 Per DD-005 §3 — Option B (explicit pause/resume).
@@ -91,7 +91,7 @@ def _main(argv: list[str]) -> int:
         print(f"[lifecycle] pipeline PAUSED at {res['paused_at']}")
         print(f"[lifecycle] reason: {res['reason']}")
         print(f"[lifecycle] kill switch: {SWITCH_FILE}")
-        print(f"[lifecycle] resume with: mindmap --resume")
+        print(f"[lifecycle] resume with: stray --resume")
         return 0
     if cmd == "resume":
         was_paused = SWITCH_FILE.exists()

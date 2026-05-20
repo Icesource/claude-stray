@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # 3-layer pipeline orchestrator (per DD-002 §4). Called by:
 #   - bin/refresh-bg.sh on every Stop / SessionStart hook
-#   - bin/mindmap --refresh (with FORCE_CLASSIFY=1 to bypass dirty
+#   - bin/stray --refresh (with FORCE_CLASSIFY=1 to bypass dirty
 #     gating on Layer 2)
-#   - bin/mindmap --backfill (delegates to backfill mode here)
+#   - bin/stray --backfill (delegates to backfill mode here)
 #
 # Flow:
 #   Layer 0: extract.py reads any new jsonl bytes into cache/sessions/

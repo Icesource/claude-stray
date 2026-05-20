@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
-# One-step installer for claude-code-worktree.
+# One-step installer for claude-stray.
 # Sets up: slash commands, shell wrapper, Claude Code hooks.
 # Does NOT trigger a model call. Does NOT install a launchd timer —
-# the dashboard's own scheduler (`mindmap --serve`) now handles
+# the dashboard's own scheduler (`stray --serve`) now handles
 # periodic derived features; the Stop/SessionStart hooks handle the
 # main pipeline in real time.
+#
+# Backward compatibility: also installs a `mindmap` symlink pointing
+# at `stray`, plus the legacy /mindmap and /mindmap-refresh slash
+# commands, so users with muscle memory or scripts from before the
+# rename keep working. These compat aliases will be removed in v0.7.
 #
 # Usage: bash bin/install.sh [--lang zh-CN|en]
 set -euo pipefail
@@ -27,7 +32,7 @@ while [ $# -gt 0 ]; do
       ;;
     -h|--help)
       echo "Usage: bash bin/install.sh [--lang zh-CN|en]"
-      echo "  --lang   Output language for mindmap content (default: zh-CN)"
+      echo "  --lang   Output language for dashboard content (default: zh-CN)"
       exit 0
       ;;
     *)
@@ -46,7 +51,7 @@ case "${LANG_CHOICE:-zh-CN}" in
 esac
 LANG_CHOICE="${LANG_CHOICE:-zh-CN}"
 
-echo "Installing claude-code-worktree (lang=$LANG_CHOICE)..."
+echo "Installing claude-stray (lang=$LANG_CHOICE)..."
 echo
 
 # --- 0. Write config ---------------------------------------------------------
@@ -72,24 +77,43 @@ echo "[0/3] wrote config: $CONFIG_FILE (lang=$LANG_CHOICE)"
 # --- 1. Slash commands -------------------------------------------------------
 # Commands use __REPO__ as a placeholder; we substitute and copy (not symlink)
 # so the installed command always has the correct absolute path.
+# Install both the new (stray) and legacy (mindmap) names so existing
+# muscle memory keeps working through one deprecation window.
 COMMANDS_DIR="$HOME_DIR/.claude/commands"
 mkdir -p "$COMMANDS_DIR"
-for cmd in mindmap mindmap-refresh; do
+for cmd in stray stray-refresh; do
   src="$REPO_ROOT/commands/$cmd.md"
   dst="$COMMANDS_DIR/$cmd.md"
   sed "s|__REPO__|$REPO_ROOT|g" "$src" > "$dst"
   echo "[1/3] installed slash command: /$cmd"
 done
+# Legacy aliases — same content, alternate filename. Remove these when
+# v0.7 drops compat.
+for alias_pair in "mindmap:stray" "mindmap-refresh:stray-refresh"; do
+  legacy="${alias_pair%%:*}"
+  current="${alias_pair##*:}"
+  src="$REPO_ROOT/commands/$current.md"
+  dst="$COMMANDS_DIR/$legacy.md"
+  sed "s|__REPO__|$REPO_ROOT|g" "$src" > "$dst"
+  echo "[1/3]   alias: /$legacy → /$current"
+done
 
 # --- 2. Shell wrapper --------------------------------------------------------
 LOCAL_BIN="$HOME_DIR/.local/bin"
 mkdir -p "$LOCAL_BIN"
-BIN_LINK="$LOCAL_BIN/mindmap"
+BIN_LINK="$LOCAL_BIN/stray"
 if [ -L "$BIN_LINK" ] || [ -f "$BIN_LINK" ]; then
   rm "$BIN_LINK"
 fi
-ln -s "$REPO_ROOT/bin/mindmap" "$BIN_LINK"
-echo "[2/3] linked shell wrapper: mindmap -> $REPO_ROOT/bin/mindmap"
+ln -s "$REPO_ROOT/bin/stray" "$BIN_LINK"
+echo "[2/3] linked shell wrapper: stray -> $REPO_ROOT/bin/stray"
+# Legacy alias — same target. Remove in v0.7.
+LEGACY_LINK="$LOCAL_BIN/mindmap"
+if [ -L "$LEGACY_LINK" ] || [ -f "$LEGACY_LINK" ]; then
+  rm "$LEGACY_LINK"
+fi
+ln -s "$REPO_ROOT/bin/stray" "$LEGACY_LINK"
+echo "[2/3]   alias: mindmap -> $REPO_ROOT/bin/stray"
 if ! echo ":$PATH:" | grep -q ":$LOCAL_BIN:"; then
   echo "      WARNING: $LOCAL_BIN is not in \$PATH"
   echo "      Add to your shell rc:  export PATH=\"\$HOME/.local/bin:\$PATH\""
@@ -118,7 +142,7 @@ for event in list(hooks.keys()):
         e for e in hooks[event]
         if not any(
             "refresh-bg.sh" in h.get("command", "")
-            and ("claude-code-worktree" in h["command"] or "claude-mindmap" in h["command"])
+            and ("claude-code-worktree" in h["command"] or "claude-stray" in h["command"] or "claude-mindmap" in h["command"])
             for h in e.get("hooks", [])
         )
     ]
@@ -140,35 +164,38 @@ echo "[3/3] installed Claude Code hooks (Stop + SessionStart)"
 # --- 4. Cleanup any pre-existing launchd timer ------------------------------
 # Earlier versions of this installer added a 2h launchd job as a "hook
 # missed" backup. We removed that — the hook is reliable, the
-# `mindmap --serve` scheduler now handles derived features (tips,
+# `stray --serve` scheduler now handles derived features (tips,
 # weekly, etc.), and the 2h job clashed with the lazy-refresh
 # principle (it kept running even when no one was looking at the
 # dashboard). If we find an existing plist from an older install, evict it.
 if [ "$OS" = "Darwin" ]; then
-  OLD_PLIST="$HOME_DIR/Library/LaunchAgents/com.claude-code-worktree.plist"
-  if [ -f "$OLD_PLIST" ]; then
-    launchctl unload "$OLD_PLIST" 2>/dev/null || true
-    rm -f "$OLD_PLIST"
-    echo "[cleanup] removed obsolete launchd 2h job from previous install"
-  fi
+  for OLD_PLIST in \
+      "$HOME_DIR/Library/LaunchAgents/com.claude-code-worktree.plist" \
+      "$HOME_DIR/Library/LaunchAgents/com.claude-stray.plist"; do
+    if [ -f "$OLD_PLIST" ]; then
+      launchctl unload "$OLD_PLIST" 2>/dev/null || true
+      rm -f "$OLD_PLIST"
+      echo "[cleanup] removed obsolete launchd 2h job: $(basename "$OLD_PLIST")"
+    fi
+  done
 fi
 
 echo
 if [ "$LANG_CHOICE" = "zh-CN" ]; then
   echo "完成！打开 Claude Code 后运行："
   echo
-  echo "  /mindmap-refresh"
+  echo "  /stray-refresh"
   echo
   echo "首次生成需 ~30-120 秒，之后会在后台自动刷新。"
-  echo "随时查看：mindmap 或 /mindmap"
+  echo "随时查看：stray 或 /stray  (老名字 mindmap 仍兼容)"
   echo "切换语言：bash bin/install.sh --lang en"
 else
   echo "Done! Open Claude Code and run:"
   echo
-  echo "  /mindmap-refresh"
+  echo "  /stray-refresh"
   echo
-  echo "This generates your first worktree (takes ~30-120s)."
-  echo "After that, the tree refreshes automatically in the background."
-  echo "View it anytime with:  mindmap  or  /mindmap"
+  echo "This generates your first dashboard (takes ~30-120s)."
+  echo "After that, it refreshes automatically in the background."
+  echo "View it anytime with:  stray  or  /stray  (legacy 'mindmap' still works)"
   echo "Switch language:  bash bin/install.sh --lang zh-CN"
 fi

@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Uninstall claude-code-worktree: remove slash commands, shell wrapper,
-# and Claude Code hooks (also evicts an obsolete launchd job if a
-# previous install left one behind).
+# Uninstall claude-stray (also catches the legacy claude-code-worktree
+# install): remove slash commands, shell wrapper, and Claude Code hooks
+# (also evicts an obsolete launchd job if a previous install left one
+# behind).
 set -euo pipefail
 
 HOME_DIR="$HOME"
 OS="$(uname)"
 
-echo "Uninstalling claude-code-worktree..."
+echo "Uninstalling claude-stray..."
 echo
 
-# 1. Slash commands
-for cmd in mindmap mindmap-refresh; do
+# 1. Slash commands — both new (/stray) and legacy (/mindmap) names
+for cmd in stray stray-refresh mindmap mindmap-refresh; do
   link="$HOME_DIR/.claude/commands/$cmd.md"
   if [ -L "$link" ] || [ -f "$link" ]; then
     rm "$link"
@@ -19,14 +20,14 @@ for cmd in mindmap mindmap-refresh; do
   fi
 done
 
-# 2. Shell wrapper
-BIN_LINK="$HOME_DIR/.local/bin/mindmap"
-if [ -L "$BIN_LINK" ] || [ -f "$BIN_LINK" ]; then
-  rm "$BIN_LINK"
-  echo "[2/3] removed shell wrapper: $BIN_LINK"
-else
-  echo "[2/3] shell wrapper not found, skipping"
-fi
+# 2. Shell wrapper — both new and legacy aliases
+for cli in stray mindmap; do
+  BIN_LINK="$HOME_DIR/.local/bin/$cli"
+  if [ -L "$BIN_LINK" ] || [ -f "$BIN_LINK" ]; then
+    rm "$BIN_LINK"
+    echo "[2/3] removed shell wrapper: $BIN_LINK"
+  fi
+done
 
 # 3. Claude Code hooks
 SETTINGS="$HOME_DIR/.claude/settings.json"
@@ -44,7 +45,7 @@ for event in list(hooks.keys()):
         e for e in hooks[event]
         if not any(
             "refresh-bg.sh" in h.get("command", "")
-            and ("claude-code-worktree" in h["command"] or "claude-mindmap" in h["command"])
+            and ("claude-code-worktree" in h["command"] or "claude-stray" in h["command"] or "claude-mindmap" in h["command"])
             for h in e.get("hooks", [])
         )
     ]
@@ -64,12 +65,15 @@ fi
 # launchd job. Remove it if still present so an `uninstall` from a
 # new install still cleans up old artifacts.
 if [ "$OS" = "Darwin" ]; then
-  PLIST="$HOME_DIR/Library/LaunchAgents/com.claude-code-worktree.plist"
-  if [ -f "$PLIST" ]; then
-    launchctl unload "$PLIST" 2>/dev/null || true
-    rm "$PLIST"
-    echo "[cleanup] removed obsolete launchd job from previous install"
-  fi
+  for PLIST in \
+      "$HOME_DIR/Library/LaunchAgents/com.claude-code-worktree.plist" \
+      "$HOME_DIR/Library/LaunchAgents/com.claude-stray.plist"; do
+    if [ -f "$PLIST" ]; then
+      launchctl unload "$PLIST" 2>/dev/null || true
+      rm "$PLIST"
+      echo "[cleanup] removed obsolete launchd job: $(basename "$PLIST")"
+    fi
+  done
 fi
 
 echo

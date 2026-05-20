@@ -239,7 +239,7 @@ LOCALE = {
         "sync_connected": "✓ connected",
         "sync_download": "📥 Download patch",
         "sync_unsupported": "Browser lacks File System Access — using download fallback",
-        "helper_offline": "Helper offline (run `mindmap --serve` for jump)",
+        "helper_offline": "Helper offline (run `stray --serve` for jump)",
         "helper_online": "✓ helper :{}",
         "data_stale_banner": "↻ Server has new data — click to load",
         "manual_refresh": "🔄 Run AI refresh",
@@ -255,7 +255,7 @@ LOCALE = {
         "weekly_label": "This week's recap",
         "weekly_open_btn": "Open weekly report ({})",
         "weekly_loading": "Loading…",
-        "weekly_empty": "Not generated yet — run `mindmap --weekly-report`",
+        "weekly_empty": "Not generated yet — run `stray --weekly-report`",
         "weekly_modal_title": "Weekly report — {}",
         "next_steps_label": "Suggested focus",
         "next_steps_empty": "No suggestions yet",
@@ -2504,7 +2504,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // button, so users at least see the state.
     if ($lbResume) {
       $lbResume.disabled = !SERVER_MODE;
-      $lbResume.title = SERVER_MODE ? '' : 'Run `mindmap --resume` in your terminal';
+      $lbResume.title = SERVER_MODE ? '' : 'Run `stray --resume` in your terminal';
     }
   }
 

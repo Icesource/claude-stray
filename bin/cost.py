@@ -3,13 +3,13 @@
 Read cache/cost_log.jsonl and present spend/usage summaries.
 
 Usage:
-  mindmap --cost              # default: today + last 7d table
-  mindmap --cost today
-  mindmap --cost week         # last 7 days breakdown
-  mindmap --cost month        # last 30 days
-  mindmap --cost all          # lifetime
-  mindmap --cost log          # tail of raw entries
-  mindmap --cost json         # JSON output for scripting
+  stray --cost              # default: today + last 7d table
+  stray --cost today
+  stray --cost week         # last 7 days breakdown
+  stray --cost month        # last 30 days
+  stray --cost all          # lifetime
+  stray --cost log          # tail of raw entries
+  stray --cost json         # JSON output for scripting
 
 Dates are shown in local time; the log stores UTC.
 """
@@ -277,7 +277,7 @@ def main() -> int:
     if not records and not args:
         print(c(YELLOW, "No AI calls logged yet."))
         print(c(DIM, f"  Log file: {COST_LOG}"))
-        print(c(DIM, "  Run `mindmap --refresh` to trigger one."))
+        print(c(DIM, "  Run `stray --refresh` to trigger one."))
         return 0
 
     if not args or args[0] == "--help" or args[0] == "-h":
