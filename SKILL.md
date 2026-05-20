@@ -171,6 +171,76 @@ The dashboard banner shows the reason. `stray --resume` when done.
 Open the dashboard, find the relevant card (HSF MR cleanup-ish title),
 expand the session list, click 🆕 on the matching session id.
 
+## Uninstall — squeaky clean
+
+If the user asks to remove claude-stray entirely, walk them through
+this. The repo's `bin/uninstall.sh` does the bulk of the work.
+
+### Default uninstall (safe — leaves user data alone)
+
+```bash
+cd ~/Code/claude-stray            # or wherever the repo lives
+bash bin/uninstall.sh
+```
+
+This removes (5 things):
+
+1. Slash commands `/stray`, `/stray-refresh`, plus legacy `/mindmap*`
+   aliases (`~/.claude/commands/*.md`)
+2. Shell wrappers `~/.local/bin/{stray,mindmap}`
+3. The SKILL itself: `~/.claude/skills/stray/`
+4. Stop + SessionStart hook entries in `~/.claude/settings.json`
+   (settings.json is backed up to `.bak.<timestamp>` first)
+5. Any leftover macOS launchd plist from older installs
+
+Intentionally NOT removed by default:
+- The repo source tree (e.g. `~/Code/claude-stray/`)
+- The local cache (`cache/` inside the repo) — your dashboard data
+- The user's **Claude Code session transcripts** at
+  `~/.claude/projects/-Users-<you>-Code-claude-stray/`. Those are
+  your conversation history with Claude Code, not data we created.
+
+After running it, the user can still `rm -rf ~/Code/claude-stray` if
+they want to remove the source too. The script prints the exact
+command.
+
+### Full purge — including local cache + repo + session transcripts
+
+```bash
+cd ~/Code/claude-stray
+bash bin/uninstall.sh --purge
+```
+
+`--purge` additionally:
+
+- Deletes `cache/` (dashboard data, summaries, cost log, archived
+  initiatives — gone)
+- Prompts y/N before deleting `~/.claude/projects/-Users-<you>-Code-claude-stray/`
+  (your Claude Code conversation transcripts for sessions started
+  from this project directory — **irreversible**)
+- Prints the `rm -rf <repo>` command to run for the source tree
+  itself (can't `rm` it while inside the script)
+
+### What the user should also do manually
+
+- Stop any running `bin/serve.py` before uninstalling so port 9876
+  releases cleanly. The script prints a warning if it sees one running.
+- If they used the legacy `~/.claude/projects/-Users-<you>-Code-claude-code-worktree/`
+  path (pre-rename), the migration script may have left an empty
+  directory shell. Safe to `rmdir` if present.
+
+### Confirmation that uninstall worked
+
+After `bin/uninstall.sh`:
+
+```bash
+ls ~/.local/bin/stray ~/.local/bin/mindmap 2>&1      # should say "No such file"
+ls ~/.claude/skills/stray 2>&1                       # should say "No such file"
+ls ~/.claude/commands/stray.md 2>&1                  # should say "No such file"
+grep -c "claude-stray\|claude-code-worktree" ~/.claude/settings.json
+                                                     # should print 0
+```
+
 ## Repository
 
 Source: <https://github.com/Icesource/claude-stray>

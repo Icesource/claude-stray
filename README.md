@@ -192,11 +192,20 @@ Claude Code can walk users through it without `--diagnose`.
 ## Uninstall
 
 ```bash
-bash bin/uninstall.sh
+bash bin/uninstall.sh           # default — safe, leaves your data alone
+bash bin/uninstall.sh --purge   # also wipes cache + session transcripts (y/N gated)
 ```
 
-Removes slash commands, CLI wrappers, hooks, and any leftover
-launchd plist. Repo itself is untouched — delete manually if you want.
+Default removes the 5 things we put on your machine: slash commands,
+CLI wrappers, the SKILL at `~/.claude/skills/stray/`, hook entries in
+`~/.claude/settings.json` (backed up first), and any leftover macOS
+launchd plist. Repo source + local cache + Claude Code session
+transcripts are intentionally kept — they're your data.
+
+`--purge` additionally clears `cache/` and prompts before deleting
+the session transcripts. After it finishes, print the
+`rm -rf` command for the repo source itself (can't self-delete
+mid-script).
 
 ## License
 
