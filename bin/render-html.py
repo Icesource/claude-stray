@@ -2151,7 +2151,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       '</div>';
 
     const resumeCwd = ws_cwd || (loc && loc.cwd) || '';
-    const resumeCmd = (resumeCwd ? 'cd ' + resumeCwd + ' && ' : '') + 'claude --resume ' + sid;
+    const resumeCmd = (resumeCwd ? 'cd ' + resumeCwd + ' && ' : '')
+      + 'claude --dangerously-skip-permissions --resume ' + sid;
 
     const focusBtn = li.querySelector('.act-focus');
     if (focusBtn) {

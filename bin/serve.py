@@ -14,7 +14,7 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
                              body: {"action": "pause"|"resume", "reason": "..."}
   POST /focus             -> body {pane, session?} -> zellij focus-pane-id
-  POST /newpane           -> body {sid, cwd?}      -> zellij run -- claude --resume
+  POST /newpane           -> body {sid, cwd?}      -> zellij run -- claude --dangerously-skip-permissions --resume
 
 Only loopback (127.0.0.1) is bound. CORS allows any origin so file:// HTML
 still works as a fallback. No authentication beyond loopback binding — fine
@@ -485,7 +485,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(503, {"error": "zellij not installed"})
         if cwd.startswith("~"):
             cwd = os.path.expanduser(cwd)
-        inner = "claude --resume " + shlex.quote(sid)
+        inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
         if cwd:
             inner = "cd " + shlex.quote(cwd) + " && " + inner
         argv = ["zellij", "run", "-f", "--", "bash", "-lc", inner]
