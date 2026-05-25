@@ -101,17 +101,36 @@ def parse_frontmatter(text: str) -> tuple[dict, str, str]:
     artifacts:/blockers: are NOT parsed into the dict but ARE preserved in
     raw_fm so we can re-emit them verbatim for the AI prompt.
 
-    Tolerates AI drift: accepts either `---` or ```` ``` ```` as the
-    closing fence, because Haiku occasionally emits the latter when the
-    prompt happens to wrap the example template in a code fence.
+    Tolerates AI drift in three flavors:
+      1. Closing fence `---` (the canonical form).
+      2. Closing fence ```` ``` ```` (Haiku occasionally swaps it).
+      3. NO closing fence at all (Haiku sometimes drops it entirely;
+         observed on summaries that still have valid YAML + a
+         well-formed body). In that case we use the first markdown
+         heading line `^# ...` as the boundary. Without this
+         fallback, the whole summary is silently treated as
+         frontmatter-less and any downstream code that reads
+         last_activity_at, status_guess, etc. gets the wrong answer
+         — including is_hot() returning False and skipping the
+         session entirely (DD-013 §debug).
     """
     if not text.startswith("---"):
         return {}, text, ""
     m = re.search(r"^(?:---|```)\s*$", text[3:], flags=re.MULTILINE)
-    if not m:
-        return {}, text, ""
-    fm_text = text[3:3 + m.start()].strip()
-    body = text[3 + m.end():].lstrip("\n")
+    if m:
+        fm_end_pos = m.start()
+        body_start_pos = m.end()
+    else:
+        # Tolerate Layer 1 dropping the closing fence. The first
+        # markdown heading line (e.g. `# 目标`) is a reliable
+        # boundary because Layer 1's body always starts with one.
+        m_h = re.search(r"^#\s", text[3:], flags=re.MULTILINE)
+        if not m_h:
+            return {}, text, ""
+        fm_end_pos = m_h.start()
+        body_start_pos = m_h.start()  # keep the heading in the body
+    fm_text = text[3:3 + fm_end_pos].strip()
+    body = text[3 + body_start_pos:].lstrip("\n")
     fm: dict[str, str] = {}
     # Flat scalar fields only. Stop matching once a nested key starts
     # (e.g. `artifacts:` with list items beneath).
@@ -825,6 +844,69 @@ def enforce_cold_and_terminal_monotone(new_mm: dict, prior: dict,
     return repairs
 
 
+def enforce_hot_initiative_status(new_mm: dict,
+                                   hot_summaries: list) -> int:
+    """DD-013 — initiative.status for HOT initiatives is mechanically
+    derived from contributing sessions' `status_guess`, not inherited
+    from PRIOR.
+
+    AI is supposed to follow §7 of the classify prompt ("most-recent
+    session says done → done, etc.") but in practice carries forward
+    PRIOR.status=done out of conservatism, so cards stop reflecting
+    continued work the moment they ever land in `done`. This pass
+    overwrites AI's output unconditionally for any initiative whose
+    `sessions[]` contains a session in the current hot batch.
+
+    Rule (matches §7 of the classify prompt):
+      - Take all contributing hot sessions.
+      - Most-recent (by last_activity_at) says `done` → init=`done`.
+      - Else, if any session is `paused`/`abandoned` and no session
+        is `active` → init=`paused`.
+      - Else → init=`active`.
+
+    Cold initiatives are untouched — §5's status decay rule
+    (handled by enforce_cold_and_terminal_monotone) is the right
+    policy when no hot session contributes.
+
+    Returns the count of initiatives whose status was changed (for log).
+    """
+    # Build a lookup: sid → (status_guess, last_activity_at)
+    sg_by_sid: dict[str, tuple[str, str]] = {}
+    for sid, fm, _body, _raw in hot_summaries:
+        sg = (fm.get("status_guess") or "active").strip().lower()
+        if sg not in ("active", "paused", "done", "abandoned"):
+            sg = "active"
+        sg_by_sid[sid] = (sg, fm.get("last_activity_at") or "")
+
+    repairs = 0
+    for ws in new_mm.get("workspaces") or []:
+        for init in (ws.get("initiatives") or []):
+            sessions = init.get("sessions") or []
+            contributing = [(s, sg_by_sid[s]) for s in sessions
+                            if s in sg_by_sid]
+            if not contributing:
+                continue  # cold — §5 handles status decay
+
+            # Most-recent contributing hot session wins for the
+            # done-or-not decision.
+            contributing.sort(key=lambda kv: kv[1][1] or "", reverse=True)
+            most_recent_sg = contributing[0][1][0]
+            all_sgs = {sg for _, (sg, _) in contributing}
+
+            if most_recent_sg == "done":
+                new_status = "done"
+            elif "paused" in all_sgs or "abandoned" in all_sgs:
+                new_status = "active" if "active" in all_sgs else "paused"
+            else:
+                new_status = "active"
+
+            if (init.get("status") or "").lower() != new_status:
+                init["status"] = new_status
+                repairs += 1
+
+    return repairs
+
+
 def aggregate_tasks(new_mm: dict, prior: dict,
                     hot_summaries: list) -> int:
     """DD-011 — tri-state, single-store task aggregation.
@@ -1415,6 +1497,14 @@ def main() -> int:
     rule_repairs = enforce_cold_and_terminal_monotone(new_mm, prior, hot_sids)
     if rule_repairs:
         print(f"[classify] enforced cold/terminal-monotone rules: {rule_repairs} repairs")
+
+    # DD-013: initiative.status for hot inits is mechanically derived
+    # from contributing sessions' status_guess. Without this, AI tends
+    # to carry forward PRIOR.status=done even when the underlying
+    # session has clearly come back to life — cards silently freeze.
+    status_repairs = enforce_hot_initiative_status(new_mm, hot)
+    if status_repairs:
+        print(f"[classify] enforced hot-initiative status: {status_repairs} repairs")
 
     # DD-011: rebuild hot initiatives' tasks[] from PRIOR + hot summary
     # frontmatter + AI output. Single store, tri-state, no archive.

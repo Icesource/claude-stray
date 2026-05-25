@@ -150,6 +150,16 @@ absolute.
 
 ## §7 — Status of HOT initiatives
 
+> **Note (mechanical safety net).** Post-process
+> `enforce_hot_initiative_status` in classify.py applies the rule
+> below deterministically for any hot initiative, **overwriting your
+> output unconditionally**. So your emitted `status` for hot inits is
+> advisory only — the post-process is the source of truth. Do NOT
+> carry `PRIOR.status = done` forward when a hot session has reset
+> the picture; the post-process will catch you and flip it back to
+> whatever `status_guess` says. Still emit your best read, but know
+> that the deterministic version wins.
+
 For initiatives that DO have a hot session:
 - Read each hot session's frontmatter `status_guess`.
 - If the most-recent (by `last_activity_at`) session says `done`, set
