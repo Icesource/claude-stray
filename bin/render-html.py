@@ -763,7 +763,15 @@ section.archive-zone .archive-bucket-head {
   display: flex; align-items: baseline; gap: 8px;
   margin: 4px 0 8px;
   font-size: 12px; color: var(--text-mute);
+  cursor: pointer; user-select: none;
 }
+section.archive-zone .archive-bucket-head:hover .bucket-label { color: var(--text); }
+section.archive-zone .archive-bucket-head .bucket-toggle {
+  font-size: 10px; line-height: 1; transition: transform 0.12s;
+  display: inline-block; width: 10px; color: var(--text-mute);
+}
+section.archive-zone .archive-bucket.collapsed .bucket-toggle { transform: rotate(-90deg); }
+section.archive-zone .archive-bucket.collapsed .archive-body { display: none; }
 section.archive-zone .archive-bucket-head .bucket-label {
   font-weight: 500;
 }
@@ -1332,6 +1340,27 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   function saveCollapsed() { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsedWs])); }
   const collapsedWs = loadCollapsed();
 
+  // Per-bucket collapse state for the archive zone. Defaults so that
+  // 本周 (bucket idx 0) is expanded and 上周 / 2 周前 / 更早 are
+  // collapsed — the user only cares about recent archive activity by
+  // default but can drill into older weeks on demand.
+  const ARCHIVE_BUCKET_KEY = 'claude-code-worktree:archive-buckets:v1';
+  function loadArchiveBuckets() {
+    try { return new Set(JSON.parse(localStorage.getItem(ARCHIVE_BUCKET_KEY) || 'null')); }
+    catch (e) { return null; }
+  }
+  function saveArchiveBuckets() {
+    localStorage.setItem(ARCHIVE_BUCKET_KEY,
+                          JSON.stringify([...collapsedArchiveBuckets]));
+  }
+  // Keys: 'b0', 'b1', 'b2', 'b3' (matching bucket index).
+  // null on first load means "use defaults" — collapse everything
+  // except 本周.
+  const _persisted = loadArchiveBuckets();
+  const collapsedArchiveBuckets = _persisted !== null
+    ? _persisted
+    : new Set(['b1', 'b2', 'b3']);
+
   let currentFilter = localStorage.getItem(FILTER_KEY) || 'all';
   let currentSearch = '';
 
@@ -1492,8 +1521,20 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // Collect archived initiatives separately for the bottom zone.
     // "archived" = either AI-determined status, user-archived override, or
     // persisted in cache/archive/ from a prior session.
-    const archivedList = []; // [{ws_name, ws_idx, init}]
+    const archivedList = []; // [{ws_name, ws_idx, init, archived_at}]
     const seenInArchive = new Set();
+
+    // Lookup table from ARCHIVED_PERSISTED so the live-dashboard loop
+    // can use the *actual* archive timestamp (when the user clicked
+    // archive, or when classify swept the card) instead of falling back
+    // to last_activity_at — which buckets a card archived today but
+    // last touched 2 weeks ago into "2 weeks ago", confusing everyone.
+    const archivedAtById = {};
+    for (const entry of (ARCHIVED_PERSISTED || [])) {
+      if (entry && entry.init && entry.init.id) {
+        archivedAtById[entry.init.id] = entry.archived_at || '';
+      }
+    }
 
     workspaces.forEach((ws, wsIdx) => {
       // Split: archived inits get peeled off into archivedList
@@ -1501,12 +1542,13 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       for (const init of (ws.initiatives || [])) {
         if (isDeleted(init.id)) continue;
         if (effectiveStatus(init.id) === 'archived') {
-          // AI-archived: no separate archived_at; use last_activity_at
-          // as the time-bucket key (best available signal for "when
-          // did this work happen").
+          // Prefer the persisted archived_at (correct user/sweep
+          // timestamp). Fall back to last_activity_at only when no
+          // persisted record exists — that case still happens for
+          // AI-status=archived items that haven't been swept to disk.
           archivedList.push({
             ws_name: ws.name, ws_idx: wsIdx, init: init,
-            archived_at: init.last_activity_at || ''
+            archived_at: archivedAtById[init.id] || init.last_activity_at || ''
           });
           seenInArchive.add(init.id);
         } else {
@@ -1589,15 +1631,27 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       // what got shelved when. archived_at is preferred; fall back to
       // last_activity_at for AI-archived entries.
       const buckets = groupArchivedByWeekBucket(archivedList);
-      for (const bucket of buckets) {
-        if (!bucket.entries.length) continue;
+      buckets.forEach((bucket, bIdx) => {
+        if (!bucket.entries.length) return;
+        const bucketKey = 'b' + bIdx;
+        const bCollapsed = collapsedArchiveBuckets.has(bucketKey);
         const bSec = document.createElement('div');
-        bSec.className = 'archive-bucket';
+        bSec.className = 'archive-bucket' + (bCollapsed ? ' collapsed' : '');
         const bHead = document.createElement('div');
         bHead.className = 'archive-bucket-head';
         bHead.innerHTML =
+          '<span class="bucket-toggle">▾</span>' +
           '<span class="bucket-label">' + esc(bucket.label) + '</span>' +
           '<span class="bucket-count">' + bucket.entries.length + '</span>';
+        bHead.addEventListener('click', () => {
+          if (collapsedArchiveBuckets.has(bucketKey)) {
+            collapsedArchiveBuckets.delete(bucketKey);
+          } else {
+            collapsedArchiveBuckets.add(bucketKey);
+          }
+          saveArchiveBuckets();
+          bSec.classList.toggle('collapsed');
+        });
         bSec.appendChild(bHead);
         const bBody = document.createElement('div');
         bBody.className = 'archive-body';
@@ -1618,7 +1672,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         }
         bSec.appendChild(bBody);
         arcSec.appendChild(bSec);
-      }
+      });
       board.appendChild(arcSec);
     }
 
