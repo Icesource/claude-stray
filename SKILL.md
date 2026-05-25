@@ -72,10 +72,11 @@ bash bin/install.sh
 bash bin/install-skill.sh    # makes this SKILL active locally
 ```
 
-Both routes set up: slash commands `/stray` + `/stray-refresh`, shell
-wrapper `~/.local/bin/stray`, and Claude Code Stop + SessionStart
-hooks (so the dashboard updates automatically as the user finishes
-sessions). No AI calls during install.
+Both routes set up: a `/stray` slash command, the `~/.local/bin/stray`
+shell wrapper, and Claude Code Stop + SessionStart hooks (so the
+dashboard updates automatically as the user finishes sessions). No AI
+calls during install. First `stray --serve` auto-syncs the user's
+existing Claude Code history into cards if the cache is empty.
 
 **Do NOT suggest** the user paste a `Read <URL> and install it` style
 prompt into Claude Code — that pattern is correctly rejected by

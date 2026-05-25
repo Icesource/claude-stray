@@ -583,9 +583,53 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"error": str(e)})
 
 
+def _maybe_kick_first_sync() -> bool:
+    """Trigger a background pipeline run iff the cache is empty.
+
+    First-time users install + `stray --serve` and would otherwise see
+    a blank dashboard until their next Claude Code session ends (when
+    the Stop hook fires the pipeline). This kicks the pipeline once on
+    behalf of the user when there's nothing to show — costs roughly the
+    same as one `stray --refresh` and disappears after first run.
+
+    Returns True if a sync was started, False otherwise. The dashboard
+    polls /api/data every 8 s and will pick up cards as classify
+    produces them; no need for serve.py to block.
+    """
+    if not PIPELINE_RUN.exists():
+        return False
+    if not DASHBOARD_JSON.exists():
+        empty = True
+    else:
+        try:
+            data = json.loads(DASHBOARD_JSON.read_text(encoding="utf-8"))
+            ws = data.get("workspaces") or []
+            init_count = sum(len(w.get("initiatives") or []) for w in ws)
+            empty = init_count == 0
+        except (OSError, json.JSONDecodeError):
+            empty = True
+    if not empty:
+        return False
+    try:
+        subprocess.Popen(
+            ["bash", str(PIPELINE_RUN), "--all-dirty", "--force-classify"],
+            env=os.environ.copy(),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        print("[serve] cache is empty — kicked first-time sync in background")
+        return True
+    except Exception as e:
+        print(f"[serve] first-sync kick failed: {e}", file=sys.stderr)
+        return False
+
+
 def serve(open_browser: bool = True):
     # Regenerate HTML before serving so it's fresh.
     regenerate_html()
+    # First-time bootstrap: if the user just installed and the cache is
+    # still empty, kick off one pipeline run so they see cards within a
+    # minute or two instead of an empty dashboard.
+    _maybe_kick_first_sync()
     last_error = None
     for port in PORTS:
         try:

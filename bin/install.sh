@@ -81,15 +81,23 @@ echo "[0/3] wrote config: $CONFIG_FILE (lang=$LANG_CHOICE)"
 # muscle memory keeps working through one deprecation window.
 COMMANDS_DIR="$HOME_DIR/.claude/commands"
 mkdir -p "$COMMANDS_DIR"
-for cmd in stray stray-refresh; do
+for cmd in stray; do
   src="$REPO_ROOT/commands/$cmd.md"
   dst="$COMMANDS_DIR/$cmd.md"
   sed "s|__REPO__|$REPO_ROOT|g" "$src" > "$dst"
   echo "[1/3] installed slash command: /$cmd"
 done
-# Legacy aliases — same content, alternate filename. Remove these when
-# v0.7 drops compat.
-for alias_pair in "mindmap:stray" "mindmap-refresh:stray-refresh"; do
+# Sweep up the obsolete /stray-refresh + /mindmap-refresh installs from
+# previous versions. `stray --serve` now auto-syncs on first run, the
+# dashboard's 🔄 button covers manual refresh, and `stray --refresh`
+# stays available from the shell — so the slash-command duplicate is
+# retired. Quiet about it; this is post-cleanup, not user-facing news.
+for old in stray-refresh mindmap-refresh; do
+  rm -f "$COMMANDS_DIR/$old.md"
+done
+# Legacy alias — keep /mindmap working through one deprecation window
+# (removed in v0.7).
+for alias_pair in "mindmap:stray"; do
   legacy="${alias_pair%%:*}"
   current="${alias_pair##*:}"
   src="$REPO_ROOT/commands/$current.md"
@@ -182,20 +190,21 @@ fi
 
 echo
 if [ "$LANG_CHOICE" = "zh-CN" ]; then
-  echo "完成！打开 Claude Code 后运行："
+  echo "完成！现在在终端运行："
   echo
-  echo "  /stray-refresh"
+  echo "  stray --serve"
   echo
-  echo "首次生成需 ~30-120 秒，之后会在后台自动刷新。"
-  echo "随时查看：stray 或 /stray  (老名字 mindmap 仍兼容)"
+  echo "首次会自动扫描你的 Claude Code 历史会话生成卡片（~30-120 秒），"
+  echo "之后每次会话结束都会自动更新。"
+  echo "也可以用 /stray 在 Claude Code 里查看（老名字 /mindmap 仍兼容）。"
   echo "切换语言：bash bin/install.sh --lang en"
 else
-  echo "Done! Open Claude Code and run:"
+  echo "Done! Now in your terminal run:"
   echo
-  echo "  /stray-refresh"
+  echo "  stray --serve"
   echo
-  echo "This generates your first dashboard (takes ~30-120s)."
-  echo "After that, it refreshes automatically in the background."
-  echo "View it anytime with:  stray  or  /stray  (legacy 'mindmap' still works)"
+  echo "First launch auto-scans your Claude Code history into cards (~30-120s);"
+  echo "every session afterwards updates the dashboard automatically."
+  echo "Or use /stray inside Claude Code (legacy /mindmap still works)."
   echo "Switch language:  bash bin/install.sh --lang zh-CN"
 fi

@@ -108,23 +108,23 @@ echo
 if [ "$LANG_CHOICE" = "zh-CN" ]; then
   echo "下一步:"
   echo
-  echo "  1. 在 Claude Code 里跑一次 /stray-refresh"
-  echo "     首次约需 30–120 秒,会自动分类你最近的所有 session"
+  echo "  打开 dashboard:"
+  echo "      stray --serve"
   echo
-  echo "  2. 启动 dashboard:"
-  echo "       stray --serve"
-  echo "     浏览器会自动打开 http://127.0.0.1:9876/"
+  echo "  浏览器会自动打开 http://127.0.0.1:9876/。第一次启动会自动"
+  echo "  扫描你的 Claude Code 历史会话生成卡片（约 30–120 秒）；"
+  echo "  之后每次会话结束都会在后台自动更新。"
   echo
-  echo "  老版本 mindmap 命名兼容仍可用(mindmap、/mindmap)。v0.7 后移除。"
+  echo "  老版本 mindmap 命名兼容仍可用（mindmap、/mindmap）。v0.7 后移除。"
 else
   echo "Next steps:"
   echo
-  echo "  1. In Claude Code, run:  /stray-refresh"
-  echo "     First refresh takes 30–120s while it classifies your sessions."
+  echo "  Open the dashboard:"
+  echo "      stray --serve"
   echo
-  echo "  2. Open the dashboard:"
-  echo "       stray --serve"
-  echo "     The browser will open at http://127.0.0.1:9876/"
+  echo "  The browser opens http://127.0.0.1:9876/. First launch auto-scans"
+  echo "  your Claude Code session history into cards (~30–120s); every"
+  echo "  session afterwards updates the dashboard in the background."
   echo
   echo "  Legacy 'mindmap' command names still work; removed in v0.7."
 fi
