@@ -98,6 +98,17 @@ LOCALE = {
         "confirm_delete_task": "删除任务 \"{}\" ?\n该 task 加入 tombstone，AI 不再生成。",
         "confirm_delete_artifact": "从这张卡里移除 \"{}\" ?\n该 artifact 进入隐藏列表；即使 AI 在新 session 里再次提到也不会回来，除非你手动清理 user_overrides.json。",
         "btn_artifact_del": "从卡片移除",
+        "btn_consolidate": "合并重复",
+        "consolidate_progress": "正在分析重复项…",
+        "consolidate_no_dups": "未发现明确的语义重复，任务列表已经干净。",
+        "consolidate_preview_title": "合并预览",
+        "consolidate_preview_hint": "确认后，这些任务将被标记为 cancelled（带 evidence 指向保留项）。整个动作走 user_overrides，不会触发 AI 重跑，随时可在 dashboard 上恢复。",
+        "consolidate_keep_label": "保留",
+        "consolidate_cancel_label": "标记 cancelled",
+        "consolidate_apply": "应用合并",
+        "consolidate_dismiss": "取消",
+        "consolidate_error": "合并请求失败：{}",
+        "consolidate_evidence_prefix": "duplicate of",
         "dlg_ok": "确定",
         "dlg_cancel": "取消",
         "sync_idle": "未同步",
@@ -233,6 +244,17 @@ LOCALE = {
         "confirm_delete_task": "Delete task \"{}\" ?\nGoes to tombstone; AI won't bring it back.",
         "confirm_delete_artifact": "Remove \"{}\" from this card?\nAdded to the hidden list; AI cannot resurrect it from future sessions until you clear user_overrides.json.",
         "btn_artifact_del": "Remove from card",
+        "btn_consolidate": "Consolidate duplicates",
+        "consolidate_progress": "Scanning for duplicates…",
+        "consolidate_no_dups": "No clear semantic duplicates — the task list is already clean.",
+        "consolidate_preview_title": "Consolidation preview",
+        "consolidate_preview_hint": "On confirm, the listed tasks get marked cancelled (with evidence pointing at the survivor). Goes through user_overrides — no AI rerun, fully reversible from the dashboard.",
+        "consolidate_keep_label": "Keep",
+        "consolidate_cancel_label": "Cancel as duplicate",
+        "consolidate_apply": "Apply consolidation",
+        "consolidate_dismiss": "Cancel",
+        "consolidate_error": "Consolidation failed: {}",
+        "consolidate_evidence_prefix": "duplicate of",
         "dlg_ok": "OK",
         "dlg_cancel": "Cancel",
         "sync_idle": "not synced",
@@ -1067,6 +1089,64 @@ article.card.archived { opacity: 0.7; }
   color: var(--red); border-color: var(--red);
 }
 .modal-section p.modal-empty { margin: 0; color: var(--text-mute); font-size: 12px; }
+
+/* Consolidate-duplicates preview ----------------------------------- */
+.modal.consolidate-modal { max-width: 720px; }
+.modal.consolidate-modal .consolidate-hint {
+  margin: 0 0 16px; padding: 10px 12px;
+  background: var(--bg-mute, rgba(0,0,0,0.04));
+  border-radius: 4px;
+  font-size: 12px; line-height: 1.5; color: var(--text-dim);
+}
+.consolidate-group {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 10px;
+}
+.consolidate-keep {
+  display: flex; gap: 8px; align-items: baseline;
+  margin-bottom: 6px; padding-bottom: 6px;
+  border-bottom: 1px dashed var(--border);
+}
+.consolidate-keep .cg-label {
+  font-size: 10px; color: var(--green);
+  background: var(--green-bg);
+  padding: 2px 6px; border-radius: 3px;
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+}
+.consolidate-keep .cg-title { font-weight: 500; flex: 1; }
+ul.consolidate-cancels {
+  list-style: none; margin: 0; padding: 0;
+}
+ul.consolidate-cancels li {
+  display: flex; gap: 8px; align-items: baseline;
+  padding: 4px 0; font-size: 13px;
+}
+ul.consolidate-cancels li .cc-mark { color: var(--red); width: 14px; }
+ul.consolidate-cancels li .cc-title {
+  flex: 1; text-decoration: line-through; color: var(--text-dim);
+}
+ul.consolidate-cancels li .cc-reason {
+  font-size: 11px; color: var(--text-mute);
+  background: var(--bg-mute, rgba(0,0,0,0.04));
+  padding: 1px 6px; border-radius: 3px;
+}
+.consolidate-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.consolidate-actions button {
+  font-family: inherit; font-size: 13px;
+  padding: 6px 14px; border-radius: 4px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--text); cursor: pointer;
+}
+.consolidate-actions button:hover { background: var(--bg); }
+.consolidate-actions button.primary {
+  background: var(--accent); color: white; border-color: var(--accent);
+}
+.consolidate-actions button.primary:hover { filter: brightness(0.95); }
 
 .card-meta {
   display: flex; gap: 12px; flex-wrap: wrap;
@@ -1973,6 +2053,49 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       });
       foot.appendChild(ub);
     }
+    // Consolidate-duplicates button: appears when the card has piled
+    // up ≥ 8 pending tasks AND we have a server to call. DD-012's
+    // forward fix (Layer 1 sees PRIOR titles) prevents future bloat;
+    // this is the manual escape valve for cards already in the bad
+    // state — one AI round, preview, user confirms, applied via the
+    // existing task_toggles override path.
+    const pendingCount = (init.tasks || []).filter(
+      t => (t.status || 'pending') === 'pending').length;
+    if (SERVER_MODE && !isArchived && pendingCount >= 8) {
+      const cb = document.createElement('button');
+      cb.innerHTML = '✨ ' + esc(I18N.btn_consolidate);
+      cb.addEventListener('click', async () => {
+        cb.disabled = true;
+        const originalLabel = cb.innerHTML;
+        cb.innerHTML = '⏳ ' + esc(I18N.consolidate_progress);
+        try {
+          const r = await fetch(SERVER_ORIGIN + '/api/consolidate-tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ init_id: initId }),
+          });
+          const payload = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            toast(I18N.consolidate_error.replace('{}',
+              payload.error || ('HTTP ' + r.status)));
+            return;
+          }
+          const groups = payload.groups || [];
+          if (!groups.length) {
+            toast(I18N.consolidate_no_dups);
+            return;
+          }
+          openConsolidatePreview(initId, init.name, groups);
+        } catch (e) {
+          toast(I18N.consolidate_error.replace('{}', e.message));
+        } finally {
+          cb.disabled = false;
+          cb.innerHTML = originalLabel;
+        }
+      });
+      foot.appendChild(cb);
+    }
+
     const db = document.createElement('button');
     db.className = 'danger';
     db.innerHTML = '🗑️ ' + esc(I18N.btn_delete);
@@ -2167,6 +2290,110 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
   function modalKeyHandler(ev) {
     if (ev.key === 'Escape') closeDetailModal();
+  }
+
+  // Consolidate-tasks preview overlay. Shown after a successful
+  // /api/consolidate-tasks call so the user can eyeball the AI's
+  // dedup plan before any cancellations land. On apply, each cancel
+  // becomes a task_toggles override; the existing apply path picks
+  // them up on the next classify, and effective() reflects them
+  // instantly via replaceCard.
+  function openConsolidatePreview(initId, initName, groups) {
+    closeDetailModal();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) closeConsolidatePreview();
+    });
+    const modal = document.createElement('div');
+    modal.className = 'modal consolidate-modal';
+    overlay.appendChild(modal);
+
+    const head = document.createElement('div');
+    head.className = 'modal-head';
+    head.innerHTML =
+      '<h2>' + esc(I18N.consolidate_preview_title) + ' — ' + esc(initName) + '</h2>' +
+      '<button class="modal-close" title="' + esc(I18N.modal_close) + '">✕</button>';
+    head.querySelector('.modal-close').addEventListener('click', closeConsolidatePreview);
+    modal.appendChild(head);
+
+    const hint = document.createElement('p');
+    hint.className = 'consolidate-hint';
+    hint.textContent = I18N.consolidate_preview_hint;
+    modal.appendChild(hint);
+
+    const list = document.createElement('div');
+    list.className = 'consolidate-groups';
+    let cancelTotal = 0;
+    for (const g of groups) {
+      const gSec = document.createElement('div');
+      gSec.className = 'consolidate-group';
+      const keep = document.createElement('div');
+      keep.className = 'consolidate-keep';
+      keep.innerHTML =
+        '<span class="cg-label">' + esc(I18N.consolidate_keep_label) + '</span> ' +
+        '<span class="cg-title">' + esc(g.keep) + '</span>';
+      gSec.appendChild(keep);
+      const ul = document.createElement('ul');
+      ul.className = 'consolidate-cancels';
+      for (const c of g.cancel) {
+        cancelTotal += 1;
+        const li = document.createElement('li');
+        li.innerHTML =
+          '<span class="cc-mark">✕</span>' +
+          '<span class="cc-title">' + esc(c.title) + '</span>' +
+          (c.reason ? '<span class="cc-reason">' + esc(c.reason) + '</span>' : '');
+        ul.appendChild(li);
+      }
+      gSec.appendChild(ul);
+      list.appendChild(gSec);
+    }
+    modal.appendChild(list);
+
+    const foot = document.createElement('div');
+    foot.className = 'consolidate-actions';
+    const dismiss = document.createElement('button');
+    dismiss.textContent = I18N.consolidate_dismiss;
+    dismiss.addEventListener('click', closeConsolidatePreview);
+    const apply = document.createElement('button');
+    apply.className = 'primary';
+    apply.textContent = I18N.consolidate_apply + ' (' + cancelTotal + ')';
+    apply.addEventListener('click', () => {
+      const now = new Date().toISOString();
+      for (const g of groups) {
+        for (const c of g.cancel) {
+          // Drop any older toggle entry for this exact task — last
+          // write wins, same as the existing postStatusToggle path.
+          overrides.task_toggles = overrides.task_toggles.filter(
+            tt => !(tt.init_id === initId && tt.task_title === c.title));
+          overrides.task_toggles.push({
+            init_id: initId,
+            task_title: c.title,
+            status: 'cancelled',
+            evidence: (I18N.consolidate_evidence_prefix + ' "' + g.keep + '"').slice(0, 80),
+            at: now,
+          });
+        }
+      }
+      saveOverrides();
+      closeConsolidatePreview();
+      replaceCard(initId);
+    });
+    foot.appendChild(dismiss);
+    foot.appendChild(apply);
+    modal.appendChild(foot);
+
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', consolidateKeyHandler);
+  }
+
+  function closeConsolidatePreview() {
+    document.querySelectorAll('.modal-overlay').forEach(o => o.remove());
+    document.removeEventListener('keydown', consolidateKeyHandler);
+  }
+
+  function consolidateKeyHandler(ev) {
+    if (ev.key === 'Escape') closeConsolidatePreview();
   }
 
   function buildSection(label, innerHtml) {

@@ -435,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/save":  return self._handle_save(body)
         if path == "/api/refresh": return self._handle_refresh(body)
         if path == "/api/lifecycle": return self._handle_lifecycle(body)
+        if path == "/api/consolidate-tasks": return self._handle_consolidate(body)
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_lifecycle(self, body: dict):
@@ -581,6 +582,137 @@ class Handler(BaseHTTPRequestHandler):
                                      "note": "pipeline started in background"})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    def _handle_consolidate(self, body: dict):
+        """One-shot AI dedup for a single initiative's pending tasks
+        (DD-012 tail).
+
+        Body: {"init_id": "..."}
+        Returns: {"ok": true, "groups": [{"keep": "...", "cancel": [{"title": ..., "reason": ...}]}]}
+
+        Synchronous: blocks the request until Haiku replies (~5-15 s).
+        Does NOT mutate state — the response is a *plan*; the frontend
+        previews it and the user has to confirm. Confirmation flows
+        through the existing task_toggles override path (set status to
+        cancelled with evidence), so DD-011's user-only-deletion stays
+        intact."""
+        init_id = (body.get("init_id") or "").strip()
+        if not init_id:
+            return self._reply(400, {"error": "init_id required"})
+
+        # Gather pending tasks for this init (dedup'd, capped — same
+        # logic Layer 1 uses in summarize.load_prior_tasks_for_sid).
+        if not DASHBOARD_JSON.exists():
+            return self._reply(404, {"error": "dashboard.json missing — run refresh first"})
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            return self._reply(500, {"error": f"dashboard.json unreadable: {e}"})
+
+        titles: list[str] = []
+        init_name: str | None = None
+        for ws in (d.get("workspaces") or []):
+            for init in (ws.get("initiatives") or []):
+                if init.get("id") != init_id:
+                    continue
+                init_name = init.get("name") or init_id
+                seen: set[str] = set()
+                for t in (init.get("tasks") or []):
+                    title = (t.get("title") or "").strip()
+                    if not title or title in seen:
+                        continue
+                    if t.get("status") != "pending":
+                        continue
+                    seen.add(title)
+                    titles.append(title)
+        if init_name is None:
+            return self._reply(404, {"error": f"initiative not found: {init_id}"})
+        if len(titles) < 4:
+            return self._reply(200, {"ok": True, "groups": [],
+                                     "note": "fewer than 4 pending tasks — nothing to consolidate"})
+
+        # Build the prompt: instructions + the task list as a tiny
+        # YAML block.
+        prompt_file = REPO_ROOT / "prompts" / "consolidate-tasks.md"
+        if not prompt_file.exists():
+            return self._reply(500, {"error": "consolidate-tasks.md prompt missing"})
+        instructions = prompt_file.read_text(encoding="utf-8")
+        yaml_block_lines = ["tasks:"]
+        for title in titles:
+            safe = title.replace('"', '\\"')
+            yaml_block_lines.append(f'  - "{safe}"')
+        prompt = "\n".join([
+            instructions,
+            "",
+            f"<initiative id=\"{init_id}\" name=\"{init_name}\">",
+            f"<tasks count=\"{len(titles)}\">",
+            "\n".join(yaml_block_lines),
+            "</tasks>",
+            "</initiative>",
+        ])
+
+        # Mirror the call style from bin/classify.py call_claude.
+        model = os.environ.get("CLAUDE_WORKTREE_MODEL",
+                                "claude-haiku-4-5-20251001")
+        # Haiku takes ~90-100s end-to-end for ~40 titles producing the
+        # structured JSON plan. Comfortable headroom for outliers (no
+        # one is waiting on this synchronously beyond a single click,
+        # and the UI shows a "scanning…" spinner the whole time).
+        timeout = 240
+        argv = [
+            "perl", "-e", "alarm shift @ARGV; exec @ARGV",
+            str(timeout),
+            "claude", "--no-session-persistence", "-p",
+            "--model", model,
+            "--output-format", "json",
+            "--max-budget-usd", "0.20",
+            "--disallowedTools", "Bash Edit Write Read Glob Grep",
+        ]
+        try:
+            res = subprocess.run(argv, input=prompt, capture_output=True,
+                                  text=True, timeout=timeout + 10)
+        except subprocess.TimeoutExpired:
+            return self._reply(504, {"error": "consolidate AI call timed out"})
+        except Exception as e:
+            return self._reply(500, {"error": f"AI invocation failed: {e}"})
+        if res.returncode != 0:
+            return self._reply(502, {"error": "AI call non-zero exit",
+                                     "stderr": (res.stderr or "")[:500]})
+
+        try:
+            env = json.loads(res.stdout)
+            raw = (env.get("result") or "").strip()
+            # Tolerate AI wrapping the JSON in a code fence.
+            m = re.search(r"\{[\s\S]*\}", raw)
+            if not m:
+                raise ValueError("no JSON object in response")
+            plan = json.loads(m.group(0))
+        except Exception as e:
+            return self._reply(502, {"error": f"could not parse AI output: {e}",
+                                     "raw": (res.stdout or "")[:800]})
+
+        # Sanitize: every keep + cancel.title MUST appear in the input
+        # titles list (the prompt insists on byte-for-byte reuse, but
+        # if Haiku misbehaves we don't want to ship fake titles to the
+        # client — they would silently no-op against task_toggles since
+        # no matching task exists).
+        title_set = set(titles)
+        groups_out = []
+        for g in (plan.get("groups") or []):
+            keep = (g.get("keep") or "").strip()
+            if keep not in title_set:
+                continue
+            cancels = []
+            for c in (g.get("cancel") or []):
+                t = (c.get("title") or "").strip()
+                if t and t != keep and t in title_set:
+                    cancels.append({"title": t,
+                                    "reason": (c.get("reason") or "").strip()[:120]})
+            if cancels:
+                groups_out.append({"keep": keep, "cancel": cancels})
+
+        return self._reply(200, {"ok": True, "groups": groups_out,
+                                 "total_pending": len(titles)})
 
 
 def _maybe_kick_first_sync() -> bool:
