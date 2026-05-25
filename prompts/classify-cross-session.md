@@ -158,6 +158,21 @@ For initiatives that DO have a hot session:
 
 ## §7a — Aggregate artifacts (hot initiatives only)
 
+> **Note (mechanical safety net).** Post-process `aggregate_artifacts`
+> in classify.py now does the union/dedup deterministically from PRIOR +
+> hot session frontmatter + your output. You **cannot delete** an
+> artifact by omitting it — the post-process re-adds anything you
+> dropped. Once an artifact's status reaches `merged|closed|wontfix|
+> released|stale|rolled-back|pushed`, it is **frozen** and cannot
+> revert. Identity fields (`type`, `ref_id`, `url`, `title`) are also
+> frozen to their earliest non-empty value across PRIOR + hot sessions.
+> Only the user, via `hidden_artifacts` in `user_overrides.json`, can
+> remove an artifact from an initiative.
+>
+> Still emit a best-effort `artifacts[]` per the rules below; the
+> post-process trusts your output for genuinely-new entries and for
+> forward status progression, but won't honor deletions or reverts.
+
 For an initiative with at least one hot session, build `artifacts[]` as
 the union of:
 
@@ -177,10 +192,12 @@ Dedup rules:
 - **`url` field, if present, must be non-empty and start with
   `http://` or `https://`.** If you'd otherwise emit an empty
   string, omit the key.
-- **Status: most-recent-wins.** When merging, use the `status` from
-  whichever source has the more recent `last_mentioned_at`. If a hot
-  session shows the same artifact with `status: merged` but PRIOR
-  shows `pending`, the new status is `merged`.
+- **Status: most-recent-wins, terminal-monotone.** Use the `status`
+  from whichever source has the more recent `last_mentioned_at`. If a
+  hot session shows the same artifact with `status: merged` but PRIOR
+  shows `pending`, the new status is `merged`. **Never** revert a
+  terminal status to an open one — that's a post-process invariant
+  and your output will be clamped if you try.
 - **Title/ref_id**: prefer non-null, then prefer the most recent
   mention.
 - **last_mentioned_at**: max of all sources.

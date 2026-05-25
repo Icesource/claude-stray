@@ -516,11 +516,16 @@ class Handler(BaseHTTPRequestHandler):
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-            # 1) user_overrides.json
+            # 1) user_overrides.json — task_toggles + deleted_tasks are
+            # consumed by classify (cleared after applying). hidden_artifacts
+            # is a persistent suppression list: it stays in the file across
+            # classify runs so a user-deleted MR / PR / etc. never reappears
+            # even when Layer 1 keeps re-emitting it from session frontmatter.
             ov = {
                 "version": 1,
                 "task_toggles": body.get("task_toggles") or [],
                 "deleted_tasks": body.get("deleted_tasks") or [],
+                "hidden_artifacts": body.get("hidden_artifacts") or [],
                 "updated_at": now,
             }
             OVERRIDES_JSON.write_text(json.dumps(ov, indent=2, ensure_ascii=False))

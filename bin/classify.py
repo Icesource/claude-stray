@@ -246,6 +246,115 @@ def _yaml_bool(s: str) -> bool:
     return s.strip().lower() in ("true", "yes", "on", "1")
 
 
+# Artifact status values that, once reached, must not be reverted to an
+# open state. (Mirrors prompts/summarize-session.md Rule 10 status enums.)
+ARTIFACT_TERMINAL = frozenset({
+    "merged", "closed", "wontfix", "stale", "released",
+    "rolled-back", "pushed",
+})
+
+# Sort order priority for artifact status when rendering / picking
+# canonical "most recent wins" outcome. Lower = more open, higher = more
+# settled.
+_ARTIFACT_STATUS_PRIORITY = {
+    "pending": 0, "open": 0, "active": 0, "unknown": 0,
+    "approved": 1, "live": 1, "local": 1,
+    "merged": 2, "closed": 2, "wontfix": 2, "released": 2,
+    "stale": 2, "rolled-back": 2, "pushed": 2,
+}
+
+
+def artifact_key(a: dict) -> str | None:
+    """Stable identity key for an artifact across PRIOR / hot summaries /
+    AI output.
+
+    Precedence (matches the dedup rules in §7a of the classify prompt
+    and Rule 10 of summarize-session):
+      1. `url` if present and http(s)://
+      2. `(type, ref_id)` if both present
+      3. `(type, title)` if both present
+    Otherwise: no stable identity → return None and the caller skips it
+    (we won't promote untrackable noise into a permanent record).
+    """
+    if not isinstance(a, dict):
+        return None
+    url = (a.get("url") or "").strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return "url::" + url
+    typ = (a.get("type") or "").strip().lower()
+    ref = str(a.get("ref_id") or "").strip()
+    if typ and ref:
+        return f"tid::{typ}::{ref}"
+    title = (a.get("title") or "").strip()
+    if typ and title:
+        return f"ttl::{typ}::{title}"
+    return None
+
+
+def parse_artifacts_from_fm(raw_fm: str) -> list[dict]:
+    """Extract the `artifacts:` block from raw frontmatter text.
+
+    Expected shape (per prompts/summarize-session.md Rule 10):
+
+        artifacts:
+          - type: mr
+            title: Kryo ClassLoader-aware
+            ref_id: "27471050"
+            url: https://code.alibaba-inc.com/.../27471050
+            status: pending
+            last_mentioned_at: 2026-05-19T09:21:42Z
+
+    Returns a list of dicts, identity-preserving. Empty list if no
+    `artifacts:` key or malformed. Zero external deps — hand-rolled to
+    match parse_tasks_from_fm.
+    """
+    if not raw_fm or "artifacts:" not in raw_fm:
+        return []
+    lines = raw_fm.splitlines()
+    out: list[dict] = []
+    in_block = False
+    cur: dict | None = None
+    for line in lines:
+        stripped = line.rstrip()
+        if stripped and not line[0].isspace():
+            # Top-level key — entering or leaving the block.
+            if in_block:
+                if cur and artifact_key(cur):
+                    out.append(cur)
+                cur = None
+                in_block = False
+                # Don't `break` — caller might have other top-level keys
+                # after `artifacts:` (e.g. `blockers:`), and we want to
+                # stop only at the artifacts boundary, not the whole FM.
+            if stripped.startswith("artifacts:"):
+                in_block = True
+            continue
+        if not in_block:
+            continue
+        s = stripped.lstrip()
+        if s.startswith("- "):
+            if cur and artifact_key(cur):
+                out.append(cur)
+            cur = {}
+            rest = s[2:].strip()
+            _absorb_artifact_field(cur, rest)
+        elif cur is not None and ":" in s:
+            _absorb_artifact_field(cur, s)
+    if in_block and cur and artifact_key(cur):
+        out.append(cur)
+    return out
+
+
+def _absorb_artifact_field(cur: dict, s: str) -> None:
+    """Helper for parse_artifacts_from_fm: parse one `key: value` line."""
+    field, _, val = s.partition(":")
+    field = field.strip()
+    val = _yaml_scalar(val.strip())
+    if field in ("type", "title", "ref_id", "url", "status",
+                 "last_mentioned_at") and val:
+        cur[field] = val
+
+
 def collect_summaries() -> list[tuple[str, dict, str, str]]:
     """Return [(sid, flat_fm, body, raw_fm_text)] for all summary files."""
     if not SUMMARIES_DIR.is_dir():
@@ -410,10 +519,15 @@ def apply_user_overrides_inplace(mindmap: dict) -> int:
     if applied_tog or removed_tasks:
         print(f"[classify] applied {applied_tog} task toggles, "
               f"removed {removed_tasks} deleted tasks")
-        # Clear the consumed overrides
+        # Clear the consumed task overrides. Persistent suppression
+        # lists (hidden_artifacts) carry forward — they must keep
+        # filtering on every classify run.
         try:
+            persistent = overrides.get("hidden_artifacts") or []
             OVERRIDES_FILE.write_text(
-                json.dumps({"version": 1, "task_toggles": [], "deleted_tasks": [],
+                json.dumps({"version": 1, "task_toggles": [],
+                            "deleted_tasks": [],
+                            "hidden_artifacts": persistent,
                             "consumed_at": now_utc_iso()},
                            indent=2, ensure_ascii=False),
                 encoding="utf-8")
@@ -843,6 +957,200 @@ def aggregate_tasks(new_mm: dict, prior: dict,
     return n_inits
 
 
+def aggregate_artifacts(new_mm: dict, prior: dict,
+                         all_summaries: list,
+                         hidden_by_init: dict[str, set[str]]) -> int:
+    """Mechanical post-AI artifact aggregation — artifact analogue of
+    aggregate_tasks.
+
+    Invariant (the one the user actually cares about): once an MR / PR /
+    CR / issue / commit / etc. has been seen for an initiative, it stays
+    on that initiative until the **user** explicitly removes it via
+    `hidden_artifacts` in user_overrides.json. AI is allowed to add new
+    entries and push status forward — never to delete and never to
+    revert a terminal status.
+
+    For each initiative we union:
+      1. PRIOR.initiative.artifacts (carry-forward floor)
+      2. Every contributing session's frontmatter `artifacts:` for any
+         session whose summary .md still exists on disk (hot or cold —
+         the cold rule §5 is about preventing AI freelancing, not about
+         blocking mechanical reconstruction from immutable source data)
+      3. AI's emitted `artifacts:` for this initiative
+
+    Keyed by artifact_key(). When the same artifact appears in multiple
+    sources, identity fields (type, ref_id, url, title) come from the
+    earliest source that had them (PRIOR > session > AI), and `status`
+    follows last_mentioned_at ordering with terminal-monotone clamping.
+
+    `all_summaries` should be the full list returned by
+    collect_summaries() — passing only hot ones used to be enough but
+    misses the case where PRIOR.artifacts got dropped by an earlier
+    lossy run and the contributing session is now cold (so AI never
+    sees it again). The union semantics make passing-all safe.
+
+    Returns the count of initiatives whose artifacts were rebuilt.
+    """
+    arts_by_sid: dict[str, list[dict]] = {}
+    fm_by_sid: dict[str, dict] = {}
+    for sid, fm, _body, raw_fm in all_summaries:
+        arts_by_sid[sid] = parse_artifacts_from_fm(raw_fm)
+        fm_by_sid[sid] = fm
+
+    prior_by_id: dict[str, dict] = {}
+    for w in (prior.get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            prior_by_id[i.get("id")] = i
+
+    n_inits = 0
+    for ws in new_mm.get("workspaces") or []:
+        for init in (ws.get("initiatives") or []):
+            init_id = init.get("id")
+            if not init_id:
+                continue
+            prior_init = prior_by_id.get(init_id, {})
+            # Union AI's sessions with PRIOR's sessions: AI sometimes
+            # drops sessions across rounds (parallel to the dropped-
+            # artifacts bug). For mechanical reconstruction we want every
+            # session that has *ever* been linked to this initiative, so
+            # we can still read its immutable frontmatter even when AI
+            # has stopped naming it.
+            sessions = list({*(init.get("sessions") or []),
+                             *(prior_init.get("sessions") or [])})
+            contributing = [s for s in sessions if s in arts_by_sid]
+            has_prior = bool(prior_init.get("artifacts"))
+            has_contrib = any(arts_by_sid.get(s) for s in contributing)
+            has_ai = bool(init.get("artifacts"))
+            if not (has_prior or has_contrib or has_ai):
+                continue  # nothing to merge; leave initiative alone
+            n_inits += 1
+
+            merged: dict[str, dict] = {}
+
+            def absorb(art: dict, source_recency: str) -> None:
+                """Merge `art` into `merged` under its stable key.
+
+                `source_recency` is used to break status ties (most
+                recent wins, with terminal-monotone clamp).
+                """
+                k = artifact_key(art)
+                if not k:
+                    return
+                cur = merged.get(k)
+                if cur is None:
+                    merged[k] = dict(art)
+                    if source_recency and not merged[k].get("last_mentioned_at"):
+                        merged[k]["last_mentioned_at"] = source_recency
+                    return
+                # Identity fields: prefer non-empty existing, else fill in.
+                for f in ("type", "title", "ref_id", "url"):
+                    if not cur.get(f) and art.get(f):
+                        cur[f] = art[f]
+                # last_mentioned_at: max
+                a_lm = art.get("last_mentioned_at") or source_recency or ""
+                c_lm = cur.get("last_mentioned_at") or ""
+                if a_lm and a_lm > c_lm:
+                    cur["last_mentioned_at"] = a_lm
+                # status: terminal-monotone. Once terminal, freeze.
+                # Otherwise let the newer mention's status win.
+                cur_status = (cur.get("status") or "").lower()
+                new_status = (art.get("status") or "").lower()
+                if cur_status in ARTIFACT_TERMINAL:
+                    return  # frozen
+                if not new_status:
+                    return
+                if new_status in ARTIFACT_TERMINAL:
+                    cur["status"] = new_status
+                    return
+                # Both non-terminal: pick the more "settled" via priority
+                # table, breaking ties toward the newer source.
+                cp = _ARTIFACT_STATUS_PRIORITY.get(cur_status, 0)
+                np_ = _ARTIFACT_STATUS_PRIORITY.get(new_status, 0)
+                if np_ >= cp:
+                    cur["status"] = new_status
+
+            # Step 1: PRIOR (the carry-forward floor).
+            for art in (prior_init.get("artifacts") or []):
+                absorb(art, prior_init.get("last_activity_at") or "")
+
+            # Step 2: every contributing session's frontmatter. Use the
+            # session's last_activity_at as a recency fallback when an
+            # entry has no last_mentioned_at of its own.
+            for sid in contributing:
+                sess_la = (fm_by_sid.get(sid) or {}).get("last_activity_at") or ""
+                for art in arts_by_sid.get(sid, []):
+                    absorb(art, sess_la)
+
+            # Step 3: AI continuations. AI is allowed to update status /
+            # add genuinely new entries it inferred from text (rare but
+            # possible). Identity fields stay frozen via absorb().
+            for art in (init.get("artifacts") or []):
+                absorb(art, "")
+
+            # Step 4: filter user-hidden artifacts (final word, no AI
+            # round-tripping can resurrect them until the user clears
+            # the override).
+            hidden = hidden_by_init.get(init_id) or set()
+            if hidden:
+                merged = {k: v for k, v in merged.items() if k not in hidden}
+
+            if not merged:
+                init.pop("artifacts", None)
+                continue
+
+            # Cap at 20: drop oldest last_mentioned_at first (mirrors
+            # the prompt's §7a hard cap).
+            if len(merged) > 20:
+                items = sorted(
+                    merged.items(),
+                    key=lambda kv: kv[1].get("last_mentioned_at") or "",
+                    reverse=True,
+                )[:20]
+                merged = dict(items)
+
+            # Order: open statuses first, then terminal; within each
+            # bucket, newest last_mentioned_at first.
+            def sort_key(a: dict) -> tuple:
+                status = (a.get("status") or "").lower()
+                terminal_rank = 1 if status in ARTIFACT_TERMINAL else 0
+                # Sort ascending: 0 (open) before 1 (terminal); within
+                # bucket, descending last_mentioned_at via negation trick
+                # (None coerced to empty string sorts first when reversed).
+                return (terminal_rank, _neg_iso(a.get("last_mentioned_at")))
+
+            init["artifacts"] = sorted(merged.values(), key=sort_key)
+
+    return n_inits
+
+
+def _neg_iso(s: str | None) -> str:
+    """Helper: reverse ISO-timestamp sort by inverting the string.
+    Sorts None / empty last, newer timestamps first."""
+    if not s:
+        return "\x00"
+    # Invert each char so lexicographic sort gives descending order.
+    return "".join(chr(0x10FFFF - ord(c)) for c in s)
+
+
+def load_hidden_artifacts() -> dict[str, set[str]]:
+    """Return {init_id: set(artifact_key, ...)} from user_overrides.json.
+
+    Stable suppression list (unlike task_toggles, NOT cleared after
+    consumption) — an artifact the user deleted must stay deleted on
+    every subsequent classify run, even if Layer 1 keeps re-emitting it
+    from session frontmatter."""
+    overrides = load_overrides()
+    out: dict[str, set[str]] = {}
+    if not overrides:
+        return out
+    for entry in (overrides.get("hidden_artifacts") or []):
+        init_id = entry.get("init_id")
+        key = entry.get("key")
+        if init_id and key:
+            out.setdefault(init_id, set()).add(key)
+    return out
+
+
 def _normalize_task(pt: dict, pid: str, *, default_terminal_at: str) -> dict:
     """Coerce a PRIOR task into the DD-011 schema. Legacy fields
     (done bool, done_evidence, done_at) are mapped to status/evidence/
@@ -1113,6 +1421,20 @@ def main() -> int:
     task_inits = aggregate_tasks(new_mm, prior, hot)
     if task_inits:
         print(f"[classify] tasks: rebuilt for {task_inits} hot initiative(s)")
+
+    # Artifact aggregation: same monotone invariant as tasks. Once an MR
+    # (or any artifact) has been seen on an initiative, it survives across
+    # refreshes — AI may push status forward and add new ones, but never
+    # delete. Only the user, via hidden_artifacts overrides, removes them.
+    # Pass ALL summaries (not just hot): if an earlier lossy run already
+    # dropped artifacts from PRIOR and the contributing session is now
+    # cold, we still need to re-union from the immutable .md source so
+    # the card recovers on the next refresh.
+    hidden_by_init = load_hidden_artifacts()
+    artifact_inits = aggregate_artifacts(new_mm, prior, all_summaries,
+                                          hidden_by_init)
+    if artifact_inits:
+        print(f"[classify] artifacts: rebuilt for {artifact_inits} initiative(s)")
 
     # ---- 6. Write + diff + log ----
     atomic_write_json(output_path, new_mm)

@@ -96,6 +96,8 @@ LOCALE = {
         "confirm_archive": "归档 \"{}\" ?\n归档后下次 AI refresh 不再处理它，但完整数据会保存在 cache/archive/。",
         "confirm_delete": "永久删除 \"{}\" ?\nID 会进入 tombstone，AI 即使看到新证据也不会重新创建它。",
         "confirm_delete_task": "删除任务 \"{}\" ?\n该 task 加入 tombstone，AI 不再生成。",
+        "confirm_delete_artifact": "从这张卡里移除 \"{}\" ?\n该 artifact 进入隐藏列表；即使 AI 在新 session 里再次提到也不会回来，除非你手动清理 user_overrides.json。",
+        "btn_artifact_del": "从卡片移除",
         "dlg_ok": "确定",
         "dlg_cancel": "取消",
         "sync_idle": "未同步",
@@ -229,6 +231,8 @@ LOCALE = {
         "confirm_archive": "Archive \"{}\" ?\nFuture AI refreshes will skip it, but full data lives in cache/archive/.",
         "confirm_delete": "Delete \"{}\" permanently?\nIts ID enters the tombstone list; AI won't recreate it.",
         "confirm_delete_task": "Delete task \"{}\" ?\nGoes to tombstone; AI won't bring it back.",
+        "confirm_delete_artifact": "Remove \"{}\" from this card?\nAdded to the hidden list; AI cannot resurrect it from future sessions until you clear user_overrides.json.",
+        "btn_artifact_del": "Remove from card",
         "dlg_ok": "OK",
         "dlg_cancel": "Cancel",
         "sync_idle": "not synced",
@@ -1045,6 +1049,15 @@ article.card.archived { opacity: 0.7; }
 .modal-section ul.modal-artifacts-list li a.art-link:hover {
   background: var(--bg); border-color: var(--accent);
 }
+.modal-section ul.modal-artifacts-list li button.art-del {
+  background: transparent; border: 1px solid transparent; color: var(--text-mute);
+  font-size: 13px; line-height: 1; padding: 2px 6px; border-radius: 3px;
+  cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, border-color 0.12s;
+}
+.modal-section ul.modal-artifacts-list li:hover button.art-del { opacity: 1; }
+.modal-section ul.modal-artifacts-list li button.art-del:hover {
+  color: var(--red); border-color: var(--red);
+}
 .modal-section p.modal-empty { margin: 0; color: var(--text-mute); font-size: 12px; }
 
 .card-meta {
@@ -1279,7 +1292,26 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
   // ---------- State (overrides + UI prefs) -------------------------------
   function emptyOverrides() {
-    return { task_toggles: [], archived: [], deleted: [], deleted_tasks: [] };
+    // hidden_artifacts: [{init_id, key, at}]. Persistent suppression list
+    // — keeps a user-deleted MR/PR/etc. off the card across refreshes
+    // even when Layer 1 keeps re-emitting it from session frontmatter.
+    return { task_toggles: [], archived: [], deleted: [], deleted_tasks: [],
+             hidden_artifacts: [] };
+  }
+  // Keep in sync with Python's artifact_key() in bin/classify.py.
+  // Precedence: url → (type, ref_id) → (type, title).
+  function artifactKey(a) {
+    if (!a || typeof a !== 'object') return null;
+    const url = (a.url || '').trim();
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      return 'url::' + url;
+    }
+    const typ = (a.type || '').trim().toLowerCase();
+    const ref = String(a.ref_id == null ? '' : a.ref_id).trim();
+    if (typ && ref) return 'tid::' + typ + '::' + ref;
+    const title = (a.title || '').trim();
+    if (typ && title) return 'ttl::' + typ + '::' + title;
+    return null;
   }
   function loadOverrides() {
     try { return Object.assign(emptyOverrides(), JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')); }
@@ -1347,6 +1379,22 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       t.done = (t.status === 'done');
     }
     init.tasks = (init.tasks || []).filter(t => !overrides.deleted_tasks.some(dt => dt.init_id === initId && dt.task_title === t.title));
+    // Filter artifacts hidden by the user. classify.py applies the same
+    // filter server-side on the next refresh; we apply it here so the UI
+    // reflects the delete instantly without waiting for an AI round-trip.
+    if (Array.isArray(init.artifacts) && overrides.hidden_artifacts.length) {
+      const hiddenKeys = new Set(
+        overrides.hidden_artifacts
+          .filter(h => h && h.init_id === initId)
+          .map(h => h.key)
+      );
+      if (hiddenKeys.size) {
+        init.artifacts = init.artifacts.filter(a => {
+          const k = artifactKey(a);
+          return !(k && hiddenKeys.has(k));
+        });
+      }
+    }
     return { ws_name: base.ws_name, ws_cwd: base.ws_cwd, init: init };
   }
 
@@ -2008,12 +2056,17 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         const statusCls = (a.status || 'unknown').replace(/[^a-z]/g, '');
         const title = a.title || a.ref_id || a.url;
         const safeUrl = (a.url || '').replace(/"/g, '&quot;');
+        const key = artifactKey(a);
+        const safeKey = key ? key.replace(/"/g, '&quot;') : '';
         aHtml +=
           '<li>' +
             '<span class="art-type">' + esc(a.type || '?') + '</span>' +
             '<span class="art-status ' + esc(statusCls) + '">' + esc(statusLabel) + '</span>' +
             '<span class="art-title">' + esc(title) + '</span>' +
             (a.url ? '<a class="art-link" target="_blank" rel="noopener" href="' + safeUrl + '">' + esc(I18N.modal_open_external) + ' ↗</a>' : '') +
+            (key
+              ? '<button class="art-del" type="button" title="' + esc(I18N.btn_artifact_del) + '" data-art-key="' + safeKey + '" data-art-title="' + esc(title).replace(/"/g, '&quot;') + '">✕</button>'
+              : '') +
           '</li>';
       }
       aHtml += '</ul>';
@@ -2021,6 +2074,24 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       aHtml += '<p class="modal-empty">' + esc(I18N.modal_no_artifacts) + '</p>';
     }
     aSec.innerHTML = aHtml;
+    // Wire delete buttons — overrides.hidden_artifacts is persistent
+    // (classify.py keeps it across runs; never auto-cleared).
+    aSec.querySelectorAll('button.art-del').forEach(btn => {
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        const key = btn.getAttribute('data-art-key');
+        const title = btn.getAttribute('data-art-title') || key;
+        if (!key) return;
+        if (!(await confirmDialog(I18N.confirm_delete_artifact.replace('{}', title), { danger: true }))) return;
+        // Idempotent: don't push duplicates for the same (init, key).
+        if (!overrides.hidden_artifacts.some(h => h.init_id === initId && h.key === key)) {
+          overrides.hidden_artifacts.push({ init_id: initId, key: key, at: new Date().toISOString() });
+        }
+        saveOverrides();
+        closeDetailModal();
+        replaceCard(initId);
+      });
+    });
     modal.appendChild(aSec);
 
     document.body.appendChild(overlay);
@@ -2283,6 +2354,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       archived: overrides.archived,
       archived_data: archivedData,
       deleted: overrides.deleted,
+      hidden_artifacts: overrides.hidden_artifacts,
     };
     try {
       const r = await fetch(SERVER_ORIGIN + '/api/save', {
@@ -2318,7 +2390,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   async function writeOverridesToDisk() {
     if (!dirHandle) return;
     try {
-      const ov = { version: 1, task_toggles: overrides.task_toggles, deleted_tasks: overrides.deleted_tasks, updated_at: new Date().toISOString() };
+      const ov = { version: 1, task_toggles: overrides.task_toggles, deleted_tasks: overrides.deleted_tasks, hidden_artifacts: overrides.hidden_artifacts, updated_at: new Date().toISOString() };
       await writeFile(dirHandle, 'user_overrides.json', JSON.stringify(ov, null, 2));
       const del = { version: 1, initiatives: overrides.deleted.map(id => ({ id: id, deleted_at: new Date().toISOString() })), updated_at: new Date().toISOString() };
       await writeFile(dirHandle, 'deleted_ids.json', JSON.stringify(del, null, 2));
