@@ -47,6 +47,7 @@ SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 LOCKS_DIR = CACHE_DIR / ".locks"
 CONFIG_FILE = CACHE_DIR / "config.json"
+DASHBOARD_FILE = CACHE_DIR / "dashboard.json"
 PROMPT_FILE = REPO_ROOT / "prompts" / "summarize-session.md"
 
 # Tail size for the raw jsonl. We read the WHOLE jsonl in (it's local
@@ -211,6 +212,54 @@ def atomic_write(path: Path, content: str) -> None:
 # ---------- prompt build ----------------------------------------------------
 
 
+def load_prior_tasks_for_sid(sid: str) -> list[dict]:
+    """Return the task list of any initiative whose `sessions[]` already
+    contains this sid. Used by build_prompt to give Layer 1 stable
+    wordings to reuse across reruns (DD-012).
+
+    Returns [] when there's no dashboard.json yet (first run), or when
+    no initiative has claimed this session yet. Returns up to ~30
+    tasks across all matching initiatives — cap is defensive against
+    a card that's already gone runaway; the prompt is the wrong place
+    to dump 60 tasks worth of text.
+    """
+    if not DASHBOARD_FILE.exists():
+        return []
+    try:
+        d = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    seen: dict[str, dict] = {}
+    for ws in (d.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if sid not in (init.get("sessions") or []):
+                continue
+            for t in (init.get("tasks") or []):
+                title = (t.get("title") or "").strip()
+                status = t.get("status") or "pending"
+                if not title:
+                    continue
+                # Cancelled tasks aren't useful here — Layer 1
+                # shouldn't be encouraged to reuse a wording the user
+                # already abandoned. Same intent if the user wants
+                # the work to come back, the new wording is fine.
+                if status == "cancelled":
+                    continue
+                # Dedup against exact-title duplicates already on the
+                # card. The card itself may carry duplicates (a card
+                # in a runaway state has dozens) — handing all of
+                # them to Layer 1 confuses the prompt. Keep one entry
+                # per title; prefer the "done" status when both
+                # variants exist (so Layer 1 doesn't accidentally
+                # mark a finished task pending again).
+                cur = seen.get(title)
+                if cur is None:
+                    seen[title] = {"title": title, "status": status}
+                elif cur["status"] != "done" and status == "done":
+                    cur["status"] = "done"
+    return list(seen.values())[:30]
+
+
 def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
     """Concatenate prompts/summarize-session.md + XML context blocks."""
     instructions = PROMPT_FILE.read_text(encoding="utf-8")
@@ -228,10 +277,38 @@ def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
         json.dumps(meta, ensure_ascii=False, indent=2),
         "</session_meta>",
         "",
+    ]
+
+    # DD-012: surface the task wordings that already exist on this
+    # session's initiative(s), so Layer 1 reuses them verbatim instead
+    # of inventing a synonym on every rerun (which silently exploded
+    # task lists — see DD-012 §"Root cause"). Only present when there
+    # is something to reuse.
+    prior_tasks = load_prior_tasks_for_sid(sid)
+    if prior_tasks:
+        parts.append(f"<prior_tasks count=\"{len(prior_tasks)}\">")
+        parts.append("  <!--")
+        parts.append("    Below are the task titles already on this session's")
+        parts.append("    initiative card. If your transcript analysis would")
+        parts.append("    produce a task that is conceptually the same as one")
+        parts.append("    of these, COPY ITS TITLE BYTE-FOR-BYTE in your")
+        parts.append("    tasks: frontmatter (don't translate, retag, summarize,")
+        parts.append("    or expand). Only emit a different title for genuinely")
+        parts.append("    new work. See Rule 12.")
+        parts.append("  -->")
+        for t in prior_tasks:
+            parts.append(f"  - status: {t['status']}")
+            # Keep title quoted so newlines / colons inside don't break parsers
+            safe_title = t["title"].replace('"', '\\"')
+            parts.append(f"    title: \"{safe_title}\"")
+        parts.append("</prior_tasks>")
+        parts.append("")
+
+    parts.extend([
         f"<turns count=\"{turns_block.count('### ')}\">",
         turns_block,
         "</turns>",
-    ]
+    ])
     return "\n".join(parts)
 
 

@@ -261,12 +261,21 @@ weight that risks drift.)
     ```
 
     Hard rules for tasks:
-    - **Reuse exact titles across sessions when describing the same
-      step.** Layer 2 aggregates by stable slug derived from the
-      title; reworded titles produce duplicates. Bad: "P14.2: 写
-      prompts/summarize-session.md + 调优" vs "P14.2: 写
-      prompts/summarize-session.md + 3 个真实 session 调优". Good:
-      both summaries write the same title verbatim.
+    - **PRIOR titles are sacred — reuse them byte-for-byte.** When the
+      input has a `<prior_tasks>` block, every entry inside it is a
+      task title already attached to this session's initiative card.
+      If your transcript analysis would produce a task that is
+      conceptually the same as one of those PRIOR titles — **even if
+      a different wording, language, level of detail, or prefix would
+      feel more natural** — you MUST copy the PRIOR title verbatim
+      into your `tasks:` frontmatter. Do not translate (`重构授权链`
+      ↔ "Refactor authorization chain"). Do not retag (`[F1-body] X`
+      ↔ `X`). Do not expand (`实现 service doc MVP` ↔ `实现 service
+      doc MVP with flag-based slicing`). Do not summarize. Only emit
+      a *different* title when the work is genuinely a different
+      task, not a synonym. Layer 2 dedups by exact-slug equality;
+      every reworded variant becomes a new permanent task entry that
+      the user has to manually delete.
     - **Evidence-grounded for non-pending** — for `status: done`,
       cite an edit / merge / "完成" / "shipped" / task_events.completed.
       For `status: cancelled`, cite a user redirect ("算了 / 不做了 /
