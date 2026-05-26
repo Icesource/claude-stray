@@ -26,6 +26,8 @@ DO_WEEKLY=0
 DO_NEXT_STEPS=0
 DO_TIPS=0
 DO_WELLNESS=0
+DO_CHECK_UPDATES=0
+DO_UPDATE=0
 NO_OPEN=0
 DIAG_ARG=""
 COST_ARG=""
@@ -86,6 +88,10 @@ while [ $# -gt 0 ]; do
       DO_TIPS=1; shift ;;
     --wellness)
       DO_WELLNESS=1; shift ;;
+    --check-updates|--check-update)
+      DO_CHECK_UPDATES=1; shift ;;
+    --update|--upgrade)
+      DO_UPDATE=1; shift ;;
     -h|--help)
       cat <<EOF
 Usage: stray [--refresh] [--serve | --open | --html | --tree | --diagnose]
@@ -124,6 +130,12 @@ Without flags: render the cached stray to stdout as an ANSI tree.
   --wellness          Check for late-night / consecutive-day patterns
                       and emit a kind nudge if any fire. Skips AI
                       call entirely when no signal. Cost ~\$0.02 max.
+  --check-updates     Compare your installed version against the
+                      latest tag on origin/main and print whether an
+                      update is available. Network-only — no install.
+  --update            Pull the latest tagged release via
+                      'git pull --ff-only'. Restart 'stray --serve'
+                      after to pick up new code.
 EOF
       exit 0
       ;;
@@ -197,6 +209,14 @@ if [ "$DO_BACKFILL" -eq 1 ]; then
     *) echo "aborted"; exit 0 ;;
   esac
   exec bash "$REPO_ROOT/bin/pipeline-run.sh" --backfill --force-classify
+fi
+
+if [ "$DO_CHECK_UPDATES" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/_updates.py"
+fi
+
+if [ "$DO_UPDATE" -eq 1 ]; then
+  exec python3 "$REPO_ROOT/bin/_updates.py" update
 fi
 
 if [ "$DO_SERVE" -eq 1 ]; then

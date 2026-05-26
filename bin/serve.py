@@ -413,6 +413,16 @@ class Handler(BaseHTTPRequestHandler):
                 "week": week,
                 "markdown": md_path.read_text(),
             })
+        if path == "/api/version":
+            # Last-known update snapshot (written by startup check + the
+            # 24h background recheck thread). Browser polls this for the
+            # update banner; we never block on a fresh fetch here.
+            try:
+                import _updates
+                snap = _updates.read_state()
+            except Exception as e:
+                snap = {"error": str(e)}
+            return self._reply(200, snap or {})
         # Static file passthrough from cache/ (limited to known whitelist below)
         if path.startswith("/cache/"):
             rel = path[len("/cache/"):]
@@ -436,6 +446,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/refresh": return self._handle_refresh(body)
         if path == "/api/lifecycle": return self._handle_lifecycle(body)
         if path == "/api/consolidate-tasks": return self._handle_consolidate(body)
+        if path == "/api/update": return self._handle_update(body)
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_lifecycle(self, body: dict):
@@ -714,6 +725,19 @@ class Handler(BaseHTTPRequestHandler):
         return self._reply(200, {"ok": True, "groups": groups_out,
                                  "total_pending": len(titles)})
 
+    def _handle_update(self, body: dict):
+        """Dashboard 'Update now' button. Runs git pull --ff-only and
+        returns the result. The client then prompts the user to
+        restart `stray --serve` to load the new code (we can't hot-
+        reload Python modules cleanly, and serve.py itself may have
+        changed). Throttled implicitly by `_updates.is_dirty()`."""
+        try:
+            import _updates
+            result = _updates.pull_latest()
+            return self._reply(200 if result.get("ok") else 409, result)
+        except Exception as e:
+            return self._reply(500, {"ok": False, "error": str(e)})
+
 
 def _maybe_kick_first_sync() -> bool:
     """Trigger a background pipeline run iff the cache is empty.
@@ -755,6 +779,71 @@ def _maybe_kick_first_sync() -> bool:
         return False
 
 
+def _check_updates_interactive() -> None:
+    """Run on serve startup. If a new tagged release is available
+    AND the user hasn't recently dismissed an update prompt AND stdin
+    is a TTY, print version info and prompt y/N to upgrade. On 'y'
+    runs git pull and continues serving the new code. On 'n' marks
+    the prompt as dismissed for 24h. Silently skipped when offline,
+    not-a-git-repo, or non-interactive."""
+    try:
+        import _updates
+    except Exception:
+        return
+    # Throttle: respect 24h window AND the user's recent "no, thanks".
+    if not _updates.should_check(force=False):
+        return
+    if _updates.user_dismissed_recently():
+        return
+    snap = _updates.check(force=False)
+    if not snap.get("ok") or not snap.get("behind"):
+        return
+    local, remote = snap.get("local"), snap.get("remote")
+    print(f"\n[stray] update available:  {local} → {remote}")
+    changes = _updates.summarize_changes(local, "origin/main")
+    if changes:
+        for c in changes[:6]:
+            print(f"        · {c}")
+        if len(changes) > 6:
+            print(f"        … +{len(changes) - 6} more")
+    if not sys.stdin.isatty():
+        print(f"[stray] non-interactive shell — keeping current version.")
+        print(f"[stray] run `stray --update` later to install.\n")
+        return
+    try:
+        answer = input(f"[stray] update now and continue? [Y/n] ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return
+    if answer in ("", "y", "yes"):
+        result = _updates.pull_latest()
+        if result.get("ok"):
+            print(f"[stray] updated  {result['before']} → {result['after']}.")
+            print("[stray] continuing with the new version (no restart needed "
+                  "for static assets; if behavior looks stale, Ctrl-C and "
+                  "re-run `stray --serve`).\n")
+        else:
+            print(f"[stray] update failed: {result.get('error')}")
+            print("[stray] continuing with current version.\n")
+    else:
+        _updates.mark_user_dismissed()
+        print("[stray] skipping update. Next prompt in 24h. "
+              "Run `stray --update` to install on demand.\n")
+
+
+def _update_recheck_loop(stop_event) -> None:
+    """Daemon thread: re-run the update check every 24h while serve
+    is alive. Silent — updates `cache/update_state.json` only. The
+    dashboard polls /api/version to surface the banner."""
+    import _updates
+    # First wake at +24h; the startup path already did the initial check.
+    while not stop_event.wait(_updates.CHECK_INTERVAL.total_seconds()):
+        try:
+            _updates.check(force=True, offline_ok=True)
+        except Exception:
+            pass  # state is best-effort; never let a flake kill serve
+
+
 def serve(open_browser: bool = True):
     # Regenerate HTML before serving so it's fresh.
     regenerate_html()
@@ -762,6 +851,9 @@ def serve(open_browser: bool = True):
     # still empty, kick off one pipeline run so they see cards within a
     # minute or two instead of an empty dashboard.
     _maybe_kick_first_sync()
+    # If a new release is out and the user is running interactively,
+    # offer to upgrade in place before binding the port.
+    _check_updates_interactive()
     last_error = None
     for port in PORTS:
         try:
@@ -777,8 +869,8 @@ def serve(open_browser: bool = True):
         print(f"[serve] endpoints:")
         print(f"        GET  /            (dashboard)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
-        print(f"        GET  /ping        /api/data")
-        print(f"        POST /api/save    /api/refresh  /api/lifecycle  /focus  /newpane")
+        print(f"        GET  /ping        /api/data    /api/version")
+        print(f"        POST /api/save    /api/refresh  /api/lifecycle  /api/update  /focus  /newpane")
         print(f"[serve] Ctrl-C to stop.\n")
 
         # Cost-alarm snapshot at startup — prints to stderr only if not 'ok'
@@ -826,6 +918,16 @@ def serve(open_browser: bool = True):
         sched_thread.start()
         print("[serve] derived scheduler: tips every 2h, weekly Fri noon",
               file=sys.stderr)
+
+        # Background update-checker. Updates cache/update_state.json
+        # every 24h; the dashboard polls /api/version for the banner.
+        update_thread = threading.Thread(
+            target=_update_recheck_loop,
+            args=(stop_scheduler,),  # reuse the same stop event
+            daemon=True,
+            name="ccw-update-check",
+        )
+        update_thread.start()
 
         try:
             httpd.serve_forever()

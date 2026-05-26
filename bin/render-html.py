@@ -128,6 +128,13 @@ LOCALE = {
         "lifecycle_resume": "恢复",
         "lifecycle_resume_confirm": "恢复后,Stop hook 将再次触发 AI 流水线。继续?",
         "lifecycle_resumed_toast": "Pipeline 已恢复",
+        "update_available": "claude-stray 有新版本",
+        "update_versions_fmt": "{local} → {remote}",
+        "update_now": "立刻升级",
+        "update_dismiss": "今天先不",
+        "update_in_progress": "正在升级…",
+        "update_success_toast": "已升级到 {after}，重启 stray --serve 生效",
+        "update_failed_toast": "升级失败：{err}",
         "archive_bucket_this_week": "本周归档",
         "archive_bucket_last_week": "上周归档",
         "archive_bucket_two_weeks_ago": "2 周前归档",
@@ -272,6 +279,13 @@ LOCALE = {
         "lifecycle_paused": "Pipeline paused — background AI is off",
         "lifecycle_paused_reason_prefix": "Reason:",
         "lifecycle_resume": "Resume",
+        "update_available": "claude-stray update available",
+        "update_versions_fmt": "{local} → {remote}",
+        "update_now": "Update now",
+        "update_dismiss": "Not today",
+        "update_in_progress": "Updating…",
+        "update_success_toast": "Updated to {after} — restart `stray --serve` to load",
+        "update_failed_toast": "Update failed: {err}",
         "lifecycle_resume_confirm": "Resume the pipeline? Stop hooks will start firing AI work again.",
         "lifecycle_resumed_toast": "Pipeline resumed",
         "archive_bucket_this_week": "Archived this week",
@@ -979,6 +993,38 @@ article.card.archived { opacity: 0.7; }
   font-size: 13px; cursor: pointer; font-weight: 500;
 }
 .lifecycle-banner .lb-resume:hover { filter: brightness(1.07); }
+
+/* Update-available banner — same shape as lifecycle banner but green */
+.update-banner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px;
+  background: var(--green-bg); color: var(--green);
+  border-bottom: 1px solid var(--green);
+  font-size: 13px;
+}
+.update-banner[hidden] { display: none; }
+.update-banner .ub-icon { font-size: 16px; }
+.update-banner .ub-text { display: flex; flex-direction: column; gap: 2px; }
+.update-banner .ub-title { font-weight: 600; }
+.update-banner .ub-versions {
+  font-size: 12px; color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.update-banner .ub-versions:empty { display: none; }
+.update-banner .ub-grow { flex: 1; }
+.update-banner .ub-apply {
+  background: var(--green); color: white;
+  border: none; padding: 6px 12px; border-radius: 4px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.update-banner .ub-apply:hover { filter: brightness(1.07); }
+.update-banner .ub-apply:disabled { opacity: 0.6; cursor: wait; }
+.update-banner .ub-dismiss {
+  background: transparent; border: 1px solid transparent;
+  color: var(--text-mute); font-size: 14px; line-height: 1;
+  padding: 4px 8px; border-radius: 3px; cursor: pointer;
+}
+.update-banner .ub-dismiss:hover { color: var(--text); }
 .lifecycle-banner .lb-resume[disabled] { opacity: 0.5; cursor: wait; }
 
 .modal-overlay {
@@ -1278,6 +1324,19 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   </span>
   <span class="lb-grow"></span>
   <button class="lb-resume" id="lb-resume" type="button">__LIFECYCLE_RESUME__</button>
+</div>
+
+<!-- Update-available banner. Polled from /api/version on a 24h cadence
+     (matches the server-side check). Hidden until JS sees `behind: true`. -->
+<div class="update-banner" id="update-banner" hidden>
+  <span class="ub-icon">✨</span>
+  <span class="ub-text">
+    <strong class="ub-title">__UPDATE_AVAILABLE__</strong>
+    <span class="ub-versions" id="ub-versions"></span>
+  </span>
+  <span class="ub-grow"></span>
+  <button class="ub-apply" id="ub-apply" type="button">__UPDATE_NOW__</button>
+  <button class="ub-dismiss" id="ub-dismiss" type="button" title="__UPDATE_DISMISS__">✕</button>
 </div>
 
 <header class="top">
@@ -2894,6 +2953,104 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   // Initial paint
   updateLifecycleBanner();
 
+  // ---------- Update-available banner -----------------------------------
+  // Poll /api/version (the server-side state file; updated by the
+  // background thread every 24h and on serve startup). When `behind`
+  // flips to true, show the banner with the "Update now" button.
+  const $updateBanner = document.getElementById('update-banner');
+  const $ubVersions = document.getElementById('ub-versions');
+  const $ubApply = document.getElementById('ub-apply');
+  const $ubDismiss = document.getElementById('ub-dismiss');
+  const UPDATE_DISMISS_KEY = 'claude-code-worktree:update-dismissed-remote';
+  let _updateSnapshot = null;
+  let _updateBannerDismissedRemote = null;
+
+  function fmtVersions(local, remote) {
+    return (I18N.update_versions_fmt || '{local} → {remote}')
+      .replace('{local}', local || '?')
+      .replace('{remote}', remote || '?');
+  }
+
+  function updateUpdateBanner() {
+    if (!$updateBanner) return;
+    const s = _updateSnapshot;
+    if (!s || !s.behind) { $updateBanner.hidden = true; return; }
+    // User-dismissed THIS remote version stays hidden until a newer
+    // remote shows up. Per-session, localStorage-scoped.
+    if (_updateBannerDismissedRemote === s.remote) {
+      $updateBanner.hidden = true;
+      return;
+    }
+    $updateBanner.hidden = false;
+    if ($ubVersions) $ubVersions.textContent = fmtVersions(s.local, s.remote);
+  }
+
+  async function fetchVersion() {
+    if (!SERVER_MODE) return;
+    try {
+      const r = await fetch(SERVER_ORIGIN + '/api/version');
+      if (!r.ok) return;
+      _updateSnapshot = await r.json();
+      updateUpdateBanner();
+    } catch (_) { /* offline — keep last snapshot */ }
+  }
+
+  if ($ubDismiss) {
+    $ubDismiss.addEventListener('click', () => {
+      if (_updateSnapshot && _updateSnapshot.remote) {
+        _updateBannerDismissedRemote = _updateSnapshot.remote;
+        try { localStorage.setItem(UPDATE_DISMISS_KEY,
+                                    _updateBannerDismissedRemote); } catch (_) {}
+      }
+      $updateBanner.hidden = true;
+    });
+  }
+
+  if ($ubApply) {
+    $ubApply.addEventListener('click', async () => {
+      if (!SERVER_MODE) return;
+      $ubApply.disabled = true;
+      const originalLabel = $ubApply.textContent;
+      $ubApply.textContent = I18N.update_in_progress;
+      try {
+        const r = await fetch(SERVER_ORIGIN + '/api/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.ok) {
+          toast((I18N.update_success_toast || 'Updated to {after}')
+            .replace('{after}', j.after || '?'));
+          // Refresh the snapshot — server side has already cleared `behind`.
+          await fetchVersion();
+        } else {
+          const err = (j && j.error) || ('HTTP ' + r.status);
+          toast((I18N.update_failed_toast || 'Update failed: {err}')
+            .replace('{err}', err));
+        }
+      } catch (e) {
+        toast((I18N.update_failed_toast || 'Update failed: {err}')
+          .replace('{err}', e.message || e));
+      } finally {
+        $ubApply.disabled = false;
+        $ubApply.textContent = originalLabel;
+      }
+    });
+  }
+
+  // Restore the last dismissed remote (if any) so a reload doesn't
+  // re-show the banner for the same version.
+  try {
+    _updateBannerDismissedRemote = localStorage.getItem(UPDATE_DISMISS_KEY);
+  } catch (_) {}
+
+  if (SERVER_MODE) {
+    // Initial fetch + 24h poll. Cheap (single JSON read on the server).
+    fetchVersion();
+    setInterval(fetchVersion, 24 * 3600 * 1000);
+  }
+
   // ---------- Derived widgets (DD-006) ----------------------------------
   // Sidebar widgets for weekly report / next-steps / tips. Wellness is
   // emitted as a top toast on dashboard load if a fresh nudge exists.
@@ -3339,6 +3496,9 @@ def render_html(data: dict, L: dict, lang: str) -> str:
     out = out.replace("__MANUAL_REFRESH__", html_lib.escape(L["manual_refresh"]))
     out = out.replace("__LIFECYCLE_PAUSED__", html_lib.escape(L["lifecycle_paused"]))
     out = out.replace("__LIFECYCLE_RESUME__", html_lib.escape(L["lifecycle_resume"]))
+    out = out.replace("__UPDATE_AVAILABLE__", html_lib.escape(L["update_available"]))
+    out = out.replace("__UPDATE_NOW__", html_lib.escape(L["update_now"]))
+    out = out.replace("__UPDATE_DISMISS__", html_lib.escape(L["update_dismiss"]))
     out = out.replace("__WEEKLY_LABEL__", html_lib.escape(L["weekly_label"]))
     out = out.replace("__NEXT_STEPS_LABEL__", html_lib.escape(L["next_steps_label"]))
     out = out.replace("__TIP_LABEL__", html_lib.escape(L["tip_label"]))
