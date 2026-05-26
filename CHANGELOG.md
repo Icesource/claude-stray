@@ -8,16 +8,97 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
+## [v0.7.0] — 2026-05-26
+
+A "make the dashboard tell the truth" release. Three classes of bugs
+showed up after extended use: artifacts silently disappearing from
+cards, task lists growing without bound, and `done` cards detaching
+from continued session activity. Each got a design doc (DD-011 amend
+through DD-013) and a mechanical guarantee — AI is now advisory; the
+post-process is authoritative for anything the user cares about. Plus
+an in-place auto-updater so users actually get future fixes.
+
 ### Added
+
+- **Artifact monotonicity** (commit `c5452a0`). MR / PR / CR / issue /
+  commit links no longer vanish when AI rewrites a card. After Layer 2,
+  a mechanical aggregator unions PRIOR + every contributing session's
+  frontmatter + AI output, keyed by `url → (type, ref_id) → (type, title)`.
+  Once an artifact's status reaches `merged|closed|wontfix|released|
+  stale|rolled-back|pushed`, it's frozen. Each artifact row in the
+  modal grew a ✕ button writing to `user_overrides.json:hidden_artifacts`
+  (persistent — only the user removes artifacts).
+- **DD-012 — Layer 1 reuses PRIOR task wordings** (commit `679d366`).
+  `bin/summarize.py` now feeds the session's existing initiative tasks
+  back into the Layer 1 prompt; Rule 12 in `prompts/summarize-session.md`
+  forbids translating, retagging (`[F1-body]`), or expanding a PRIOR
+  title. Stops the unbounded growth where every Layer 1 rerun produced
+  a slightly-different phrasing that became a new permanent task.
+- **DD-012 tail — Consolidate-duplicates button** (commit `e02fc84`).
+  When a card has ≥ 8 pending tasks, a ✨ "Consolidate duplicates"
+  button appears in the footer. Click → Haiku scans the list, returns
+  groups of `{keep, cancel}` with reasons → preview modal → confirm
+  pushes cancellations through the existing `task_toggles` override.
+  Tested on a 41-pending card: 7 groups, 9 cancels, ~$0.01.
+- **DD-013 — `init.status` is mechanically derived** (commit `0963540`).
+  AI was carrying `PRIOR.status: done` forward even when the underlying
+  session had clearly resumed. New `enforce_hot_initiative_status` in
+  `classify.py` recomputes status for every hot initiative directly
+  from contributing sessions' `status_guess`, overwriting AI's output.
+  Done cards no longer freeze when work continues.
+- **Auto-update** (this release).
+  - `stray --check-updates` — print installed vs. latest tag.
+  - `stray --update` — `git pull --ff-only` to the latest tag.
+  - `stray --serve` startup checks at most every 24h and, when running
+    interactively, prompts `y/N` to upgrade in place.
+  - Dashboard green banner when a new version is available, with an
+    "Update now" button (POST `/api/update`) and "Not today" dismissal
+    that stays hidden until a newer version ships.
+  - Backed by `bin/_updates.py` + `cache/update_state.json` + a daemon
+    thread in `serve.py` that re-checks every 24 hours.
+
+### Fixed
+
+- **Archive zone bucketing** (commit `6cc7eef`). Cards archived today
+  were appearing under "上周归档" / "更早归档" because the UI keyed
+  buckets on `init.last_activity_at` (when the work happened) instead
+  of `archived_at` (when the card was archived). The persisted
+  timestamp is now preferred. Buckets older than this week also
+  collapse by default; click the header to expand.
+- **Frontmatter parser robustness** (in commit `0963540`). Layer 1
+  sometimes drops the closing `---` fence on a summary file. The
+  strict parser then treated the whole file as bodiless, which made
+  `is_hot()` return False and silently dropped the session out of
+  every Layer 2 batch. The parser now falls back to the first
+  markdown heading (`^# `) as the boundary.
+
+### Changed
+
+- **`stray --serve` auto-syncs on first run** (commit `c4d02b2`). When
+  `cache/dashboard.json` is missing or empty, serve kicks
+  `pipeline-run.sh --all-dirty --force-classify` in the background so
+  a fresh install reaches a populated dashboard within a minute or two
+  without the user having to know about `--refresh`.
+- **`/stray-refresh` slash command retired** (in commit `c4d02b2`).
+  Redundant alongside `stray --refresh` from the shell, the dashboard's
+  🔄 button, and the new auto-sync. `bin/install.sh` sweeps up the
+  obsolete file on the next install; `bin/uninstall.sh` already
+  cleaned it.
+- **README rewritten for a wider audience** (commit `f038ff0`). Both
+  English and Chinese open with the user problem ("you're juggling
+  five things in Claude Code, they blur together") and position the
+  tool as a Claude Code plugin that auto-summarizes and classifies.
+  Implementation jargon (`jsonl`, "3-layer Haiku pipeline", DD-XXX,
+  etc.) is gone from the top-level README and tucked under `docs/`.
+
+### Promo / docs
 
 - **Promo screenshots** for both English and Chinese README
   (`docs/assets/screenshots/{en,zh-CN}/01-overview.png` ... `05-filter-active.png`).
 - **Reproducer kit** at `bin/_screenshots/` — mock-data generators
   (`make-mock-zh-CN.py`, `make-mock-en.py`), the Playwright capture
   script (`playwright-shots.js`), and a README that walks through the
-  "pause + stash + RO-lock + shoot + restore" dance. Run it after a
-  UI change to refresh the screenshots without leaking real session
-  data.
+  "pause + stash + RO-lock + shoot + restore" dance.
 
 ## [v0.6.1] — 2026-05-20
 
