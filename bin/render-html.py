@@ -475,52 +475,115 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 <meta charset="utf-8">
 <title>__TITLE__</title>
 <style>
+/* DD-014 "Field Notes" design refresh — typography-first lab-journal
+   aesthetic. Three families load from Google Fonts; if blocked
+   (offline / firewall), system fallbacks kick in via the font stack
+   and the dashboard stays usable. */
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@400;500;700&display=swap');
+
 :root {
-  --bg: #fafafa;
-  --card-bg: #ffffff;
-  --border: #e4e4e7;
-  --border-hover: #d4d4d8;
-  --text: #18181b;
-  --text-dim: #52525b;
-  --text-mute: #a1a1aa;
-  --accent: #2563eb;
-  --green: #16a34a;
-  --green-bg: #dcfce7;
-  --amber: #ca8a04;
-  --amber-bg: #fef3c7;
-  --red: #dc2626;
-  --red-bg: #fee2e2;
-  --slate: #64748b;
-  --slate-bg: #f1f5f9;
-  --shadow: 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-hover: 0 4px 12px rgba(0,0,0,0.08);
-  --radius: 8px;
+  /* "Field Notes" design tokens — paper canvas, ink hierarchy, surgical
+     accent. Kept as CSS vars so all downstream rules pick up the
+     change without touching individual selectors. */
+  --paper:      #F4F1EA;   /* warm cream canvas */
+  --paper-2:    #ECE7DA;   /* sunken panels / hover */
+  --paper-3:    #E2DCC9;   /* deeper inset */
+  --ink:        #1A1916;   /* warm near-black, primary text */
+  --ink-2:      #58544A;   /* secondary text */
+  --mute:       #9A968C;   /* tertiary — dates, ids */
+  --rule:       #C9C2AE;   /* hairline separators */
+  --rule-soft:  #DCD6C5;   /* softer dividers */
+  --marker:     #B82A1F;   /* blocker red (wax-seal stamp) */
+  --marker-bg:  #F2DAD3;
+  --field:      #2E7D3E;   /* active green (kelly-green ink) */
+  --field-bg:   #DDE6D6;
+  --pause:      #B47A1C;   /* paused mustard */
+  --pause-bg:   #EFE0C5;
+  --quill:      #2C436A;   /* link / quiet navy accent */
+
+  /* Aliased back-compat for the older variable names so the long tail
+     of legacy CSS (modals, toasts, derived widgets, etc.) keeps
+     working without per-rule edits. */
+  --bg:           var(--paper);
+  --card-bg:      #FAF8F1;
+  --border:       var(--rule);
+  --border-hover: var(--ink);
+  --text:         var(--ink);
+  --text-dim:     var(--ink-2);
+  --text-mute:    var(--mute);
+  --accent:       var(--quill);
+  --green:        var(--field);
+  --green-bg:     var(--field-bg);
+  --amber:        var(--pause);
+  --amber-bg:     var(--pause-bg);
+  --red:          var(--marker);
+  --red-bg:       var(--marker-bg);
+  --slate:        #6B6557;
+  --slate-bg:     #E5E0CF;
+  --shadow:       none;
+  --shadow-hover: 0 1px 0 var(--ink);  /* underline-ish, no fluffy drop */
+  --radius:       3px;
+
+  --font-display: "Instrument Serif", "Noto Serif SC",
+                  "Songti SC", "PingFang SC", Georgia, "Times New Roman", serif;
+  --font-body:    "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB",
+                  "Microsoft YaHei", -apple-system, BlinkMacSystemFont,
+                  "Helvetica Neue", sans-serif;
+  --font-mono:    "IBM Plex Mono", ui-monospace, "SFMono-Regular",
+                  Menlo, Consolas, monospace;
 }
 * { box-sizing: border-box; }
 html, body {
   margin: 0; padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-               "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
-  color: var(--text);
-  background: var(--bg);
-  font-size: 14px;
-  line-height: 1.5;
+  font-family: var(--font-body);
+  color: var(--ink);
+  background:
+    /* subtle paper grain — tiny SVG noise pattern, repeats */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.10  0 0 0 0 0.10  0 0 0 0 0.08  0 0 0 0.035 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>"),
+    var(--paper);
+  font-size: 14.5px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv01", "kern", "liga";
 }
-a { color: var(--accent); }
-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+a { color: var(--quill); text-decoration: none; }
+a:hover { text-decoration: underline; text-decoration-thickness: 1px;
+          text-underline-offset: 2px; }
+code, .mono { font-family: var(--font-mono); font-size: 0.92em; letter-spacing: -0.01em; }
+
+/* Selection — match the paper feel, not browser blue */
+::selection { background: var(--ink); color: var(--paper); }
 
 /* ---------- Header ---------- */
 header.top {
   position: sticky; top: 0; z-index: 10;
-  background: rgba(250,250,250,0.95);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(12px) saturate(120%);
+  border-bottom: 3px double var(--ink);
+  padding: 14px 28px 10px;
+  display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap;
 }
-header.top h1 { font-size: 15px; font-weight: 600; margin: 0; }
-header.top .meta { color: var(--text-dim); font-size: 12px; }
+header.top h1 {
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 400; margin: 0;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  font-style: italic;
+}
+header.top h1::before {
+  content: "✦  ";
+  color: var(--field);
+  font-style: normal;
+  font-size: 14px;
+  vertical-align: 4px;
+}
+header.top .meta {
+  font-family: var(--font-mono);
+  color: var(--mute); font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 /* DD-006 tips bubble — floats in the top-right of the cards area as
    a compact speech bubble. Emoji is the "speaker", balloon is the
    bubble body with a tail pointing back at the emoji. Click to cycle. */
@@ -852,33 +915,63 @@ section.archive-zone article.card .from-ws code {
   background: var(--slate-bg); padding: 1px 6px; border-radius: 3px;
 }
 
-section.workspace { margin-bottom: 22px; }
+section.workspace { margin: 36px 0 8px; }
+/* Section masthead — Roman numeral + Instrument Serif name +
+   mono entry count, with double-rule underneath. */
 section.workspace > header.ws-head {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 0 8px;
+  display: flex; align-items: baseline; gap: 14px;
+  padding: 0 0 6px;
   cursor: pointer; user-select: none;
-  border-bottom: 1px dashed var(--border);
-  margin-bottom: 12px;
-  transition: border-color 0.15s, color 0.15s;
+  border-bottom: 3px double var(--ink);
+  margin-bottom: 14px;
+  transition: border-color 0.2s ease;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(
+    to bottom,
+    var(--paper) 80%,
+    color-mix(in srgb, var(--paper) 0%, transparent) 100%);
+  z-index: 4;
+  padding-top: 8px;
 }
-section.workspace > header.ws-head:hover {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-section.workspace > header.ws-head .ws-toggle {
-  font-size: 10px; color: var(--text-mute); width: 12px; display: inline-block;
+section.workspace > header.ws-head:hover { border-bottom-color: var(--quill); }
+section.workspace > header.ws-head .ws-roman {
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 26px;
+  color: var(--ink);
+  line-height: 1;
+  min-width: 38px;
 }
 section.workspace > header.ws-head h2 {
-  font-size: 13px; font-weight: 600; margin: 0;
-  letter-spacing: 0.01em;
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 400; margin: 0;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  line-height: 1.1;
 }
 section.workspace > header.ws-head .ws-meta {
-  font-size: 11px; color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 10.5px; color: var(--mute);
   margin-left: auto;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  display: inline-flex; gap: 10px; align-items: baseline;
 }
 section.workspace > header.ws-head .ws-meta code {
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--ink-2);
+  background: transparent;
 }
+section.workspace > header.ws-head .ws-toggle {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--mute);
+  width: 12px; display: inline-block;
+  transition: transform 0.2s ease;
+}
+section.workspace.collapsed .ws-head .ws-toggle { transform: rotate(-90deg); }
 section.workspace.collapsed .ws-body { display: none; }
 
 /* DD-014: ws-body is now a vertical stack of three tiers.
@@ -913,89 +1006,136 @@ div.ws-body {
 .thread-deck {
   position: relative;
   background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 18px 18px 14px;
-  box-shadow: var(--shadow);
-  transition: transform 0.25s cubic-bezier(.2,.7,.3,1.3),
-              box-shadow 0.25s, border-color 0.2s;
+  border: 1px solid var(--ink);
+  border-radius: 2px;
+  padding: 18px 22px 14px 28px;
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.28s cubic-bezier(.2,.7,.3,1.3),
+              box-shadow 0.28s, border-color 0.2s;
   cursor: pointer;
   isolation: isolate;
+  animation: ink-set 0.6s cubic-bezier(.2,.7,.3,1.05) backwards;
+  animation-delay: calc(var(--idx, 0) * 60ms + 100ms);
 }
 .thread-deck::before,
 .thread-deck::after {
-  /* The two stacked-paper backplates that give the "deck of cards"
-     illusion. Both sit behind the deck and offset down-right. On hover
-     they fan out further so the deck "spreads." */
   content: "";
   position: absolute;
   inset: 0;
   background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border: 1px solid var(--ink);
+  border-radius: 2px;
   z-index: -1;
-  transition: transform 0.25s cubic-bezier(.2,.7,.3,1.3),
-              box-shadow 0.25s;
-  box-shadow: var(--shadow);
+  transition: transform 0.32s cubic-bezier(.2,.7,.3,1.3),
+              box-shadow 0.28s, opacity 0.28s;
 }
-.thread-deck::before { transform: translate(6px, 6px) rotate(1.2deg); opacity: 0.85; }
-.thread-deck::after  { transform: translate(12px, 12px) rotate(2.4deg); opacity: 0.7; }
-.thread-deck:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-hover);
-  border-color: var(--border-hover);
+.thread-deck::before {
+  transform: translate(6px, 6px) rotate(1.6deg);
+  opacity: 0.95;
+  box-shadow: 2px 2px 0 var(--ink);
 }
-.thread-deck:hover::before { transform: translate(8px, 8px) rotate(1.6deg); }
-.thread-deck:hover::after  { transform: translate(16px, 16px) rotate(3.2deg); }
-.thread-deck.expanded::before,
-.thread-deck.expanded::after { display: none; }
+.thread-deck::after  {
+  transform: translate(12px, 12px) rotate(3deg);
+  opacity: 0.85;
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.thread-deck:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--ink); }
+.thread-deck:hover::before { transform: translate(8px, 8px) rotate(2.2deg); }
+.thread-deck:hover::after  { transform: translate(16px, 16px) rotate(4.2deg); }
+.thread-deck.expanded::before {
+  transform: translate(-32px, 20px) rotate(-9deg);
+  opacity: 0.6;
+}
+.thread-deck.expanded::after {
+  transform: translate(34px, 24px) rotate(11deg);
+  opacity: 0.55;
+}
+/* Folio mark — small upper-left badge */
+.thread-deck > .deck-folio {
+  position: absolute;
+  top: 10px; left: 14px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--mute);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
 .thread-deck-head {
-  display: flex; align-items: flex-start; gap: 8px;
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 4px;
 }
 .thread-deck-head .thread-icon {
-  font-size: 13px; line-height: 1.5;
+  font-family: var(--font-display);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--field);
+  line-height: 1;
+  width: 22px; flex-shrink: 0;
 }
 .thread-deck-head h3 {
-  font-size: 15px; font-weight: 600; margin: 0; flex: 1;
-  line-height: 1.4; word-break: break-word;
+  font-family: var(--font-display);
+  font-size: 22px; font-weight: 400; margin: 0; flex: 1;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  word-break: break-word;
 }
 .thread-deck-summary {
-  margin: 8px 0 0; color: var(--text-dim);
-  font-size: 13px; line-height: 1.55;
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  line-height: 1.55;
 }
 .thread-deck-members {
-  margin-top: 12px;
+  margin-top: 14px;
   display: flex; flex-wrap: wrap; gap: 6px;
-  font-size: 12px; color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--mute);
+  align-items: center;
 }
 .thread-deck-member-pill {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 2px 9px;
   cursor: pointer;
+  color: var(--ink-2);
   transition: background 0.15s, border-color 0.15s, color 0.15s;
+  font-family: var(--font-body);
+  font-size: 12px;
+  letter-spacing: 0;
 }
 .thread-deck-member-pill:hover {
-  background: var(--card-bg);
-  border-color: var(--border-hover);
-  color: var(--text);
+  background: var(--paper-2);
+  border-color: var(--ink);
+  color: var(--ink);
 }
 .thread-deck-member-pill .pill-dot {
-  display: inline-block; width: 6px; height: 6px;
+  display: inline-block; width: 5px; height: 5px;
   border-radius: 50%; margin-right: 5px; vertical-align: middle;
 }
 .thread-deck-foot {
-  margin-top: 12px;
-  display: flex; gap: 10px; font-size: 11px;
-  color: var(--text-mute);
+  margin-top: 14px;
+  display: flex; gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--mute);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 .thread-deck-foot .deck-stat {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 8px;
+  border: none;
+  background: transparent;
+  padding: 0;
 }
+.thread-deck-foot .deck-stat::before {
+  content: "·";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--rule);
+}
+.thread-deck-foot .deck-stat:first-child::before { display: none; }
 /* Expanded thread: the backplates fan out dramatically (paper sliding
    off the top of the deck), and a .thread-deck-expanded-body slides
    into view containing the thread's full content (summary, tasks,
@@ -1053,71 +1193,101 @@ div.ws-body {
   content: " ▴";
 }
 
-/* ---------- Chips (compact tags for tiny initiatives) ---------- */
+/* ---------- Chips · inline editorial citations ---------- */
 .tier-chips {
   display: flex; flex-wrap: wrap;
-  gap: 6px;
-  /* A subtle "ground line" under the chips to mark them as the
-     low-emphasis tier without resorting to a heavy section divider. */
-  padding-top: 2px;
+  gap: 4px 18px;
+  padding: 10px 4px 4px;
+  border-top: 1px dashed var(--rule);
+  margin-top: 12px;
 }
 .tier-chips .tier-chips-label {
   flex-basis: 100%;
-  font-size: 11px; color: var(--text-mute);
-  text-transform: uppercase; letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--mute);
+  text-transform: uppercase; letter-spacing: 0.12em;
   margin-bottom: 2px;
+  font-weight: 500;
 }
 .chip-card {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 12px 4px 10px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 2px 2px 0;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
   cursor: pointer;
-  max-width: 320px;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+  max-width: 340px;
+  transition: color 0.15s, background 0.15s;
+  position: relative;
+  animation: ink-set 0.4s cubic-bezier(.2,.7,.3,1.05) backwards;
+  animation-delay: calc(var(--idx, 0) * 18ms);
+}
+.chip-card::before {
+  content: "—";
+  color: var(--rule);
+  margin-right: 2px;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
 }
 .chip-card:hover {
-  background: var(--card-bg);
-  border-color: var(--border-hover);
-  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--paper) 60%, var(--paper-2));
+  color: var(--ink);
 }
 .chip-card.hidden { display: none; }
 .chip-card .chip-dot {
-  width: 7px; height: 7px; border-radius: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
   flex-shrink: 0;
+  align-self: center;
 }
-.chip-card .chip-dot.active { background: var(--green); }
-.chip-card .chip-dot.paused { background: var(--amber); }
-.chip-card .chip-dot.done   { background: var(--slate); }
-.chip-card .chip-dot.archived { background: var(--text-mute); }
+.chip-card .chip-dot.active   { background: var(--field); }
+.chip-card .chip-dot.paused   { background: var(--pause); }
+.chip-card .chip-dot.done     { background: var(--slate); }
+.chip-card .chip-dot.archived { background: var(--mute);  }
 .chip-card .chip-name {
   font-weight: 500;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chip-card .chip-meta {
-  font-size: 10px; color: var(--text-mute);
-  display: inline-flex; gap: 4px; align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10.5px; color: var(--mute);
+  display: inline-flex; gap: 4px; align-items: baseline;
+  letter-spacing: 0.02em;
 }
 .chip-card .chip-task-badge {
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0 6px;
+  background: var(--paper-2);
+  border: none;
+  border-radius: 2px;
+  padding: 0 5px;
+  font-family: var(--font-mono);
   font-size: 10px;
-  color: var(--text-dim);
+  color: var(--ink-2);
 }
 .chip-card .chip-blocker {
-  color: var(--red); font-size: 11px;
+  color: var(--marker); font-size: 11px;
 }
-.chip-card.has-pending {
-  border-color: var(--accent);
-  background: linear-gradient(to right, rgba(59,130,246,0.06), transparent);
+.chip-card.has-pending .chip-name {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--quill);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* Tier dividers — drop the boxy "Cards" label; just hairlines */
+.tier-divider { display: none; }
+.tier-cards { padding: 0; }
+.tier-threads {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(440px, 1fr));
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
 /* Tier label (only shown when tier-cards is below tier-threads or
@@ -1132,195 +1302,400 @@ div.ws-body {
   content: ""; flex: 1; height: 1px; background: var(--border);
 }
 
-/* ---------- Card ---------- */
+/* ---------- Card · "Field Notes" entry row ---------- */
 article.card {
-  background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 12px 14px 12px 18px;
-  box-shadow: var(--shadow);
-  transition: box-shadow 0.18s, border-color 0.15s,
-              transform 0.18s cubic-bezier(.2,.7,.3,1.3);
+  --status-color: var(--slate);
   position: relative;
-  overflow: hidden;
+  background: var(--card-bg);
+  border: none;
+  border-top: 1px solid var(--rule-soft);
+  border-bottom: 1px solid var(--rule-soft);
+  padding: 16px 18px 16px 28px;
+  box-shadow: none;
+  transition: background 0.2s ease, border-color 0.2s ease;
+  overflow: visible;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  /* Page-load ink stagger (idx custom-prop set inline by JS). The
+     `backwards` keeps opacity:0 in effect during the delay so cards
+     don't flash in their final state first. */
+  animation: ink-set 0.55s cubic-bezier(.2,.7,.3,1.05) backwards;
+  animation-delay: calc(var(--idx, 0) * 28ms + 80ms);
 }
-/* Status accent strip on the left edge — instant scan signal */
+@keyframes ink-set {
+  from { opacity: 0; transform: translateY(8px); filter: blur(2px); }
+  to   { opacity: 1; transform: translateY(0);   filter: blur(0); }
+}
+/* When wrapped inside a tier the rule-soft top/bottom collapses
+   collapsing neighbors, giving the column a continuous ruled-page
+   feeling (think: lined notebook). */
+.tier-cards article.card + article.card { border-top: none; }
+
+/* Left rail — solid status stamp, full card height. The ink-set
+   stagger doesn't include the rail (it's part of the card transform).
+   Status color is driven by the parent `[data-status="…"]` rule. */
 article.card::before {
-  content: ""; position: absolute;
-  left: 0; top: 0; bottom: 0;
+  content: "";
+  position: absolute;
+  left: 12px; top: 16px; bottom: 16px;
   width: 3px;
-  background: var(--slate);
-  transition: background 0.15s, width 0.18s;
+  background: var(--status-color);
+  border-radius: 1px;
+  transition: width 0.18s ease, background 0.2s ease;
 }
-article.card[data-status="active"]::before { background: var(--green); }
-article.card[data-status="paused"]::before { background: var(--amber); }
-article.card[data-status="done"]::before { background: var(--slate); }
-article.card[data-status="archived"]::before { background: var(--text-mute); }
+article.card[data-status="active"]   { --status-color: var(--field);  }
+article.card[data-status="paused"]   { --status-color: var(--pause);  }
+article.card[data-status="done"]     { --status-color: var(--slate);  }
+article.card[data-status="archived"] { --status-color: var(--mute);   }
+
 article.card:hover {
-  box-shadow: var(--shadow-hover);
-  border-color: var(--border-hover);
+  background: color-mix(in srgb, var(--card-bg) 80%, var(--paper-2));
+  border-top-color: var(--ink);
+  border-bottom-color: var(--ink);
 }
 article.card:hover::before { width: 4px; }
 article.card.hidden { display: none; }
-article.card.archived { opacity: 0.7; }
+article.card.archived { opacity: 0.6; }
 
-/* Compact mode — default state for most cards. Shows only head + age +
-   task-progress bar; full body content is hidden until expanded.
-   Click anywhere on a compact card expands it inline. */
-article.card.compact {
-  cursor: pointer;
-  padding: 10px 14px 10px 18px;
+/* Metaline: small caps + mono — "N° 03  ◉ ACTIVE · 2h     ws/init" */
+.card-meta-top {
+  display: flex; align-items: baseline; gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--mute);
+  letter-spacing: 0.04em;
 }
-article.card.compact .card-meta,
-article.card.compact .card-section,
-article.card.compact .blocker-preview,
-article.card.compact footer.card-actions {
-  display: none;
+.card-meta-top .seq {
+  color: var(--mute);
+  font-weight: 500;
 }
-article.card.compact .card-head h3 {
+.card-meta-top .status-mark {
+  display: inline-flex; align-items: center; gap: 5px;
+  color: var(--status-color);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.card-meta-top .status-mark .glyph {
+  font-family: var(--font-body);
+  font-size: 8px;
+  line-height: 1;
+}
+article.card[data-status="active"] .card-meta-top .status-mark .glyph {
+  animation: pulseGlyph 2.4s ease-in-out infinite;
+}
+@keyframes pulseGlyph {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.card-meta-top .dot-sep {
+  color: var(--rule);
+}
+.card-meta-top .ws-path {
+  margin-left: auto;
+  color: var(--mute);
+  font-weight: 400;
+  text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  max-width: 40%;
+}
+.card-meta-top .ws-path .ws-name {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
+/* Title — Instrument Serif, generous, wraps to 2 lines max */
+.card-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.18;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  margin: 2px 0 4px;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+article.card[data-status="done"] .card-title {
+  font-style: italic;
+  color: var(--ink-2);
+}
+article.card[data-status="archived"] .card-title {
+  font-style: italic;
+  color: var(--mute);
+  text-decoration: line-through;
+  text-decoration-thickness: 0.5px;
+}
+
+/* Summary line — body sans, 2-line clamp, dimmed */
+.card-summary {
   font-size: 13.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Typed-dash progress bar — pure text, scales with font, breathing
+   with content rather than a floating CSS bar */
+.card-progress-text {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--field);
+  letter-spacing: -0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  display: flex; align-items: baseline; gap: 8px;
 }
-article.card.compact .card-progress-strip {
-  display: block;
-  margin-top: 8px;
+.card-progress-text .pg-bar { letter-spacing: -0.06em; }
+.card-progress-text .pg-empty { color: var(--rule); }
+.card-progress-text .pg-stat { color: var(--ink-2); font-size: 11px; }
+article.card[data-status="done"] .card-progress-text { color: var(--slate); }
+article.card[data-status="paused"] .card-progress-text { color: var(--pause); }
+
+/* Signal line — blockers, artifacts, sessions, parent thread breadcrumb */
+.card-signals {
+  display: flex; flex-wrap: wrap;
+  gap: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  margin-top: 2px;
+  letter-spacing: -0.01em;
 }
-article.card:not(.compact) .card-progress-strip {
+.card-signals .sig {
+  display: inline-flex; align-items: center; gap: 5px;
+}
+.card-signals .sig.blocker { color: var(--marker); font-weight: 500; }
+.card-signals .sig.thread-link {
+  color: var(--quill);
+  border-bottom: 1px dashed var(--quill);
+  padding-bottom: 1px;
+  cursor: pointer;
+}
+.card-signals .sig.thread-link:hover {
+  background: color-mix(in srgb, var(--quill) 8%, transparent);
+}
+.card-signals .sig .glyph {
+  font-family: var(--font-body); opacity: 0.7;
+}
+
+/* Action sliver — only shows on hover, top-right, tiny */
+.card-actions-sliver {
+  position: absolute;
+  top: 10px; right: 12px;
+  display: none;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+article.card:hover .card-actions-sliver { display: inline-flex; }
+.card-actions-sliver button {
+  background: transparent;
+  border: 1px solid var(--rule);
+  color: var(--ink-2);
+  font-family: inherit; font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.card-actions-sliver button:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+  background: var(--paper-2);
+}
+.card-actions-sliver button.dangerous:hover {
+  border-color: var(--marker);
+  color: var(--marker);
+  background: var(--marker-bg);
+}
+
+/* Hide the OLD card-internal structures by default on editorial-style
+   cards. The new layout replaces them with the meta-top / title /
+   summary / progress-text / signals system above. Detail content
+   remains accessible via the modal opened by entry click — those
+   modal cards carry the `.full-detail` flag and show everything. */
+article.card:not(.full-detail) .card-head,
+article.card:not(.full-detail) .card-meta,
+article.card:not(.full-detail) .card-section,
+article.card:not(.full-detail) .blocker-preview,
+article.card:not(.full-detail) footer.card-actions,
+article.card:not(.full-detail) .card-progress-strip {
   display: none;
 }
-.card-progress-strip {
-  height: 4px;
-  background: var(--bg);
-  border-radius: 2px;
-  overflow: hidden;
+/* In modal / full-detail mode, hide our editorial-only blocks (they'd
+   be redundant alongside the rich legacy sections). */
+article.card.full-detail .card-meta-top,
+article.card.full-detail .card-title,
+article.card.full-detail .card-summary,
+article.card.full-detail .card-progress-text,
+article.card.full-detail .card-signals,
+article.card.full-detail .card-actions-sliver {
+  display: none;
+}
+article.card.full-detail {
+  /* Restore a card-like appearance for the modal view */
+  background: var(--card-bg);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 20px 24px;
+  animation: none;
+  cursor: default;
+}
+article.card.full-detail::before {
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+  border-radius: 3px 0 0 3px;
+}
+article.card.full-detail .card-head h3 {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  line-height: 1.18;
+}
+
+/* ---------- Focus zone · "Front Page" editorial hero ---------- */
+section.focus-zone {
+  margin: 4px 0 28px;
+  padding: 18px 24px 22px;
+  background:
+    /* Faint ledger-line cross-hatch via SVG, sits over the paper grain */
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><path d='M0 39 H40' stroke='%23DCD6C5' stroke-width='0.5'/></svg>"),
+    color-mix(in srgb, var(--paper) 92%, var(--paper-2));
+  background-size: 40px 40px, auto;
+  border-top: 2px solid var(--ink);
+  border-bottom: 1px solid var(--rule);
   position: relative;
 }
-.card-progress-strip .progress-fill {
-  height: 100%;
-  background: linear-gradient(to right, var(--green) 0%, #4ade80 100%);
-  border-radius: 2px;
-  transition: width 0.3s ease-out;
-}
-.card-progress-strip .progress-text {
-  position: absolute; right: 4px; top: -16px;
-  font-size: 10px; color: var(--text-mute);
-}
-article.card.compact .card-head .status-badge {
-  font-size: 10px;
-  padding: 1px 6px;
-}
-article.card.compact .card-head .id-tag,
-article.card.compact .card-head .linked-tag {
-  display: none;
-}
-
-/* Expanded mode — clicked compact cards open up; click again to close. */
-article.card.expanded {
-  cursor: default;
-  box-shadow: var(--shadow-hover);
-}
-article.card.expanded::before { width: 4px; }
-
-/* ---------- Focus zone (top-of-page hero strip) ---------- */
-section.focus-zone {
-  margin-bottom: 24px;
-  padding: 16px 18px;
-  background: linear-gradient(
-    to bottom,
-    rgba(59, 130, 246, 0.05) 0%,
-    rgba(59, 130, 246, 0.01) 100%);
-  border: 1px solid rgba(59, 130, 246, 0.15);
-  border-radius: 12px;
-}
+/* "Vol. III · No. 21" stamp in the top-right corner */
 section.focus-zone > .focus-head {
-  display: flex; align-items: center; gap: 10px;
-  margin-bottom: 12px;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  font-weight: 600;
-}
-section.focus-zone > .focus-head::before {
-  content: ""; display: inline-block;
-  width: 6px; height: 6px;
-  background: var(--green);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
-  animation: focusPulse 2s ease-in-out infinite;
-}
-section.focus-zone > .focus-head .focus-count {
-  margin-left: auto;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 400;
+  display: flex; align-items: baseline; gap: 14px;
+  margin-bottom: 18px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--text-mute);
+  color: var(--ink);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
-@keyframes focusPulse {
-  0%, 100% { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
-  50%      { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.05); }
+section.focus-zone > .focus-head .fz-roman {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-style: italic;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
 }
+section.focus-zone > .focus-head .fz-tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 500;
+}
+section.focus-zone > .focus-head .fz-tag::before {
+  content: ""; width: 5px; height: 5px;
+  background: var(--field);
+  border-radius: 50%;
+  animation: pulseGlyph 2.4s ease-in-out infinite;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--field) 22%, transparent);
+}
+section.focus-zone > .focus-head .fz-count {
+  margin-left: auto;
+  color: var(--mute);
+  font-weight: 500;
+}
+
 section.focus-zone .focus-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 10px;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  gap: 0;
 }
+@media (max-width: 1000px) {
+  section.focus-zone .focus-grid { grid-template-columns: 1fr; }
+}
+/* Hero card layout — the FIRST entry of the focus zone is "above the
+   fold" with maximum typographic weight; the rest sit in a 2-col grid
+   beside it. */
 section.focus-zone .focus-card {
-  background: white;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 12px 14px 12px 16px;
   position: relative;
-  overflow: hidden;
+  padding: 8px 22px 12px;
+  border-right: 1px solid var(--rule);
   cursor: pointer;
-  transition: transform 0.18s, box-shadow 0.18s;
+  transition: background 0.18s ease;
+  animation: ink-set 0.6s cubic-bezier(.2,.7,.3,1.05) backwards;
+  animation-delay: calc(var(--idx, 0) * 50ms);
 }
-section.focus-zone .focus-card::before {
-  content: ""; position: absolute;
-  left: 0; top: 0; bottom: 0; width: 3px;
-  background: var(--green);
-}
+section.focus-zone .focus-card:last-child { border-right: none; }
 section.focus-zone .focus-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.12);
+  background: color-mix(in srgb, var(--paper) 80%, var(--paper-2));
 }
-section.focus-zone .focus-card .focus-card-ws {
-  font-size: 11px;
-  color: var(--text-mute);
+section.focus-zone .focus-card.hero {
+  grid-row: 1 / span 2;
+  padding: 8px 26px 12px 0;
+  border-right: 1px solid var(--rule);
+}
+section.focus-zone .focus-card.hero .focus-card-title {
+  font-size: 32px;
+  line-height: 1.05;
+}
+section.focus-zone .focus-card.hero .focus-card-summary {
+  -webkit-line-clamp: 3;
+  font-size: 14px;
+}
+section.focus-zone .focus-card .focus-card-kicker {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--field);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.12em;
   margin-bottom: 4px;
+  display: flex; gap: 8px; align-items: baseline;
+}
+section.focus-zone .focus-card .focus-card-kicker .ws-name {
+  color: var(--ink-2);
 }
 section.focus-zone .focus-card .focus-card-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 6px;
-  line-height: 1.35;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 400;
+  letter-spacing: -0.005em;
+  line-height: 1.15;
+  color: var(--ink);
+  margin: 2px 0 6px;
+  /* Drop-cap-ish — first letter slightly larger via CSS */
   word-break: break-word;
 }
-section.focus-zone .focus-card .focus-card-meta {
-  display: flex; gap: 8px; flex-wrap: wrap;
-  font-size: 11px; color: var(--text-dim);
-  margin-top: 6px;
+section.focus-zone .focus-card .focus-card-summary {
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin: 0 0 8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
-section.focus-zone .focus-card .focus-pill {
-  background: var(--bg);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  border: 1px solid var(--border);
+section.focus-zone .focus-card .focus-card-signals {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  display: flex; gap: 4px 14px; flex-wrap: wrap;
 }
-section.focus-zone .focus-card .focus-pill.pending {
-  background: rgba(59,130,246,0.08);
-  color: var(--accent);
-  border-color: rgba(59,130,246,0.2);
+section.focus-zone .focus-card .focus-card-signals .sig.blocker {
+  color: var(--marker); font-weight: 500;
 }
-section.focus-zone .focus-card .focus-pill.blocker {
-  background: var(--red-bg);
-  color: var(--red);
-  border-color: rgba(220,38,38,0.2);
+section.focus-zone .focus-card .focus-card-signals .sig.pending {
+  color: var(--quill);
+}
+section.focus-zone .focus-card .focus-card-signals .sig.progress {
+  color: var(--field);
 }
 
 .card-head { display: flex; align-items: flex-start; gap: 8px; }
@@ -2107,6 +2482,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   function render() {
     const board = document.getElementById('board');
     board.innerHTML = '';
+    resetCardSeq();  // editorial N° starts at 1 each full re-render
 
     const workspaces = DATA.workspaces || [];
     if (!workspaces.length) {
@@ -2158,54 +2534,80 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         a.init.last_activity_at || ''));
     const focusTop = focusCandidates.slice(0, 5);
     if (focusTop.length > 0) {
+      // Volume / issue tagline. Date stamps the issue.
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
       const fz = document.createElement('section');
       fz.className = 'focus-zone';
       const fhead = document.createElement('div');
       fhead.className = 'focus-head';
-      fhead.innerHTML = '<span>' + esc(I18N.focus_zone_label) + '</span>' +
-        '<span class="focus-count">' + focusTop.length + ' / ' +
-        focusCandidates.length + '</span>';
+      fhead.innerHTML =
+        '<span class="fz-roman">Front Page</span>' +
+        '<span class="fz-tag">' + esc(I18N.focus_zone_label || 'In progress') + '</span>' +
+        '<span class="fz-count">' + yyyy + '·' + mm + '·' + dd +
+          '  ·  ' + focusTop.length + ' / ' + focusCandidates.length + '</span>';
       fz.appendChild(fhead);
+
       const grid = document.createElement('div');
       grid.className = 'focus-grid';
-      for (const { init, ws_name } of focusTop) {
-        const fc = document.createElement('div');
-        fc.className = 'focus-card';
-        fc.setAttribute('data-init-id', init.id);
 
-        const ws = document.createElement('div');
-        ws.className = 'focus-card-ws';
-        ws.textContent = ws_name;
-        fc.appendChild(ws);
+      focusTop.forEach(({ init, ws_name }, idx) => {
+        const fc = document.createElement('div');
+        fc.className = 'focus-card' + (idx === 0 ? ' hero' : '');
+        fc.setAttribute('data-init-id', init.id);
+        fc.style.setProperty('--idx', idx);
+
+        const tasks = (init.tasks || []).map(taskStatus);
+        const pending = tasks.filter(t => t._status === 'pending').length;
+        const done = tasks.filter(t => t._status === 'done').length;
+        const total = tasks.length;
+        const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+
+        const kicker = document.createElement('div');
+        kicker.className = 'focus-card-kicker';
+        const ageTxt = humanizeAge(init.last_activity_at);
+        kicker.innerHTML = '<span>● ACTIVE</span>' +
+          '<span class="ws-name">/ ' + esc(ws_name) + '</span>' +
+          '<span>· ' + esc(ageTxt) + '</span>';
+        fc.appendChild(kicker);
 
         const ttl = document.createElement('div');
         ttl.className = 'focus-card-title';
         ttl.textContent = init.name || '';
         fc.appendChild(ttl);
 
-        const tasks = (init.tasks || []).map(taskStatus);
-        const pending = tasks.filter(t => t._status === 'pending').length;
-        const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+        if (idx === 0 && (init.summary || init.progress)) {
+          const sum = document.createElement('div');
+          sum.className = 'focus-card-summary';
+          sum.textContent = init.summary || init.progress;
+          fc.appendChild(sum);
+        }
 
-        const meta = document.createElement('div');
-        meta.className = 'focus-card-meta';
-        meta.innerHTML = '<span class="focus-pill">' +
-          esc(humanizeAge(init.last_activity_at)) + '</span>';
+        const sigs = [];
+        if (total > 0) {
+          sigs.push('<span class="sig progress">' + done + '/' + total +
+            ' · ' + Math.round((done / total) * 100) + '%</span>');
+        }
         if (pending > 0) {
-          meta.innerHTML += '<span class="focus-pill pending">' +
-            (I18N.chip_pending_tasks || '{} pending').replace('{}', pending) +
-            '</span>';
+          sigs.push('<span class="sig pending">◐ ' + pending + ' pending</span>');
         }
         if (blockers.length > 0) {
-          meta.innerHTML += '<span class="focus-pill blocker">⚠ ' +
-            (I18N.blocker_chip || '{} blocked').replace('{}', blockers.length) +
-            '</span>';
+          sigs.push('<span class="sig blocker">⚠ ' + blockers.length +
+            (blockers.length === 1 ? ' blocker' : ' blockers') + '</span>');
         }
-        fc.appendChild(meta);
+        if (sigs.length) {
+          const sg = document.createElement('div');
+          sg.className = 'focus-card-signals';
+          sg.innerHTML = sigs.join('');
+          fc.appendChild(sg);
+        }
 
         fc.addEventListener('click', () => promoteChipToInspect(init.id));
         grid.appendChild(fc);
-      }
+      });
+
       fz.appendChild(grid);
       board.appendChild(fz);
     }
@@ -2240,11 +2642,25 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
       const wsHead = document.createElement('header');
       wsHead.className = 'ws-head';
+      const romanFor = (n) => {
+        // Just 0..49 — enough for any realistic workspace count.
+        const R = ['','I','II','III','IV','V','VI','VII','VIII','IX','X',
+                   'XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX',
+                   'XXI','XXII','XXIII','XXIV','XXV','XXVI','XXVII','XXVIII','XXIX','XXX',
+                   'XXXI','XXXII','XXXIII','XXXIV','XXXV','XXXVI','XXXVII','XXXVIII','XXXIX','XL'];
+        return R[n] || String(n);
+      };
+      const entries = liveInits.length;
       wsHead.innerHTML =
-        '<span class="ws-toggle">' + (collapsedWs.has(ws.name) ? I18N.ws_collapsed : I18N.ws_expanded) + '</span>' +
+        '<span class="ws-roman">' + romanFor(wsIdx + 1) + '.</span>' +
         '<h2>' + esc(ws.name) + '</h2>' +
-        '<span class="ws-meta">' + (ws.initiatives || []).length + ' ' + I18N.initiative +
-        (ws.cwd ? ' · <code>' + esc(shortCwd(ws.cwd)) + '</code>' : '') + '</span>';
+        '<span class="ws-meta">' +
+          '<span>' + entries + ' ' + (I18N.initiative || 'entries') + '</span>' +
+          (ws.cwd ? '<code>' + esc(shortCwd(ws.cwd)) + '</code>' : '') +
+          '<span class="ws-toggle">' +
+            (collapsedWs.has(ws.name) ? '▸' : '▾') +
+          '</span>' +
+        '</span>';
       wsHead.addEventListener('click', () => {
         if (collapsedWs.has(ws.name)) collapsedWs.delete(ws.name);
         else collapsedWs.add(ws.name);
@@ -2398,7 +2814,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         const bBody = document.createElement('div');
         bBody.className = 'archive-body';
         for (const entry of bucket.entries) {
-          const card = renderCard(entry.init.id);
+          const card = renderCardFull(entry.init.id);
           const fromTag = document.createElement('div');
           fromTag.className = 'from-ws';
           fromTag.innerHTML = esc(I18N.from_workspace) + ' <code>' +
@@ -2555,10 +2971,16 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     document.querySelectorAll('article.card').forEach(c => _spyObserver.observe(c));
   }
 
-  // Per-render set of card ids the user has manually expanded.
-  // Cleared on full re-render unless persisted (we don't, intentionally
-  // — re-render = fresh focus). Override via opts.startExpanded.
-  const __expandedCards = new Set();
+  // -------- Editorial card (page-surface, always-dense row) --------
+  //
+  // DD-014 "Field Notes" surface. Every initiative shown in a tier-cards
+  // grid uses this layout. Click anywhere on the card opens a popover
+  // with the full detail (renderCardFull).
+  //
+  // The order of paint is set by --idx on the card element so the
+  // page-load stagger plays top-to-bottom.
+  let __cardSeq = 0;
+  function resetCardSeq() { __cardSeq = 0; }
 
   function renderCard(initId, opts) {
     opts = opts || {};
@@ -2567,31 +2989,185 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     const init = eff.init;
     const isArchived = overrides.archived.indexOf(initId) !== -1;
     const status = isArchived ? 'archived' : init.status;
-    // Compact by default. Caller can pass {startExpanded: true} for
-    // Focus-zone hero cards, archive entries, modal popovers, etc.
-    const startCompact = !opts.startExpanded
-                         && !__expandedCards.has(initId);
 
     const card = document.createElement('article');
-    card.className = 'card'
-                     + (isArchived ? ' archived' : '')
-                     + (startCompact ? ' compact' : ' expanded');
+    card.className = 'card' + (isArchived ? ' archived' : '');
     card.setAttribute('data-init-id', initId);
     card.setAttribute('data-status', status);
-    // Click-to-toggle for compact ↔ expanded. The handler is bound to
-    // the card itself but ignores clicks that originated on an
-    // interactive child (buttons, links, badges-with-modal-data,
-    // tasks, sessions) — those keep their own behavior.
+    const idx = __cardSeq++;
+    card.style.setProperty('--idx', idx);
+
+    const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+    const artifacts = Array.isArray(init.artifacts) ? init.artifacts : [];
+    const pendingArts = artifacts.filter(a => a
+      && ['pending', 'open', 'unknown'].indexOf(a.status) !== -1
+      && ['cr', 'mr', 'pr', 'issue'].indexOf(a.type) !== -1);
+    const tasksArr = (init.tasks || []).map(taskStatus);
+    const doneN = tasksArr.filter(t => t._status === 'done').length;
+    const totalN = tasksArr.length;
+    const pendingN = tasksArr.filter(t => t._status === 'pending').length;
+
+    // 1) METALINE: N° + status + age + ws/init
+    const seqStr = 'N° ' + String(idx + 1).padStart(2, '0');
+    const statusLabel = (I18N['status_' + status] || status).toUpperCase();
+    const wsPath = eff.ws_name || '';
+    const metaTop = document.createElement('div');
+    metaTop.className = 'card-meta-top';
+    metaTop.innerHTML =
+      '<span class="seq">' + esc(seqStr) + '</span>' +
+      '<span class="status-mark"><span class="glyph">●</span>' +
+        esc(statusLabel) + '</span>' +
+      '<span class="dot-sep">·</span>' +
+      '<span>' + esc(humanizeAge(init.last_activity_at)) + '</span>' +
+      '<span class="ws-path">' +
+        (wsPath ? '<span class="ws-name">' + esc(wsPath) + '</span> ' : '') +
+        '<span class="init-id">' + esc(init.id || '') + '</span>' +
+      '</span>';
+    card.appendChild(metaTop);
+
+    // 2) TITLE
+    const title = document.createElement('h3');
+    title.className = 'card-title';
+    title.textContent = init.name || '';
+    card.appendChild(title);
+
+    // 3) SUMMARY (and falls back to progress if no summary)
+    const summaryText = (init.summary || init.progress || '').trim();
+    if (summaryText) {
+      const summary = document.createElement('p');
+      summary.className = 'card-summary';
+      summary.textContent = summaryText;
+      card.appendChild(summary);
+    }
+
+    // 4) PROGRESS BAR — typed-dashes, rendered as mono text
+    if (totalN > 0) {
+      const pct = doneN / totalN;
+      const BAR_W = 28;
+      const fill = Math.round(pct * BAR_W);
+      const filled = '━'.repeat(fill);
+      const empty = '─'.repeat(BAR_W - fill);
+      const pg = document.createElement('div');
+      pg.className = 'card-progress-text';
+      pg.innerHTML =
+        '<span class="pg-bar">' + esc(filled) +
+          '<span class="pg-empty">' + esc(empty) + '</span></span>' +
+        '<span class="pg-stat">' + doneN + '/' + totalN +
+        ' · ' + Math.round(pct * 100) + '%</span>';
+      card.appendChild(pg);
+    }
+
+    // 5) SIGNAL LINE — blockers, artifacts, sessions, thread breadcrumb
+    const signals = [];
+    if (blockers.length) {
+      const b0 = blockers[0] || '';
+      const more = blockers.length > 1 ? ' + ' + (blockers.length - 1) : '';
+      signals.push(
+        '<span class="sig blocker" data-open-modal="blockers"' +
+        ' title="' + esc(blockers.join(' / ')) + '">' +
+        '<span class="glyph">⚠</span> ' + esc(b0.slice(0, 50)) +
+          (b0.length > 50 ? '…' : '') + esc(more) + '</span>');
+    }
+    if (pendingN > 0) {
+      signals.push(
+        '<span class="sig">' +
+        '<span class="glyph">◐</span> ' +
+        pendingN + ' pending</span>');
+    }
+    if (pendingArts.length) {
+      const first = pendingArts[0];
+      const lbl = (first.title || (first.type || '') + ' ' +
+                   (first.ref_id || ''))
+                   .trim().slice(0, 36);
+      signals.push(
+        '<span class="sig" data-open-modal="artifacts"' +
+        ' style="cursor:pointer"' +
+        ' title="' + esc(pendingArts.map(a => a.title || a.url).join(' / ')) +
+          '"><span class="glyph">↗</span> ' + esc(lbl) +
+        (pendingArts.length > 1 ? ' + ' + (pendingArts.length - 1) : '') +
+        '</span>');
+    }
+    const sessN = (init.sessions || []).length;
+    if (sessN > 0) {
+      signals.push(
+        '<span class="sig"><span class="glyph">⊙</span> ' +
+        sessN + (sessN === 1 ? ' session' : ' sessions') + '</span>');
+    }
+    if (init.parent_thread_id) {
+      signals.push(
+        '<span class="sig thread-link" data-parent-thread="' +
+        esc(init.parent_thread_id) + '">' +
+        '<span class="glyph">↳</span> in thread</span>');
+    }
+    if (signals.length) {
+      const sigEl = document.createElement('div');
+      sigEl.className = 'card-signals';
+      sigEl.innerHTML = signals.join('');
+      card.appendChild(sigEl);
+    }
+
+    // 6) ACTION SLIVER (hover-only)
+    if (!isArchived) {
+      const sliver = document.createElement('div');
+      sliver.className = 'card-actions-sliver';
+      sliver.innerHTML =
+        '<button data-act="archive">archive</button>';
+      sliver.querySelector('[data-act="archive"]').addEventListener('click',
+        async (ev) => {
+          ev.stopPropagation();
+          if (!(await confirmDialog(I18N.confirm_archive.replace('{}', init.name)))) return;
+          overrides.archived.push(initId); saveOverrides(); render();
+        });
+      card.appendChild(sliver);
+    }
+
+    // Card click → full-detail modal popover (delegating to existing
+    // promote-to-inspect flow, which now uses renderCardFull).
     card.addEventListener('click', (ev) => {
       const t = ev.target;
-      if (t.closest('button, a, [data-open-modal], .task, .session, ' +
-                    'input, label, .blocker-preview')) return;
-      const nowExpanded = card.classList.contains('compact');
-      card.classList.toggle('compact', !nowExpanded);
-      card.classList.toggle('expanded', nowExpanded);
-      if (nowExpanded) __expandedCards.add(initId);
-      else __expandedCards.delete(initId);
+      // Modal-target signals already handle their own behavior.
+      if (t.closest('[data-open-modal], button, a, [data-parent-thread]')) return;
+      promoteChipToInspect(initId);
     });
+
+    // Thread-link click → scroll to thread (or open the thread's full
+    // card if it's in a collapsed workspace).
+    card.querySelectorAll('[data-parent-thread]').forEach(el => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const tid = el.getAttribute('data-parent-thread');
+        const deck = document.querySelector(
+          '.thread-deck[data-init-id="' + CSS.escape(tid) + '"]');
+        if (deck) {
+          deck.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          deck.classList.add('expanded');
+        } else {
+          promoteChipToInspect(tid);
+        }
+      });
+    });
+
+    return card;
+  }
+
+  // -------- Full-detail card (modals, archive entries, thread bodies)
+  //
+  // This is the original card-render — heavy, all sections visible.
+  // Gets the `.full-detail` flag so CSS shows the legacy DOM and hides
+  // the editorial blocks.
+  function renderCardFull(initId, opts) {
+    opts = opts || {};
+    const eff = effective(initId);
+    if (!eff) return document.createDocumentFragment();
+    const init = eff.init;
+    const isArchived = overrides.archived.indexOf(initId) !== -1;
+    const status = isArchived ? 'archived' : init.status;
+
+    const card = document.createElement('article');
+    card.className = 'card full-detail'
+                     + (isArchived ? ' archived' : '');
+    card.setAttribute('data-init-id', initId);
+    card.setAttribute('data-status', status);
 
     // Head
     const head = document.createElement('div');
@@ -3164,7 +3740,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   function promoteChipToInspect(initId) {
     // Remove any previous popover first.
     document.querySelectorAll('.chip-popover').forEach(p => p.remove());
-    const card = renderCard(initId);
+    const card = renderCardFull(initId);
     if (!card) return;
     const popover = document.createElement('div');
     popover.className = 'modal-overlay chip-popover';
@@ -3290,7 +3866,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       ownLbl.className = 'expanded-section-label';
       ownLbl.textContent = I18N.thread_own_card_label || 'Thread';
       expBody.appendChild(ownLbl);
-      expBody.appendChild(renderCard(thread.id, { startExpanded: true }));
+      expBody.appendChild(renderCardFull(thread.id, { startExpanded: true }));
       // Then the member cards as compact rows.
       if (members && members.length) {
         const memLbl = document.createElement('div');
@@ -3302,7 +3878,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         const memList = document.createElement('div');
         memList.className = 'expanded-members-list';
         for (const m of members) {
-          memList.appendChild(renderCard(m.id));
+          memList.appendChild(renderCard(m.id));  // member is editorial-row
         }
         expBody.appendChild(memList);
       }
