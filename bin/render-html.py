@@ -1782,17 +1782,27 @@ article.card.full-detail .card-head h3 {
   margin-bottom: 14px;
   user-select: none;
 }
+/* Stack uses a single grid cell so all hero cards stack at the same
+   location (grid-area: 1 / 1) and the cell auto-sizes to the tallest
+   card's content. This is what makes the section reserve correct
+   vertical space — `position: absolute` children, which we used to
+   use, didn't push the stack's height, causing the front card's
+   content to overflow into the stats row below. */
 .now-hero-stack {
-  position: relative;
-  min-height: 460px;
-  transition: min-height 0.4s var(--ease-smooth);
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(460px, auto);
+  transition: grid-template-rows 0.4s var(--ease-smooth);
 }
-/* Spread state needs extra height for the wider arc with 5 cards */
-.now-hero-stack.spread { min-height: 620px; }
+/* Spread state: cards leave the grid cell (become absolute) and we
+   give the stack a fixed minimum height so the arc fits. */
+.now-hero-stack.spread {
+  position: relative;
+  grid-template-rows: minmax(620px, auto);
+}
 
 .now-hero {
-  position: absolute;
-  left: 0; right: 0; top: 0;
+  grid-area: 1 / 1;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0;
@@ -1817,6 +1827,14 @@ article.card.full-detail .card-head h3 {
     border-color 0.2s ease,
     opacity 0.4s var(--ease-smooth);
   will-change: transform, opacity;
+}
+/* Spread mode switches cards to absolute positioning relative to the
+   stack so we can place them anywhere in the arc. */
+.now-hero-stack.spread .now-hero {
+  position: absolute;
+  top: 0; left: 50%;
+  width: 440px;
+  margin-left: -220px;
 }
 
 /* ============ COLLAPSED state — only current card visible, peek 4 behind */
@@ -1870,14 +1888,12 @@ article.card.full-detail .card-head h3 {
 .now-hero-stack.spread .now-hero {
   cursor: pointer;
   pointer-events: auto;
-  /* Width capped so all three fit; height shrinks because the grid
-     loses its right column. */
-  left: 50%; right: auto;
-  width: 440px;
-  margin-left: -220px;
+  /* The actual position (left/width/margin) is set higher up in the
+     overall `.now-hero-stack.spread .now-hero` rule that also makes
+     the cards absolute. Here we only override grid layout + the
+     transform origin for the rotation. */
   grid-template-columns: 1fr;
   transform-origin: center 80%;
-  /* Disable the gradient orb in spread — too noisy with 3 cards */
 }
 .now-hero-stack.spread .now-hero::before { opacity: 0; }
 .now-hero-stack.spread .now-hero .hero-right { display: none; }
