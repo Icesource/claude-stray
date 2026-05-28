@@ -2282,10 +2282,13 @@ body.spread-locked { overflow: hidden; }
   border-color: var(--accent);
 }
 
-/* Sessions inline row on the hero — chip style */
+/* Sessions inline row on the hero — chip style. flex-wrap allowed
+   but capped to 3 visible chips + "+N more" overflow so the row
+   doesn't wrap to multiple lines on long lists. */
 .now-hero .hero-sessions {
   display: flex; flex-wrap: wrap; gap: 6px;
-  margin-top: 10px;
+  margin-top: 12px;
+  align-items: center;
 }
 .now-hero .hero-sessions .ses-label {
   font-size: 10.5px;
@@ -2598,12 +2601,16 @@ body.spread-locked { overflow: hidden; }
 }
 .stat-tile {
   position: relative;
-  padding: 14px 16px;
+  padding: 14px 16px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-1);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 96px;
   transition:
     transform 0.25s var(--ease-smooth),
     box-shadow 0.25s var(--ease-smooth),
@@ -2621,6 +2628,7 @@ body.spread-locked { overflow: hidden; }
 }
 .stat-tile.active::before  { background: var(--green); opacity: 0.7; }
 .stat-tile.blocked::before { background: var(--red); opacity: 0.7; }
+.stat-tile.blocked.all-clear::before { background: var(--green); opacity: 0.7; }
 .stat-tile.done::before    { background: var(--slate); opacity: 0.5; }
 .stat-tile.idle::before    { background: var(--amber); opacity: 0.7; }
 
@@ -2635,29 +2643,38 @@ body.spread-locked { overflow: hidden; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-dim);
-  margin-bottom: 4px;
 }
 .stat-tile .stat-value {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
   color: var(--text);
   font-variant-numeric: tabular-nums;
-  line-height: 1.05;
+  line-height: 1;
   display: flex; align-items: baseline; gap: 6px;
+  margin: 6px 0 2px;
 }
+.stat-tile .stat-value .num {
+  /* Container for the numeric (or numeric-prefix) value */
+  font-variant-numeric: tabular-nums;
+}
+.stat-tile.blocked.all-clear .stat-value .num { color: var(--green); }
+.stat-tile.idle .stat-value .num { font-size: 26px; }
 .stat-tile .stat-unit {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-mute);
   letter-spacing: 0;
   text-transform: none;
 }
+.stat-tile.blocked.all-clear .stat-unit { color: var(--green); }
 .stat-tile .stat-hint {
   font-size: 11px;
   color: var(--text-mute);
-  margin-top: 4px;
   font-variant-numeric: tabular-nums;
+  /* &nbsp; placeholder keeps the row from collapsing when hint is empty,
+     preserving uniform tile height across the row. */
+  min-height: 1em;
 }
 
 /* ---------- 3. Attention grid --------------------------------------- */
@@ -4096,7 +4113,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       slbl.textContent = I18N.sessions || 'Sessions';
       sesRow.appendChild(slbl);
 
-      const showS = sessions.slice(0, 4);
+      const showS = sessions.slice(0, 3);
       const wsCwd = ws_cwd || '';
 
       for (const sid of showS) {
@@ -4347,39 +4364,48 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   function renderStatsRow(target, stats) {
     const row = document.createElement('div');
     row.className = 'stats-row';
+
+    // Extract numeric prefix from "9分钟前" / "3 hours ago" so the idle
+    // tile can render its number at the SAME size as the other stat
+    // values (28px tabular). Falls back to plain text if no number.
+    function splitTime(s) {
+      const m = String(s).match(/^(\d+)\s*(.+)$/);
+      if (m) return { value: m[1], unit: m[2] };
+      return { value: String(s), unit: '' };
+    }
+    const idleParts = splitTime(stats.idle);
+
     const tiles = [
       { cls: 'active',  label: I18N.cc_stat_active  || 'Active',
-        value: stats.active, hint: stats.active === 0 ? '—' : 'in flight' },
+        value: String(stats.active),
+        hint: stats.active === 0 ? '—' : (I18N.cc_stat_active_hint || 'in flight') },
       { cls: 'blocked', label: I18N.cc_stat_blocked || 'Blocked',
-        value: stats.blocked,
-        hint: stats.blocked === 0 ? 'all clear' : 'needs unblock' },
+        value: String(stats.blocked),
+        hint: stats.blocked === 0
+              ? (I18N.cc_stat_blocked_clear || 'all clear')
+              : (I18N.cc_stat_blocked_hint  || 'needs unblock'),
+        allClear: stats.blocked === 0 },
       { cls: 'done',    label: I18N.cc_stat_done    || 'Shipped',
-        value: stats.done,
-        hint: stats.done === 0 ? '—' : 'recently' },
+        value: String(stats.done),
+        hint: stats.done === 0 ? '—' : (I18N.cc_stat_done_hint || 'recently') },
       { cls: 'idle',    label: I18N.cc_stat_idle    || 'Last activity',
-        value: stats.idle, hint: stats.idle === '—' ? '—' : 'ago',
-        isText: true },
+        value: idleParts.value,
+        unit:  idleParts.unit,
+        hint:  '' },  // hint elided for visual symmetry
     ];
+
     tiles.forEach((t, idx) => {
       const tile = document.createElement('div');
-      tile.className = 'stat-tile ' + t.cls;
+      tile.className = 'stat-tile ' + t.cls + (t.allClear ? ' all-clear' : '');
       tile.style.setProperty('--idx', idx);
-      let valHtml;
-      if (t.isText) {
-        valHtml = '<span style="font-size: 18px; font-weight: 600;">' +
-          esc(String(t.value)) + '</span>';
-      } else {
-        valHtml = '<span>' + esc(String(t.value)) + '</span>';
-        if (t.cls === 'blocked' && stats.blocked === 0) {
-          valHtml = '<span style="color: var(--green);">0</span>' +
-            '<span class="stat-unit" style="color: var(--green);">' + esc(t.hint) + '</span>';
-        }
-      }
+      const unitHtml = t.unit ? '<span class="stat-unit">' + esc(t.unit) + '</span>' : '';
       tile.innerHTML =
         '<div class="stat-label">' + esc(t.label) + '</div>' +
-        '<div class="stat-value">' + valHtml + '</div>' +
-        (t.isText || (t.cls === 'blocked' && stats.blocked === 0)
-          ? '' : '<div class="stat-hint">' + esc(t.hint) + '</div>');
+        '<div class="stat-value">' +
+          '<span class="num">' + esc(t.value) + '</span>' +
+          unitHtml +
+        '</div>' +
+        '<div class="stat-hint">' + esc(t.hint || ' ') + '</div>';
       row.appendChild(tile);
     });
     target.appendChild(row);
