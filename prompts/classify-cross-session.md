@@ -348,12 +348,14 @@ Example (cancelled / merged):
 
 ## §8 — `level`: thread / card / chip (DD-014)
 
-> **Note (mechanical safety net).** Post-process `enforce_level_monotone`
-> + `apply_promotion_cooldown` in classify.py clamps your output:
-> level can only ratchet UP relative to PRIOR (chip→card→thread); a
-> newly-discovered initiative is forced to `chip` for its first round
-> regardless of what you emit. So your emitted `level` is advisory; the
-> mechanical layer protects the user from visual flicker.
+> **Note (mechanical override).** Post-process `enforce_level_ceiling`
+> in classify.py **overwrites** your emitted `level` with a value
+> derived purely from the initiative's own signals (session count,
+> task count, artifacts, blockers). AI's emit is advisory only and
+> typically ignored — the first real-data v3 run had AI declare every
+> initiative a `thread`, which the mechanical layer corrected. Emit a
+> plausible value for narrative consistency, but don't expect it to
+> survive to the dashboard.
 
 Each initiative carries a tier label that shapes its rendering on the
 dashboard. Choose the value that matches the initiative's apparent

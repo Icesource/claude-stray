@@ -919,143 +919,97 @@ def enforce_hot_initiative_status(new_mm: dict,
     return repairs
 
 
-def enforce_level_monotone(new_mm: dict, prior: dict) -> tuple[int, int]:
-    """DD-014 — `level` (thread/card/chip) is a one-way ratchet upward
-    relative to PRIOR.
+def normalize_parent_thread_id(new_mm: dict) -> int:
+    """DD-014 — clear invalid `parent_thread_id` references.
 
-    Rules (mechanical floor):
-      - PRIOR `level: thread` → output stays `thread`. AI cannot demote.
-      - PRIOR `level: card`   → output is `card` or `thread`. Never `chip`.
-      - PRIOR `level: chip`   → output is `chip`, `card`, or `thread`.
-      - Missing in PRIOR's initiative is handled by
-        apply_promotion_cooldown (forces `chip` on first round).
-      - v2 PRIOR initiatives (no `level` field) → treated as `card` floor
-        (matches slim_prior migration default).
-      - Bogus / missing level on output → normalized to PRIOR's level if
-        present, else `card`.
+    Rules:
+      - Threads themselves always have `parent_thread_id: null`.
+      - Cards/chips with a parent must point to a thread in the SAME
+        workspace; cross-workspace and non-thread targets are cleared.
 
-    Also normalizes `parent_thread_id`:
-      - Cleared if it points to an id that isn't in this workspace, or
-        points to a non-thread initiative.
-      - A `level: thread` initiative always has `parent_thread_id: null`.
+    Must run AFTER level assignment (enforce_level_ceiling) so we know
+    which initiatives are threads.
 
-    Returns (n_level_repairs, n_parent_repairs) for logging.
+    Returns count of parents cleared.
     """
-    prior_by_id: dict[str, dict] = {}
-    for w in (prior.get("workspaces") or []):
-        for i in (w.get("initiatives") or []):
-            prior_by_id[i.get("id")] = i
-
-    level_repairs = 0
-    parent_repairs = 0
-
+    repairs = 0
     for ws in (new_mm.get("workspaces") or []):
-        # Build per-workspace thread set for parent_thread_id validation.
         thread_ids = {i.get("id") for i in (ws.get("initiatives") or [])
                       if (i.get("level") == "thread") and i.get("id")}
-
         for init in (ws.get("initiatives") or []):
-            iid = init.get("id")
-            prior_init = prior_by_id.get(iid) or {}
-            prior_level = (prior_init.get("level") or "card") if prior_init \
-                else None  # None signals "new this round"
-
-            ai_level = init.get("level")
-            if ai_level not in LEVELS:
-                # Bogus or missing — default to PRIOR's level if known,
-                # else `card`. New-this-round will be re-clamped to chip
-                # by apply_promotion_cooldown.
-                init["level"] = prior_level or "card"
-                level_repairs += 1
-                ai_level = init["level"]
-
-            # Monotone clamp: never lower from PRIOR.
-            if prior_level and LEVEL_RANK[ai_level] < LEVEL_RANK[prior_level]:
-                init["level"] = prior_level
-                level_repairs += 1
-
-            # parent_thread_id normalization.
             pt = init.get("parent_thread_id")
             if init.get("level") == "thread":
-                # Threads are the top of the hierarchy.
                 if pt is not None:
                     init["parent_thread_id"] = None
-                    parent_repairs += 1
+                    repairs += 1
             else:
                 if pt is not None and pt not in thread_ids:
                     init["parent_thread_id"] = None
-                    parent_repairs += 1
+                    repairs += 1
+    return repairs
 
-    return level_repairs, parent_repairs
+
+def assign_level_deterministic(init: dict) -> str:
+    """DD-014 — mechanical level derivation from raw signals.
+
+    Rules (matches §8 thresholds in the classify prompt):
+      thread → sessions ≥ 3 OR tasks ≥ 8
+      chip   → 1 session AND ≤ 1 task AND no artifacts AND no blockers
+      card   → otherwise
+
+    Pure function of the initiative's own data, no PRIOR / AI input.
+    Determinism is the point: same data, same level, no flicker.
+
+    The reason we don't honor AI's emitted level here at all: on the
+    first real-data v3 classify run (2026-05-28), AI emitted
+    `level: thread` for all 21 initiatives despite the prompt
+    thresholds. AI is just not reliable enough to drive a visual
+    grouping decision, and the user explicitly cares more about
+    "looks the same as yesterday" than "AI's nuanced judgment."
+    """
+    sessions_n = len(init.get("sessions") or [])
+    tasks_n = len(init.get("tasks") or [])
+    has_arts = bool(init.get("artifacts"))
+    has_blockers = bool(init.get("blockers"))
+    if sessions_n >= 3 or tasks_n >= 8:
+        return "thread"
+    if sessions_n <= 1 and tasks_n <= 1 and not has_arts and not has_blockers:
+        return "chip"
+    return "card"
 
 
 def enforce_level_ceiling(new_mm: dict) -> int:
-    """DD-014 — mechanical ceiling on AI's `level` promotion.
+    """DD-014 — deterministic level assignment with thread-stickiness.
 
-    The prompt asks AI to promote conservatively (3+ sessions for
-    thread, 8+ tasks, etc.) but AI can over-promote — the observed
-    failure mode is "AI gives every initiative `level: thread` on first
-    v3 run." This post-process clamps AI's emit DOWN when the
-    underlying signals don't justify the level it picked.
+    Replaces the earlier "AI advisory, post-process clamps" approach.
+    AI's `level` emit is ignored entirely; level is derived from raw
+    signals via assign_level_deterministic.
 
-    Mechanical thresholds (matching §8 of the classify prompt):
-      - thread requires:  len(sessions) ≥ 3  OR  len(tasks) ≥ 8
-      - card requires:    anything more substantial than chip
-      - chip:             1 session, ≤ 5 user turns, ≤ 1 task, no
-                          artifacts, no blockers (NOT enforced as a
-                          ceiling — chips bubbling up to card is OK)
+    Thread-stickiness: once an initiative has been `thread`, it stays
+    a thread even if its mechanical signal drops back below the
+    threshold (rare but possible — sessions get archived, tasks get
+    cancelled). Without this stickiness the deck visualization would
+    silently disappear, surprising the user. Cards-down-to-chip and
+    chip-up-to-card transitions are not sticky: they're pure functions
+    of current signals.
 
-    Only the thread-ceiling is enforced here. Card vs chip is a softer
-    distinction we let AI judge (with the floor-monotone preserving
-    PRIOR's card status anyway).
-
-    Returns the count of initiatives clamped.
+    Returns the count of initiatives whose level changed vs the
+    incoming new_mm value (for logging).
     """
-    clamped = 0
+    changed = 0
     for ws in (new_mm.get("workspaces") or []):
         for init in (ws.get("initiatives") or []):
-            if init.get("level") != "thread":
-                continue
-            sessions_n = len(init.get("sessions") or [])
-            tasks_n = len(init.get("tasks") or [])
-            if sessions_n >= 3 or tasks_n >= 8:
-                continue  # justified
-            # Over-promoted: AI said thread but signals don't support it.
-            init["level"] = "card"
-            clamped += 1
-    return clamped
-
-
-def apply_promotion_cooldown(new_mm: dict, prior: dict) -> int:
-    """DD-014 — newly-discovered initiatives (id not in PRIOR) are forced
-    to `level: chip` on their first round, regardless of AI's emitted
-    value. This kills the "fanfare for a one-off" failure mode.
-
-    Returns the count of initiatives clamped down.
-    """
-    prior_ids = set()
-    for w in (prior.get("workspaces") or []):
-        for i in (w.get("initiatives") or []):
-            iid = i.get("id")
-            if iid:
-                prior_ids.add(iid)
-
-    clamped = 0
-    now_iso = now_utc_iso()
-    for ws in (new_mm.get("workspaces") or []):
-        for init in (ws.get("initiatives") or []):
-            iid = init.get("id")
-            if not iid or iid in prior_ids:
-                continue
-            # New this round. Force chip + clear parent (threads cannot
-            # be born this round — they have to promote up via a later
-            # classify run).
-            if init.get("level") != "chip":
-                init["level"] = "chip"
-                clamped += 1
-            init["parent_thread_id"] = None
-            init.setdefault("level_set_at", now_iso)
-    return clamped
+            prev = init.get("level")
+            mech = assign_level_deterministic(init)
+            # Sticky thread: once thread, stay thread.
+            if prev == "thread":
+                final = "thread"
+            else:
+                final = mech
+            if final != prev:
+                init["level"] = final
+                changed += 1
+    return changed
 
 
 def stamp_level_set_at(new_mm: dict, prior: dict) -> int:
@@ -1697,25 +1651,15 @@ def main() -> int:
     if status_repairs:
         print(f"[classify] enforced hot-initiative status: {status_repairs} repairs")
 
-    # DD-014: level (thread/card/chip) has two mechanical clamps:
-    #   (a) ceiling — AI's `level: thread` is only allowed when
-    #       len(sessions) ≥ 3 or len(tasks) ≥ 8 (matches §8 thresholds);
-    #       otherwise clamped down to `card`.
-    #   (b) floor — PRIOR's level is a floor; AI can only ratchet up
-    #       relative to it. New-this-round initiatives are forced to
-    #       `chip` regardless of AI output.
-    # Order: ceiling first (caps over-eager thread promotion), then
-    # cooldown (new chip clamp), then monotone (PRIOR floor), then
-    # stamp.
-    ceiling = enforce_level_ceiling(new_mm)
-    if ceiling:
-        print(f"[classify] enforced level ceiling: {ceiling} thread→card clamps")
-    cooled = apply_promotion_cooldown(new_mm, prior)
-    if cooled:
-        print(f"[classify] promotion cooldown clamped {cooled} new initiative(s) to chip")
-    level_repairs, parent_repairs = enforce_level_monotone(new_mm, prior)
-    if level_repairs:
-        print(f"[classify] enforced level-monotone: {level_repairs} repairs")
+    # DD-014: level is deterministic from raw signals. AI's emit is
+    # ignored — first real-data run showed AI was wildly unreliable
+    # (everything → thread). Mechanical assignment with thread-stickiness
+    # gives the user a stable visual hierarchy without flicker.
+    level_changes = enforce_level_ceiling(new_mm)
+    if level_changes:
+        print(f"[classify] mechanical level reassignment: "
+              f"{level_changes} change(s) vs AI emit")
+    parent_repairs = normalize_parent_thread_id(new_mm)
     if parent_repairs:
         print(f"[classify] cleared {parent_repairs} dangling parent_thread_id(s)")
     stamp_level_set_at(new_mm, prior)

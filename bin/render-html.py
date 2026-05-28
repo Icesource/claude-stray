@@ -77,6 +77,9 @@ LOCALE = {
         "tier_chips_label": "小项",
         "thread_members_label": "包含",
         "thread_no_members": "无附属卡片",
+        "thread_stat_subitems": "{} 子项目",
+        "thread_stat_sessions": "{} 个会话",
+        "thread_stat_tasks": "{} 项任务",
         "chip_pending_tasks": "{} 项待办",
         "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
@@ -235,6 +238,9 @@ LOCALE = {
         "tier_chips_label": "Quick items",
         "thread_members_label": "Contains",
         "thread_no_members": "No member cards",
+        "thread_stat_subitems": "{} sub-items",
+        "thread_stat_sessions": "{} sessions",
+        "thread_stat_tasks": "{} tasks",
         "chip_pending_tasks": "{} pending",
         "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
@@ -2876,15 +2882,30 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       deck.appendChild(memWrap);
     }
 
+    // Foot stats: pick the most-illustrative signal for THIS thread.
+    // Many threads have 0 children (the thread heuristic is "≥3 sessions
+    // OR ≥8 tasks"), so showing "0 sub-items" alone is misleading.
     const foot = document.createElement('div');
     foot.className = 'thread-deck-foot';
     const memCount = members ? members.length : 0;
-    foot.innerHTML =
-      '<span class="deck-stat">' + memCount + ' ' +
-        (memCount === 1 ? (I18N.initiative || 'item')
-                        : (I18N.initiative || 'items')) + '</span>' +
-      '<span class="deck-stat deck-toggle">' +
-        esc(I18N.thread_members_label || 'Details') + '</span>';
+    const sessionCount = (data.sessions || []).length;
+    const taskCount = (data.tasks || []).length;
+    const stats = [];
+    if (memCount > 0) {
+      stats.push((I18N.thread_stat_subitems || '{} sub-items').replace('{}', memCount));
+    }
+    if (sessionCount >= 2) {
+      stats.push((I18N.thread_stat_sessions || '{} sessions').replace('{}', sessionCount));
+    }
+    if (taskCount > 0) {
+      stats.push((I18N.thread_stat_tasks || '{} tasks').replace('{}', taskCount));
+    }
+    // Always at least one stat (so foot isn't empty for tiny threads).
+    if (stats.length === 0) {
+      stats.push((I18N.thread_stat_sessions || '{} sessions').replace('{}', sessionCount));
+    }
+    foot.innerHTML = stats.map(s =>
+      '<span class="deck-stat">' + esc(s) + '</span>').join('');
     deck.appendChild(foot);
 
     deck.addEventListener('click', (ev) => {
