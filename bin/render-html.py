@@ -99,6 +99,9 @@ LOCALE = {
         "cc_hero_wheel_hint": "滚轮切换 · ←→",
         "cc_hero_spread_hint": "点击展开 / 切换",
         "cc_hero_pick_hint": "点击选择 · ESC 取消",
+        "cc_hero_progress_label": "当前进展",
+        "cc_hero_blockers_label": "卡点",
+        "cc_hero_artifacts_label": "关联资源",
         "btn_view": "查看",
         "btn_delete": "删除",
         "chip_pending_tasks": "{} 项待办",
@@ -281,6 +284,9 @@ LOCALE = {
         "cc_hero_wheel_hint": "scroll · ←→",
         "cc_hero_spread_hint": "click to spread",
         "cc_hero_pick_hint": "pick one · ESC to cancel",
+        "cc_hero_progress_label": "Progress",
+        "cc_hero_blockers_label": "Blockers",
+        "cc_hero_artifacts_label": "Linked",
         "btn_view": "view",
         "btn_delete": "delete",
         "chip_pending_tasks": "{} pending",
@@ -1995,48 +2001,192 @@ article.card.full-detail .card-head h3 {
   border-color: color-mix(in srgb, var(--red) 35%, transparent);
 }
 
-/* Blocker callout inside hero — prominent red strip */
-.now-hero .hero-blocker {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 12px;
-  padding: 8px 12px;
+/* Hero info sections — uniform label + body treatment used by:
+   .progress-section, .blockers-section, .artifacts-section */
+.now-hero .hero-section {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: all 0.15s ease;
+}
+.now-hero .hero-section.progress-section {
+  background: color-mix(in srgb, var(--accent-bg) 50%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.now-hero .hero-section.blockers-section {
   background:
     linear-gradient(to right,
       var(--red-bg) 0%,
-      color-mix(in srgb, var(--red-bg) 30%, var(--surface)) 100%);
-  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
-  border-radius: 8px;
+      color-mix(in srgb, var(--red-bg) 35%, var(--surface)) 100%);
+  border-color: color-mix(in srgb, var(--red) 25%, transparent);
   cursor: pointer;
-  transition: all 0.15s ease;
 }
-.now-hero .hero-blocker:hover {
+.now-hero .hero-section.blockers-section:hover {
   border-color: color-mix(in srgb, var(--red) 40%, transparent);
   box-shadow: 0 4px 12px var(--red-glow);
 }
-.now-hero .hero-blocker .hero-blocker-icon {
-  color: var(--red-2);
-  font-size: 14px;
-  flex-shrink: 0;
+.now-hero .hero-section.artifacts-section {
+  background: var(--surface-2);
 }
-.now-hero .hero-blocker .hero-blocker-text {
-  flex: 1;
-  font-size: 12.5px;
-  color: var(--red-2);
-  font-weight: 500;
-  line-height: 1.4;
+
+.now-hero .hero-section-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-2);
+  margin-bottom: 6px;
+}
+.now-hero .hero-section-label.progress { color: var(--accent-2); }
+.now-hero .hero-section-label.progress .dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+.now-hero .hero-section-label.blockers { color: var(--red-2); }
+.now-hero .hero-section-label.blockers .glyph { font-size: 11px; }
+.now-hero .hero-section-label.artifacts { color: var(--text-2); }
+.now-hero .hero-section-label.artifacts .glyph { font-size: 11px; }
+.now-hero .hero-section-label .count {
+  background: rgba(255, 255, 255, 0.7);
+  padding: 0 6px;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 2px;
+}
+
+.now-hero .hero-section-body {
+  font-size: 13px;
+  color: var(--text-2);
+  line-height: 1.5;
+  margin: 0;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.now-hero .hero-blocker .hero-blocker-more {
-  font-size: 11px;
+
+/* Blocker list — each blocker on its own line, with hanging bullet */
+.now-hero .hero-blocker-list {
+  margin: 0; padding: 0;
+  list-style: none;
+  display: flex; flex-direction: column;
+  gap: 4px;
+}
+.now-hero .hero-blocker-list li {
+  font-size: 12.5px;
   color: var(--red-2);
-  background: rgba(255, 255, 255, 0.6);
-  padding: 1px 7px;
+  line-height: 1.45;
+  padding-left: 14px;
+  position: relative;
+  font-weight: 500;
+}
+.now-hero .hero-blocker-list li::before {
+  content: "•";
+  position: absolute;
+  left: 2px;
+  color: var(--red);
+  font-weight: 700;
+}
+
+/* Artifacts — wrap-flex list of chips */
+.now-hero .hero-artifacts {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.now-hero .hero-art {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11.5px;
+  padding: 4px 10px 4px 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  text-decoration: none;
+  transition: all 0.15s ease;
+  max-width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.now-hero .hero-art:hover {
+  text-decoration: none;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-1);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+.now-hero .hero-art .art-type {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.now-hero .hero-art[data-type="mr"] .art-type,
+.now-hero .hero-art[data-type="pr"] .art-type {
+  background: var(--accent-bg); color: var(--accent-2);
+}
+.now-hero .hero-art[data-type="cr"] .art-type {
+  background: #FEF3C7; color: #A16207;  /* warm yellow */
+}
+.now-hero .hero-art[data-type="issue"] .art-type {
+  background: var(--red-bg); color: var(--red-2);
+}
+.now-hero .hero-art[data-type="commit"] .art-type {
+  background: #E0E7FF; color: #4338CA;
+}
+.now-hero .hero-art[data-type="branch"] .art-type {
+  background: var(--green-bg); color: var(--green-2);
+}
+.now-hero .hero-art .art-ref {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: -0.005em;
+}
+.now-hero .hero-art .art-title {
+  color: var(--text);
+  max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.now-hero .hero-art .art-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 6px;
   border-radius: 999px;
   font-weight: 600;
-  flex-shrink: 0;
+}
+.now-hero .hero-art.is-open .art-status {
+  background: var(--accent-bg); color: var(--accent-2);
+}
+.now-hero .hero-art.is-done .art-status {
+  background: var(--green-bg); color: var(--green-2);
+}
+.now-hero .hero-art.is-unknown .art-status {
+  background: var(--surface-2); color: var(--text-mute);
+}
+.now-hero .hero-art-more {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.now-hero .hero-art-more:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Sessions inline row on the hero — chip style */
@@ -3707,15 +3857,15 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     ttl.textContent = init.name || '';
     left.appendChild(ttl);
 
-    // Summary
-    if (init.summary || init.progress) {
+    // Summary — what the initiative is about (descriptor)
+    if (init.summary) {
       const sum = document.createElement('p');
       sum.className = 'hero-summary';
-      sum.textContent = init.summary || init.progress;
+      sum.textContent = init.summary;
       left.appendChild(sum);
     }
 
-    // Progress bar
+    // Progress bar — completion %
     if (total > 0) {
       const prog = document.createElement('div');
       prog.className = 'hero-progress';
@@ -3724,19 +3874,23 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       left.appendChild(prog);
     }
 
+    // Progress narrative — AI-generated "current state" paragraph.
+    // This is the field that summarizes WHAT'S HAPPENING NOW (distinct
+    // from `summary` which describes what the initiative is *about*).
+    if (init.progress && init.progress.trim() && init.progress !== init.summary) {
+      const wrap = document.createElement('div');
+      wrap.className = 'hero-section progress-section';
+      wrap.innerHTML =
+        '<div class="hero-section-label progress">' +
+          '<span class="dot"></span>' +
+          esc(I18N.cc_hero_progress_label || '当前进展') +
+        '</div>' +
+        '<p class="hero-section-body">' + esc(init.progress) + '</p>';
+      left.appendChild(wrap);
+    }
+
     // Signal pills
     const sigs = [];
-    if (blockers.length > 0) {
-      sigs.push('<span class="sig blocker">⚠ ' + blockers.length +
-        (blockers.length === 1 ? ' blocker' : ' blockers') + '</span>');
-    }
-    if (pendingArts.length > 0) {
-      const first = pendingArts[0];
-      const lbl = (first.title || ((first.type || '').toUpperCase() + ' ' + (first.ref_id || '')))
-                    .trim().slice(0, 32);
-      sigs.push('<span class="sig pending">↗ ' + esc(lbl) +
-        (pendingArts.length > 1 ? ' +' + (pendingArts.length - 1) : '') + '</span>');
-    }
     if (pending.length > 0) {
       sigs.push('<span class="sig">◐ ' + pending.length + ' todos</span>');
     }
@@ -3747,20 +3901,95 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       left.appendChild(sg);
     }
 
-    // Blocker preview (full text of first blocker, if any)
+    // Blockers — every one of them, in a list. Most cards have 1; some
+    // have 2-3; rare cases up to 5.
     if (blockers.length > 0) {
-      const bp = document.createElement('div');
-      bp.className = 'hero-blocker';
-      bp.innerHTML = '<span class="hero-blocker-icon">⚠</span>' +
-        '<span class="hero-blocker-text">' + esc(blockers[0]) + '</span>' +
-        (blockers.length > 1
-          ? '<span class="hero-blocker-more">+' + (blockers.length - 1) + '</span>'
-          : '');
-      bp.addEventListener('click', (ev) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'hero-section blockers-section';
+      wrap.innerHTML =
+        '<div class="hero-section-label blockers">' +
+          '<span class="glyph">⚠</span>' +
+          esc(I18N.cc_hero_blockers_label || '卡点') +
+          '<span class="count">' + blockers.length + '</span>' +
+        '</div>';
+      const ul = document.createElement('ul');
+      ul.className = 'hero-blocker-list';
+      for (const b of blockers) {
+        const li = document.createElement('li');
+        li.textContent = b;
+        ul.appendChild(li);
+      }
+      wrap.appendChild(ul);
+      wrap.addEventListener('click', (ev) => {
         ev.stopPropagation();
         promoteChipToInspect(init.id);
       });
-      left.appendChild(bp);
+      left.appendChild(wrap);
+    }
+
+    // Artifacts (MR / CR / PR / issue / commit links).
+    // Shows up to 5 — clicking opens the link in a new tab if URL,
+    // otherwise opens the modal where the full list lives.
+    const allArts = Array.isArray(init.artifacts) ? init.artifacts : [];
+    if (allArts.length > 0) {
+      const wrap = document.createElement('div');
+      wrap.className = 'hero-section artifacts-section';
+      wrap.innerHTML =
+        '<div class="hero-section-label artifacts">' +
+          '<span class="glyph">↗</span>' +
+          esc(I18N.cc_hero_artifacts_label || '关联资源') +
+          '<span class="count">' + allArts.length + '</span>' +
+        '</div>';
+      const list = document.createElement('div');
+      list.className = 'hero-artifacts';
+      for (const a of allArts.slice(0, 6)) {
+        const typ = (a.type || '').toLowerCase();
+        const status = (a.status || 'unknown').toLowerCase();
+        const isTerminal = ['merged', 'closed', 'wontfix', 'stale',
+                            'released', 'rolled-back', 'pushed'].indexOf(status) !== -1;
+        const isOpen = ['pending', 'open', 'approved', 'active'].indexOf(status) !== -1;
+        const ttl = (a.title || a.ref_id || a.url || '').toString().slice(0, 60);
+        const refId = a.ref_id ? '#' + a.ref_id : '';
+        const chip = document.createElement('a');
+        chip.className = 'hero-art' +
+          (isOpen ? ' is-open' :
+           isTerminal ? ' is-done' : ' is-unknown');
+        chip.setAttribute('data-type', typ);
+        chip.setAttribute('data-status', status);
+        if (a.url) {
+          chip.href = a.url;
+          chip.target = '_blank';
+          chip.rel = 'noopener';
+        } else {
+          chip.href = '#';
+        }
+        chip.title = (a.title || '') + (a.url ? '\n' + a.url : '');
+        chip.innerHTML =
+          '<span class="art-type">' + esc(typ.toUpperCase() || '?') + '</span>' +
+          (refId ? '<span class="art-ref">' + esc(refId) + '</span>' : '') +
+          '<span class="art-title">' + esc(ttl) + '</span>' +
+          '<span class="art-status">' + esc(status) + '</span>';
+        chip.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (!a.url) {
+            ev.preventDefault();
+            promoteChipToInspect(init.id);
+          }
+        });
+        list.appendChild(chip);
+      }
+      if (allArts.length > 6) {
+        const more = document.createElement('span');
+        more.className = 'hero-art-more';
+        more.textContent = '+' + (allArts.length - 6) + ' more';
+        more.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          promoteChipToInspect(init.id);
+        });
+        list.appendChild(more);
+      }
+      wrap.appendChild(list);
+      left.appendChild(wrap);
     }
 
     // Sessions row with action buttons — full parity with the legacy
