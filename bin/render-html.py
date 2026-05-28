@@ -844,25 +844,40 @@ header.top .data-stale.show { display: inline-flex; }
 /* ---------- Toolbar ---------- */
 nav.toolbar {
   padding: 10px 24px; border-bottom: 1px solid var(--border);
-  background: white;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(8px);
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
 nav.toolbar .chips { display: flex; gap: 4px; }
 nav.toolbar .chip {
   font-size: 12px; padding: 4px 12px; border-radius: 999px;
-  border: 1px solid var(--border); background: white; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
   color: var(--text-dim); display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 500;
+  transition: all 0.15s var(--ease-smooth);
 }
-nav.toolbar .chip:hover { border-color: var(--border-hover); }
+nav.toolbar .chip:hover {
+  border-color: var(--border-strong);
+  color: var(--text-2);
+  background: var(--surface-2);
+}
 nav.toolbar .chip.active {
-  background: var(--text); color: white; border-color: var(--text);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  color: white;
+  border-color: var(--accent-2);
+  box-shadow:
+    0 2px 8px var(--accent-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 nav.toolbar .chip .count {
-  font-size: 10px; opacity: 0.7;
-  background: rgba(255,255,255,0.18); padding: 1px 6px; border-radius: 999px;
+  font-size: 10px; opacity: 0.85;
+  background: rgba(255,255,255,0.22);
+  padding: 1px 7px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; font-weight: 600;
 }
 nav.toolbar .chip:not(.active) .count {
-  background: var(--slate-bg);
+  background: var(--surface-2);
+  color: var(--text-dim);
 }
 nav.toolbar input.search {
   flex: 1; min-width: 180px; max-width: 360px;
@@ -1769,11 +1784,11 @@ article.card.full-detail .card-head h3 {
 }
 .now-hero-stack {
   position: relative;
-  min-height: 440px;
+  min-height: 460px;
   transition: min-height 0.4s var(--ease-smooth);
 }
-/* Spread state needs extra height to fit the fanned-out cards */
-.now-hero-stack.spread { min-height: 520px; }
+/* Spread state needs extra height for the wider arc with 5 cards */
+.now-hero-stack.spread { min-height: 620px; }
 
 .now-hero {
   position: absolute;
@@ -1804,26 +1819,40 @@ article.card.full-detail .card-head h3 {
   will-change: transform, opacity;
 }
 
-/* ============ COLLAPSED state — only current card visible ============ */
+/* ============ COLLAPSED state — only current card visible, peek 4 behind */
 .now-hero-stack:not(.spread) .now-hero[data-pos="0"] {
   transform: translateY(0) scale(1) rotate(0);
   opacity: 1;
-  z-index: 5;
+  z-index: 10;
   pointer-events: auto;
 }
 .now-hero-stack:not(.spread) .now-hero[data-pos="1"] {
-  transform: translateY(-10px) scale(0.97);
-  opacity: 0.7;
-  z-index: 4;
+  transform: translateY(-8px) scale(0.975);
+  opacity: 0.72;
+  z-index: 9;
   pointer-events: none;
-  filter: saturate(0.8);
+  filter: saturate(0.85);
 }
 .now-hero-stack:not(.spread) .now-hero[data-pos="2"] {
-  transform: translateY(-20px) scale(0.94);
-  opacity: 0.4;
-  z-index: 3;
+  transform: translateY(-16px) scale(0.955);
+  opacity: 0.5;
+  z-index: 8;
   pointer-events: none;
-  filter: saturate(0.65);
+  filter: saturate(0.7);
+}
+.now-hero-stack:not(.spread) .now-hero[data-pos="3"] {
+  transform: translateY(-24px) scale(0.935);
+  opacity: 0.32;
+  z-index: 7;
+  pointer-events: none;
+  filter: saturate(0.6);
+}
+.now-hero-stack:not(.spread) .now-hero[data-pos="4"] {
+  transform: translateY(-32px) scale(0.915);
+  opacity: 0.18;
+  z-index: 6;
+  pointer-events: none;
+  filter: saturate(0.5);
 }
 
 .now-hero-carousel:hover .now-hero[data-pos="0"] {
@@ -1862,72 +1891,112 @@ article.card.full-detail .card-head h3 {
   padding: 18px 18px 18px 20px;
 }
 
-/* Fan positions — by sibling index (so the natural reading order
-   is preserved regardless of which is currently "front"). */
+/* Fan positions — 5 cards in a true semi-circular arc. The middle
+   card (3rd in DOM order) sits forward and at full scale; outer
+   cards rotate outward and shrink for depth. Positions chosen so the
+   visible width fits a ~1400-1500 viewport comfortably. */
 .now-hero-stack.spread .now-hero:nth-child(1) {
-  transform: translate(-360px, 60px) rotate(-12deg) scale(0.94);
-  opacity: 1; z-index: 4;
+  transform: translate(-480px, 130px) rotate(-22deg) scale(0.7);
+  opacity: 0.92; z-index: 2;
 }
 .now-hero-stack.spread .now-hero:nth-child(2) {
-  transform: translate(0, 0) rotate(0deg) scale(1);
+  transform: translate(-265px, 50px) rotate(-11deg) scale(0.84);
+  opacity: 0.96; z-index: 4;
+}
+.now-hero-stack.spread .now-hero:nth-child(3) {
+  transform: translate(0, 0) rotate(0deg) scale(0.98);
   opacity: 1; z-index: 6;
   box-shadow:
     0 28px 60px rgba(99, 102, 241, 0.20),
     var(--shadow-3);
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
 }
-.now-hero-stack.spread .now-hero:nth-child(3) {
-  transform: translate(360px, 60px) rotate(12deg) scale(0.94);
-  opacity: 1; z-index: 5;
+.now-hero-stack.spread .now-hero:nth-child(4) {
+  transform: translate(265px, 50px) rotate(11deg) scale(0.84);
+  opacity: 0.96; z-index: 4;
+}
+.now-hero-stack.spread .now-hero:nth-child(5) {
+  transform: translate(480px, 130px) rotate(22deg) scale(0.7);
+  opacity: 0.92; z-index: 2;
 }
 
-/* Current-card indicator in spread — a tiny "current" badge */
+/* Hover: lift slightly toward 1.0 scale + reduce rotation for clearer
+   click target. */
+.now-hero-stack.spread .now-hero:nth-child(1):hover {
+  transform: translate(-480px, 110px) rotate(-18deg) scale(0.74);
+  z-index: 8;
+}
+.now-hero-stack.spread .now-hero:nth-child(2):hover {
+  transform: translate(-265px, 35px) rotate(-7deg) scale(0.9);
+  z-index: 8;
+}
+.now-hero-stack.spread .now-hero:nth-child(3):hover {
+  transform: translate(0, -8px) rotate(0deg) scale(1.01);
+  z-index: 9;
+}
+.now-hero-stack.spread .now-hero:nth-child(4):hover {
+  transform: translate(265px, 35px) rotate(7deg) scale(0.9);
+  z-index: 8;
+}
+.now-hero-stack.spread .now-hero:nth-child(5):hover {
+  transform: translate(480px, 110px) rotate(18deg) scale(0.74);
+  z-index: 8;
+}
+
+/* On narrower viewports, condense the arc further */
+@media (max-width: 1400px) {
+  .now-hero-stack.spread .now-hero:nth-child(1) {
+    transform: translate(-400px, 120px) rotate(-20deg) scale(0.66);
+  }
+  .now-hero-stack.spread .now-hero:nth-child(2) {
+    transform: translate(-215px, 45px) rotate(-10deg) scale(0.8);
+  }
+  .now-hero-stack.spread .now-hero:nth-child(4) {
+    transform: translate(215px, 45px) rotate(10deg) scale(0.8);
+  }
+  .now-hero-stack.spread .now-hero:nth-child(5) {
+    transform: translate(400px, 120px) rotate(20deg) scale(0.66);
+  }
+}
+
+/* Current-card indicator in spread — small pulsing badge */
 .now-hero-stack.spread .now-hero.is-current::after {
   content: "● 当前";
   position: absolute;
   top: 12px; left: 18px;
   font-size: 10px;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
-  padding: 2px 8px;
+  font-weight: 700;
+  color: white;
+  background: var(--accent);
+  padding: 3px 9px;
   border-radius: 999px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   z-index: 8;
+  box-shadow: 0 2px 8px var(--accent-glow);
 }
 
-.now-hero-stack.spread .now-hero:hover {
-  transform-origin: center 50%;
-}
-.now-hero-stack.spread .now-hero:nth-child(1):hover {
-  transform: translate(-360px, 50px) rotate(-8deg) scale(0.98);
-  z-index: 7;
-}
-.now-hero-stack.spread .now-hero:nth-child(2):hover {
-  transform: translate(0, -8px) rotate(0deg) scale(1.02);
-}
-.now-hero-stack.spread .now-hero:nth-child(3):hover {
-  transform: translate(360px, 50px) rotate(8deg) scale(0.98);
-  z-index: 7;
-}
-
-/* Backdrop-style click-out target — covers the rest of the page
-   while spread is open. Click → close spread without switching. */
+/* Backdrop — true fullscreen overlay behind the spread cards. */
 .now-hero-carousel .spread-backdrop {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(15, 15, 18, 0.18);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  z-index: 1;
+  background: rgba(15, 15, 18, 0.22);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  z-index: 100;
   cursor: pointer;
-  animation: fadeIn 0.25s var(--ease-smooth);
+  animation: fadeIn 0.28s var(--ease-smooth);
 }
+.now-hero-carousel.is-spread { z-index: 200; }
 .now-hero-carousel.is-spread .spread-backdrop { display: block; }
-.now-hero-carousel.is-spread .now-hero-stack { z-index: 20; }
+.now-hero-carousel.is-spread .now-hero-stack {
+  position: relative;
+  z-index: 201;
+}
+/* Lock page scroll while spread is open to avoid the dashboard
+   scrolling behind the modal-like UI. */
+body.spread-locked { overflow: hidden; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* Spread hint at the top — changes text based on state */
@@ -1981,12 +2050,13 @@ article.card.full-detail .card-head h3 {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text-2);
-  font: 500 11px var(--font-body);
-  padding: 4px 10px;
-  border-radius: 6px;
+  font: 500 11.5px var(--font-body);
+  padding: 5px 12px;
+  border-radius: 7px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.18s var(--ease-smooth);
   box-shadow: var(--shadow-1);
+  letter-spacing: -0.005em;
 }
 .now-hero .hero-top .hero-actions button:hover {
   background: var(--surface);
@@ -1994,6 +2064,17 @@ article.card.full-detail .card-head h3 {
   border-color: var(--border-strong);
   transform: translateY(-1px);
   box-shadow: var(--shadow-2);
+}
+/* `view` is the primary action — slight accent tint to distinguish */
+.now-hero .hero-top .hero-actions button[data-act="open"] {
+  background: var(--accent-bg);
+  color: var(--accent-2);
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.now-hero .hero-top .hero-actions button[data-act="open"]:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent-2);
 }
 .now-hero .hero-top .hero-actions button.dangerous:hover {
   color: var(--red-2);
@@ -3720,10 +3801,10 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       .sort((a, b) => (b.init.last_activity_at || '')
                        .localeCompare(a.init.last_activity_at || ''));
 
-    // Heroes — top 3 most-recently-active items. Default state shows
-    // only the current one; clicking opens a "fan-out" spread of all 3
-    // for the user to pick which one to feature.
-    const heroes = active.slice(0, 3);
+    // Heroes — top 5 most-recently-active items. Default state shows
+    // only the current one (with a hint of 4 stacked behind); clicking
+    // fans them out in a semi-circular arc for the user to pick from.
+    const heroes = active.slice(0, 5);
     const heroIds = new Set(heroes.map(x => x.init.id));
 
     // Attention = active items with blockers OR pending CR/MR/issue/pr
@@ -4192,7 +4273,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     function applyState() {
       stack.classList.toggle('spread', spread);
       carousel.classList.toggle('is-spread', spread);
-      // data-pos: the card relative to current. 0=front, 1/2=back stack.
+      document.body.classList.toggle('spread-locked', spread);
+      // data-pos: the card relative to current. 0=front, 1..N-1=back stack.
       cards.forEach((c, i) => {
         const off = (i - cur + N) % N;
         c.setAttribute('data-pos', String(off));
