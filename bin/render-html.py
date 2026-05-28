@@ -73,6 +73,11 @@ LOCALE = {
         "sessions": "会话",
         "linked": "关联",
         "initiative": "子项目",
+        "tier_cards_label": "工作卡片",
+        "tier_chips_label": "小项",
+        "thread_members_label": "包含",
+        "thread_no_members": "无附属卡片",
+        "chip_pending_tasks": "{} 项待办",
         "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
         "task_status_done": "已完成",
@@ -226,6 +231,11 @@ LOCALE = {
         "sessions": "Sessions",
         "linked": "Linked",
         "initiative": "initiative",
+        "tier_cards_label": "Cards",
+        "tier_chips_label": "Quick items",
+        "thread_members_label": "Contains",
+        "thread_no_members": "No member cards",
+        "chip_pending_tasks": "{} pending",
         "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
         "task_status_done": "done",
@@ -843,14 +853,210 @@ section.workspace > header.ws-head h2 { font-size: 15px; font-weight: 600; margi
 section.workspace > header.ws-head .ws-meta { font-size: 12px; color: var(--text-mute); }
 section.workspace.collapsed .ws-body { display: none; }
 
+/* DD-014: ws-body is now a vertical stack of three tiers.
+   - tier-threads: poker-deck visualization for thread initiatives
+   - tier-cards:   the existing card grid for card initiatives
+   - tier-chips:   compact horizontal-flow chips for chip initiatives
+   Empty tiers are omitted from the DOM entirely, so single-tier
+   workspaces look identical to the pre-DD-014 layout. */
 div.ws-body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.tier {
+  position: relative;
+}
+.tier-cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 14px;
-  /* Each card to its natural height — default `stretch` makes every
-     card in a row as tall as the tallest, leaving large dead space
-     below short cards' footers. */
   align-items: start;
+}
+
+/* ---------- Threads (poker decks) ---------- */
+.tier-threads {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+.thread-deck {
+  position: relative;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow);
+  transition: transform 0.25s cubic-bezier(.2,.7,.3,1.3),
+              box-shadow 0.25s, border-color 0.2s;
+  cursor: pointer;
+  isolation: isolate;
+}
+.thread-deck::before,
+.thread-deck::after {
+  /* The two stacked-paper backplates that give the "deck of cards"
+     illusion. Both sit behind the deck and offset down-right. On hover
+     they fan out further so the deck "spreads." */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  z-index: -1;
+  transition: transform 0.25s cubic-bezier(.2,.7,.3,1.3),
+              box-shadow 0.25s;
+  box-shadow: var(--shadow);
+}
+.thread-deck::before { transform: translate(6px, 6px) rotate(1.2deg); opacity: 0.85; }
+.thread-deck::after  { transform: translate(12px, 12px) rotate(2.4deg); opacity: 0.7; }
+.thread-deck:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-hover);
+}
+.thread-deck:hover::before { transform: translate(8px, 8px) rotate(1.6deg); }
+.thread-deck:hover::after  { transform: translate(16px, 16px) rotate(3.2deg); }
+.thread-deck.expanded::before,
+.thread-deck.expanded::after { display: none; }
+.thread-deck-head {
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.thread-deck-head .thread-icon {
+  font-size: 13px; line-height: 1.5;
+}
+.thread-deck-head h3 {
+  font-size: 15px; font-weight: 600; margin: 0; flex: 1;
+  line-height: 1.4; word-break: break-word;
+}
+.thread-deck-summary {
+  margin: 8px 0 0; color: var(--text-dim);
+  font-size: 13px; line-height: 1.55;
+}
+.thread-deck-members {
+  margin-top: 12px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: 12px; color: var(--text-mute);
+}
+.thread-deck-member-pill {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.thread-deck-member-pill:hover {
+  background: var(--card-bg);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+.thread-deck-member-pill .pill-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; margin-right: 5px; vertical-align: middle;
+}
+.thread-deck-foot {
+  margin-top: 12px;
+  display: flex; gap: 10px; font-size: 11px;
+  color: var(--text-mute);
+}
+.thread-deck-foot .deck-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 8px;
+}
+.thread-deck.expanded {
+  /* expanded mode: deck flattens into its own column. The members
+     pills become a clickable list. */
+  transform: translateY(0);
+  box-shadow: var(--shadow-hover);
+  border-color: var(--accent);
+}
+.thread-deck.expanded .thread-deck-foot .deck-stat.deck-toggle::after {
+  content: " ▴";
+}
+.thread-deck-foot .deck-stat.deck-toggle::after { content: " ▾"; }
+
+/* ---------- Chips (compact tags for tiny initiatives) ---------- */
+.tier-chips {
+  display: flex; flex-wrap: wrap;
+  gap: 6px;
+  /* A subtle "ground line" under the chips to mark them as the
+     low-emphasis tier without resorting to a heavy section divider. */
+  padding-top: 2px;
+}
+.tier-chips .tier-chips-label {
+  flex-basis: 100%;
+  font-size: 11px; color: var(--text-mute);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+.chip-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+  max-width: 320px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.chip-card:hover {
+  background: var(--card-bg);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+.chip-card.hidden { display: none; }
+.chip-card .chip-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.chip-card .chip-dot.active { background: var(--green); }
+.chip-card .chip-dot.paused { background: var(--amber); }
+.chip-card .chip-dot.done   { background: var(--slate); }
+.chip-card .chip-dot.archived { background: var(--text-mute); }
+.chip-card .chip-name {
+  font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chip-card .chip-meta {
+  font-size: 10px; color: var(--text-mute);
+  display: inline-flex; gap: 4px; align-items: center;
+}
+.chip-card .chip-task-badge {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.chip-card .chip-blocker {
+  color: var(--red); font-size: 11px;
+}
+.chip-card.has-pending {
+  border-color: var(--accent);
+  background: linear-gradient(to right, rgba(59,130,246,0.06), transparent);
+}
+
+/* Tier label (only shown when tier-cards is below tier-threads or
+   above tier-chips, to clarify the visual hierarchy). */
+.tier-divider {
+  font-size: 11px; color: var(--text-mute);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+}
+.tier-divider::after {
+  content: ""; flex: 1; height: 1px; background: var(--border);
 }
 
 /* ---------- Card ---------- */
@@ -1720,9 +1926,77 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
       const wsBody = document.createElement('div');
       wsBody.className = 'ws-body';
-      for (const initRaw of liveInits) {
-        wsBody.appendChild(renderCard(initRaw.id));
+
+      // DD-014: split live initiatives into thread / card / chip tiers.
+      // Cards/chips whose `parent_thread_id` matches a thread in this
+      // workspace are folded INTO that thread's deck as member pills;
+      // they don't also appear in the standalone card/chip tier. Orphan
+      // cards/chips (no parent or parent missing) render as standalone.
+      const threads = [];
+      const cards = [];
+      const chips = [];
+      for (const init of liveInits) {
+        const lvl = init.level || 'card';
+        if (lvl === 'thread') threads.push(init);
+        else if (lvl === 'chip') chips.push(init);
+        else cards.push(init);
       }
+      const threadById = {};
+      for (const t of threads) threadById[t.id] = t;
+
+      const orphanCards = [];
+      const orphanChips = [];
+      const childrenByThread = {};
+      const pushChild = (init) => {
+        const p = init.parent_thread_id;
+        if (p && threadById[p]) {
+          (childrenByThread[p] = childrenByThread[p] || []).push(init);
+        } else {
+          ((init.level || 'card') === 'chip' ? orphanChips : orphanCards).push(init);
+        }
+      };
+      for (const c of cards) pushChild(c);
+      for (const c of chips) pushChild(c);
+
+      // Tier 1: threads (always first when present).
+      if (threads.length) {
+        const tier = document.createElement('div');
+        tier.className = 'tier tier-threads';
+        for (const t of threads) {
+          tier.appendChild(renderThreadDeck(t, childrenByThread[t.id] || []));
+        }
+        wsBody.appendChild(tier);
+      }
+
+      // Tier 2: standalone cards. If both threads and cards exist, add a
+      // visual divider so the eye knows it's a different tier.
+      if (orphanCards.length) {
+        if (threads.length) {
+          const divider = document.createElement('div');
+          divider.className = 'tier-divider';
+          divider.textContent = I18N.tier_cards_label || 'Cards';
+          wsBody.appendChild(divider);
+        }
+        const tier = document.createElement('div');
+        tier.className = 'tier tier-cards';
+        for (const c of orphanCards) tier.appendChild(renderCard(c.id));
+        wsBody.appendChild(tier);
+      }
+
+      // Tier 3: chips. Always last; tiny visual label so first-time
+      // users understand the chip row isn't a list of broken cards.
+      if (orphanChips.length) {
+        const tier = document.createElement('div');
+        tier.className = 'tier tier-chips';
+        const lbl = document.createElement('div');
+        lbl.className = 'tier-chips-label';
+        lbl.textContent = (I18N.tier_chips_label || 'Quick items') +
+          ' · ' + orphanChips.length;
+        tier.appendChild(lbl);
+        for (const c of orphanChips) tier.appendChild(renderChip(c));
+        wsBody.appendChild(tier);
+      }
+
       wsSec.appendChild(wsBody);
       board.appendChild(wsSec);
     });
@@ -2453,6 +2727,174 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
 
   function consolidateKeyHandler(ev) {
     if (ev.key === 'Escape') closeConsolidatePreview();
+  }
+
+  // DD-014: renderChip — compact tag-shaped element for `level: chip`
+  // initiatives. Clicking opens the same detail view as a card (we
+  // reuse renderCard's modal target by routing through scrollToCard
+  // when the user expands inline).
+  function renderChip(init) {
+    const eff = effective(init.id);
+    const data = eff ? eff.init : init;
+    const isArchived = overrides.archived.indexOf(init.id) !== -1;
+    const status = isArchived ? 'archived' : data.status;
+    const chip = document.createElement('span');
+    chip.className = 'chip-card';
+    chip.setAttribute('data-init-id', init.id);
+    chip.setAttribute('data-status', status);
+
+    const tasks = (data.tasks || []).map(taskStatus);
+    const pending = tasks.filter(t => t._status === 'pending').length;
+    const hasBlocker = Array.isArray(data.blockers) && data.blockers.length > 0;
+    if (pending > 0) chip.classList.add('has-pending');
+
+    const dot = document.createElement('span');
+    dot.className = 'chip-dot ' + status;
+    chip.appendChild(dot);
+
+    const name = document.createElement('span');
+    name.className = 'chip-name';
+    name.title = data.name || '';
+    name.textContent = data.name || '';
+    chip.appendChild(name);
+
+    const meta = document.createElement('span');
+    meta.className = 'chip-meta';
+    meta.textContent = humanizeAge(data.last_activity_at);
+    chip.appendChild(meta);
+
+    if (pending > 0) {
+      const badge = document.createElement('span');
+      badge.className = 'chip-task-badge';
+      badge.textContent = I18N.chip_pending_tasks.replace('{}', pending);
+      chip.appendChild(badge);
+    }
+    if (hasBlocker) {
+      const b = document.createElement('span');
+      b.className = 'chip-blocker';
+      b.textContent = '⚠';
+      b.title = data.blockers[0] || '';
+      chip.appendChild(b);
+    }
+
+    chip.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      // Promote to a card view: scroll to it (if there's a hidden full
+      // card somewhere), otherwise expand inline as a tiny popover.
+      promoteChipToInspect(init.id);
+    });
+    return chip;
+  }
+
+  // Inline "open the chip's full card" — we render the card into a
+  // floating popover anchored where the chip sits. This avoids the
+  // dashboard's "I clicked something small and the whole world
+  // changed" feel.
+  function promoteChipToInspect(initId) {
+    // Remove any previous popover first.
+    document.querySelectorAll('.chip-popover').forEach(p => p.remove());
+    const card = renderCard(initId);
+    if (!card) return;
+    const popover = document.createElement('div');
+    popover.className = 'modal-overlay chip-popover';
+    popover.innerHTML = '<div class="modal-card" style="max-width: 580px;"></div>';
+    const modalCard = popover.querySelector('.modal-card');
+    modalCard.appendChild(card);
+    popover.addEventListener('click', (ev) => {
+      if (ev.target === popover) popover.remove();
+    });
+    document.addEventListener('keydown', function onEsc(ev) {
+      if (ev.key === 'Escape') {
+        popover.remove();
+        document.removeEventListener('keydown', onEsc);
+      }
+    });
+    document.body.appendChild(popover);
+  }
+
+  // DD-014: renderThreadDeck — the poker-deck visualization for a
+  // `level: thread` initiative. The deck head shows the thread's title,
+  // status, summary; below it sits a row of "member pills" linking out
+  // to each member card/chip. Clicking the deck toggles `.expanded`,
+  // which fans the backplates away and emphasises the deck contents.
+  function renderThreadDeck(thread, members) {
+    const eff = effective(thread.id);
+    const data = eff ? eff.init : thread;
+    const isArchived = overrides.archived.indexOf(thread.id) !== -1;
+    const status = isArchived ? 'archived' : data.status;
+
+    const deck = document.createElement('div');
+    deck.className = 'thread-deck';
+    deck.setAttribute('data-init-id', thread.id);
+    deck.setAttribute('data-status', status);
+
+    const head = document.createElement('div');
+    head.className = 'thread-deck-head';
+    head.innerHTML =
+      '<span class="status-dot ' + status + '"></span>' +
+      '<span class="thread-icon">📚</span>' +
+      '<h3>' + esc(data.name || '') + '</h3>' +
+      '<span class="status-badge ' + status + '">' +
+        esc(I18N['status_' + status] || status) + '</span>' +
+      '<span class="status-badge">' + esc(humanizeAge(data.last_activity_at)) + '</span>';
+    deck.appendChild(head);
+
+    if (data.summary) {
+      const sum = document.createElement('p');
+      sum.className = 'thread-deck-summary';
+      sum.textContent = data.summary;
+      deck.appendChild(sum);
+    }
+
+    if (members && members.length) {
+      const memWrap = document.createElement('div');
+      memWrap.className = 'thread-deck-members';
+      const mlbl = document.createElement('span');
+      mlbl.style.cssText = 'color: var(--text-mute); font-size: 11px; align-self: center;';
+      mlbl.textContent = (I18N.thread_members_label || 'Contains') + ':';
+      memWrap.appendChild(mlbl);
+      for (const m of members) {
+        const mEff = effective(m.id);
+        const mData = mEff ? mEff.init : m;
+        const mStatus = (overrides.archived.indexOf(m.id) !== -1) ? 'archived' : mData.status;
+        const pill = document.createElement('span');
+        pill.className = 'thread-deck-member-pill';
+        pill.setAttribute('data-init-id', m.id);
+        pill.innerHTML =
+          '<span class="pill-dot ' + 'status-dot ' + mStatus +
+            '" style="background: var(--' +
+            (mStatus === 'active' ? 'green' :
+             mStatus === 'paused' ? 'amber' :
+             mStatus === 'done' ? 'slate' : 'text-mute') + ');"></span>' +
+          esc(mData.name || '');
+        pill.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          promoteChipToInspect(m.id);
+        });
+        memWrap.appendChild(pill);
+      }
+      deck.appendChild(memWrap);
+    }
+
+    const foot = document.createElement('div');
+    foot.className = 'thread-deck-foot';
+    const memCount = members ? members.length : 0;
+    foot.innerHTML =
+      '<span class="deck-stat">' + memCount + ' ' +
+        (memCount === 1 ? (I18N.initiative || 'item')
+                        : (I18N.initiative || 'items')) + '</span>' +
+      '<span class="deck-stat deck-toggle">' +
+        esc(I18N.thread_members_label || 'Details') + '</span>';
+    deck.appendChild(foot);
+
+    deck.addEventListener('click', (ev) => {
+      if (ev.target.closest('.thread-deck-member-pill')) return;
+      // Clicking the deck itself opens the thread's own full card
+      // (using the chip popover route — reuses the same modal stack).
+      promoteChipToInspect(thread.id);
+    });
+
+    return deck;
   }
 
   function buildSection(label, innerHtml) {
@@ -3444,6 +3886,12 @@ def render_html(data: dict, L: dict, lang: str) -> str:
                 "id": i.get("id"),
                 "name": i.get("name"),
                 "status": i.get("status"),
+                # DD-014: pass level / parent_thread_id through so the
+                # client can do 3-tier layout. v2 data without these
+                # fields renders as `card` (the JS layer enforces that
+                # default to keep the dashboard alive during migration).
+                "level": i.get("level") or "card",
+                "parent_thread_id": i.get("parent_thread_id"),
                 "summary": i.get("summary"),
                 "progress": i.get("progress"),
                 "tasks": i.get("tasks") or [],
@@ -3468,7 +3916,7 @@ def render_html(data: dict, L: dict, lang: str) -> str:
         lifecycle = {"paused": False}
 
     slim = {
-        "schema_version": data.get("schema_version", 2),
+        "schema_version": data.get("schema_version", 3),
         "generated_at": data.get("generated_at"),
         "workspaces": workspaces,
         "lifecycle": lifecycle,
