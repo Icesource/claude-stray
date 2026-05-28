@@ -2102,26 +2102,31 @@ article.card.full-detail .card-head h3 {
   font-weight: 700;
 }
 
-/* Artifacts — wrap-flex list of chips */
+/* Artifacts — vertical list inside the narrower right panel.
+   Each chip is a full-width row with type-badge / ref / title / status. */
 .now-hero .hero-artifacts {
-  display: flex; flex-wrap: wrap; gap: 6px;
+  display: flex; flex-direction: column; gap: 4px;
 }
 .now-hero .hero-art {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 6px;
   font-size: 11.5px;
-  padding: 4px 10px 4px 4px;
+  padding: 4px 8px 4px 4px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
   text-decoration: none;
   transition: all 0.15s ease;
-  max-width: 100%;
+  width: 100%;
   font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 .now-hero .hero-art:hover {
   text-decoration: none;
-  transform: translateY(-1px);
+  transform: translateX(2px);
   box-shadow: var(--shadow-1);
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
@@ -2134,6 +2139,7 @@ article.card.full-detail .card-head h3 {
   border-radius: 4px;
   background: var(--surface-2);
   color: var(--text-dim);
+  white-space: nowrap;
 }
 .now-hero .hero-art[data-type="mr"] .art-type,
 .now-hero .hero-art[data-type="pr"] .art-type {
@@ -2159,7 +2165,7 @@ article.card.full-detail .card-head h3 {
 }
 .now-hero .hero-art .art-title {
   color: var(--text);
-  max-width: 200px;
+  min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .now-hero .hero-art .art-status {
@@ -3934,13 +3940,15 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     }
 
     // Artifacts (MR / CR / PR / issue / commit links).
-    // Shows up to 5 — clicking opens the link in a new tab if URL,
-    // otherwise opens the modal where the full list lives.
+    // Built into `artWrap` here; appended to the RIGHT panel later so
+    // the left side doesn't get over-stuffed. Clicking opens the link
+    // in a new tab if URL, otherwise opens the modal.
     const allArts = Array.isArray(init.artifacts) ? init.artifacts : [];
+    let artWrap = null;
     if (allArts.length > 0) {
-      const wrap = document.createElement('div');
-      wrap.className = 'hero-section artifacts-section';
-      wrap.innerHTML =
+      artWrap = document.createElement('div');
+      artWrap.className = 'hero-section artifacts-section';
+      artWrap.innerHTML =
         '<div class="hero-section-label artifacts">' +
           '<span class="glyph">↗</span>' +
           esc(I18N.cc_hero_artifacts_label || '关联资源') +
@@ -3994,8 +4002,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         });
         list.appendChild(more);
       }
-      wrap.appendChild(list);
-      left.appendChild(wrap);
+      artWrap.appendChild(list);
     }
 
     // Sessions row with action buttons — full parity with the legacy
@@ -4127,6 +4134,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       ul.appendChild(li);
     }
     right.appendChild(ul);
+    // Artifacts goes UNDER the task list on the right side.
+    // Moved here so the left panel doesn't get over-stuffed.
+    if (artWrap) right.appendChild(artWrap);
     hero.appendChild(right);
 
     // No body-click handler here — the carousel wraps these and binds
