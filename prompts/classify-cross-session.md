@@ -28,7 +28,7 @@ output, with restricted modifications (see rule §5).**
 
 ```
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "generated_at": "<context.now>",
   "workspaces": [
     {
@@ -40,6 +40,8 @@ output, with restricted modifications (see rule §5).**
           "id": "<stable slug, English/kebab-case>",
           "name": "<human-readable in output_lang>",
           "status": "active | paused | done | archived",
+          "level": "thread | card | chip",          // DD-014; see §8
+          "parent_thread_id": "<id of a sibling thread> | null",  // DD-014
           "summary": "<1-2 sentences: what this initiative is about>",
           "progress": "<1-2 sentences: current state>",
           "tasks": [
@@ -344,6 +346,58 @@ Example (cancelled / merged):
   `{"id": "fix-eagleeye-trace", "status": "cancelled",
     "evidence": "merged into Patch EagleEyeHttpHook parameter"}`
 
+## §8 — `level`: thread / card / chip (DD-014)
+
+> **Note (mechanical safety net).** Post-process `enforce_level_monotone`
+> + `apply_promotion_cooldown` in classify.py clamps your output:
+> level can only ratchet UP relative to PRIOR (chip→card→thread); a
+> newly-discovered initiative is forced to `chip` for its first round
+> regardless of what you emit. So your emitted `level` is advisory; the
+> mechanical layer protects the user from visual flicker.
+
+Each initiative carries a tier label that shapes its rendering on the
+dashboard. Choose the value that matches the initiative's apparent
+weight, using the signals below.
+
+| level | when to pick |
+|---|---|
+| `thread` | Multi-session arc (`len(sessions) ≥ 3`) OR substantial task list (`≥ 8` tasks) OR clearly a long-running theme that has hosted multiple distinct work units. |
+| `card`   | The default. A single substantive work unit: one focused session, a meaningful goal, some tasks or artifacts. |
+| `chip`   | Genuinely small. 1 session, ≤ 5 user turns, ≤ 1 task, no artifacts, no blockers, no decisions of note. A quick lookup or a one-off question that doesn't deserve a full card. |
+
+Hard rules for `level`:
+- **PRIOR is the floor.** If PRIOR says `card`, never emit `chip`. If
+  PRIOR says `thread`, never emit `card` or `chip`. Post-process will
+  restore PRIOR if you try to lower.
+- **First-round chip.** For an initiative not in PRIOR, emit `chip`
+  unconditionally — even if signals suggest `card`. The post-process
+  layer also enforces this; you're agreeing in advance so the diff is
+  cleaner.
+- **Promotion needs evidence.** A `chip` only becomes a `card` when
+  fresh hot-session signal genuinely grows the initiative (new tasks,
+  new artifacts, more turns). A `card` only becomes a `thread` when
+  the initiative spans 3+ sessions OR accumulates a substantial task
+  list.
+- **No demotion.** AI never emits a smaller level than PRIOR. Only
+  the user, via UI action, can demote. Post-process will revert.
+
+## §9 — `parent_thread_id`: optional thread membership
+
+When an initiative is `level: card` or `level: chip` and conceptually
+belongs to a sibling `level: thread` initiative in the SAME workspace,
+set `parent_thread_id` to that thread's `id`. Otherwise emit `null`.
+
+Hard rules:
+- Only point at an initiative that is also in your output with
+  `level: thread`, AND in the same workspace. Cross-workspace links
+  are not allowed; post-process clears them.
+- A `level: thread` initiative MUST have `parent_thread_id: null` —
+  threads are themselves the top of the hierarchy.
+- Once set in PRIOR, `parent_thread_id` is stable: AI may change it
+  only when the thread itself was removed or the membership clearly
+  no longer fits (a hot session has shifted the work into a different
+  theme). When in doubt, preserve.
+
 # Output language
 
 All natural-language fields in `output_lang`:
@@ -383,9 +437,12 @@ work.
      `artifacts[]` and `blockers[]` stay byte-identical.
 3. **Discover new initiatives** from HOT_SUMMARIES whose
    `session_id` is not in any existing initiative's `sessions[]`.
-   For each, create a new initiative with a stable slug-style `id`.
+   For each, create a new initiative with a stable slug-style `id`,
+   and emit `level: "chip"` regardless of size (§8 first-round rule).
 4. **Group** new initiatives into workspaces per §6.
-5. **Sort** initiatives within each workspace by `last_activity_at`
+5. **Assign `level`** per §8 — PRIOR floor, first-round chip, promote
+   with evidence, never demote. Set `parent_thread_id` per §9.
+6. **Sort** initiatives within each workspace by `last_activity_at`
    desc; sort workspaces by max last_activity_at desc.
 
 # Pre-flight self-check (do this before emitting)
@@ -421,5 +478,14 @@ For your output, verify each of:
 - [ ] **`tasks[]` length ≥ PRIOR `tasks[]` length (DD-011 invariant).**
       You cannot drop a task. If a shrink looks justified, leave it
       to the user to delete via the UI — never delete via your output.
+- [ ] **Every initiative has a `level` field** with value
+      `thread`, `card`, or `chip` (DD-014).
+- [ ] **`level` never lowered from PRIOR.** chip→card→thread only;
+      no card→chip, no thread→card.
+- [ ] **Newly-discovered initiatives emit `level: "chip"`** regardless
+      of size signals (§8 first-round rule).
+- [ ] **`parent_thread_id`** is either `null` or the id of a
+      `level: thread` sibling in the SAME workspace. Threads themselves
+      always emit `parent_thread_id: null`.
 
 If any check fails, fix and retry. **Never emit broken output**.

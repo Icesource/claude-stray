@@ -56,6 +56,11 @@ PROMPT_FILE = REPO_ROOT / "prompts" / "classify-cross-session.md"
 TASK_STATUSES = ("pending", "done", "cancelled")
 TASK_TERMINAL = ("done", "cancelled")
 
+# Valid level values (DD-014). Ordered chip < card < thread for the
+# monotone-promotion ratchet enforced by enforce_level_monotone.
+LEVELS = ("chip", "card", "thread")
+LEVEL_RANK = {lv: i for i, lv in enumerate(LEVELS)}
+
 # Hot/cold threshold (configurable via env)
 HOT_HOURS = int(os.environ.get("CLAUDE_WORKTREE_HOT_HOURS", "48"))
 # Hard cap on how many hot summaries we feed Haiku in one call. Haiku-4.5
@@ -612,7 +617,7 @@ def slim_prior(prior: dict | None) -> dict | None:
     if not prior:
         return None
     return {
-        "schema_version": prior.get("schema_version", 2),
+        "schema_version": prior.get("schema_version", 3),
         "workspaces": [
             {
                 "name": w.get("name"),
@@ -623,6 +628,10 @@ def slim_prior(prior: dict | None) -> dict | None:
                         "id": i.get("id"),
                         "name": i.get("name"),
                         "status": i.get("status"),
+                        # DD-014 — v2 PRIOR has no level; treat missing as
+                        # "card" so the migration is transparent to AI.
+                        "level": i.get("level") or "card",
+                        "parent_thread_id": i.get("parent_thread_id"),
                         "summary": i.get("summary"),
                         "progress": i.get("progress"),
                         "tasks": i.get("tasks", []),
@@ -792,10 +801,13 @@ def enforce_cold_and_terminal_monotone(new_mm: dict, prior: dict,
             if is_cold:
                 # §5: restore every field except status + last_activity_at.
                 # artifacts/blockers are also restricted (they only update
-                # when a hot session contributes).
+                # when a hot session contributes). DD-014: level /
+                # parent_thread_id / level_set_at are also frozen on cold
+                # cards — promotion ratchet only fires on hot evidence.
                 for field in ("name", "summary", "progress", "tasks",
                               "sessions", "linked_cwds",
-                              "artifacts", "blockers"):
+                              "artifacts", "blockers",
+                              "level", "parent_thread_id", "level_set_at"):
                     if field not in prior_init:
                         # PRIOR doesn't have this field → strip from output
                         if field in init:
@@ -905,6 +917,145 @@ def enforce_hot_initiative_status(new_mm: dict,
                 repairs += 1
 
     return repairs
+
+
+def enforce_level_monotone(new_mm: dict, prior: dict) -> tuple[int, int]:
+    """DD-014 — `level` (thread/card/chip) is a one-way ratchet upward
+    relative to PRIOR.
+
+    Rules (mechanical floor):
+      - PRIOR `level: thread` → output stays `thread`. AI cannot demote.
+      - PRIOR `level: card`   → output is `card` or `thread`. Never `chip`.
+      - PRIOR `level: chip`   → output is `chip`, `card`, or `thread`.
+      - Missing in PRIOR's initiative is handled by
+        apply_promotion_cooldown (forces `chip` on first round).
+      - v2 PRIOR initiatives (no `level` field) → treated as `card` floor
+        (matches slim_prior migration default).
+      - Bogus / missing level on output → normalized to PRIOR's level if
+        present, else `card`.
+
+    Also normalizes `parent_thread_id`:
+      - Cleared if it points to an id that isn't in this workspace, or
+        points to a non-thread initiative.
+      - A `level: thread` initiative always has `parent_thread_id: null`.
+
+    Returns (n_level_repairs, n_parent_repairs) for logging.
+    """
+    prior_by_id: dict[str, dict] = {}
+    for w in (prior.get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            prior_by_id[i.get("id")] = i
+
+    level_repairs = 0
+    parent_repairs = 0
+
+    for ws in (new_mm.get("workspaces") or []):
+        # Build per-workspace thread set for parent_thread_id validation.
+        thread_ids = {i.get("id") for i in (ws.get("initiatives") or [])
+                      if (i.get("level") == "thread") and i.get("id")}
+
+        for init in (ws.get("initiatives") or []):
+            iid = init.get("id")
+            prior_init = prior_by_id.get(iid) or {}
+            prior_level = (prior_init.get("level") or "card") if prior_init \
+                else None  # None signals "new this round"
+
+            ai_level = init.get("level")
+            if ai_level not in LEVELS:
+                # Bogus or missing — default to PRIOR's level if known,
+                # else `card`. New-this-round will be re-clamped to chip
+                # by apply_promotion_cooldown.
+                init["level"] = prior_level or "card"
+                level_repairs += 1
+                ai_level = init["level"]
+
+            # Monotone clamp: never lower from PRIOR.
+            if prior_level and LEVEL_RANK[ai_level] < LEVEL_RANK[prior_level]:
+                init["level"] = prior_level
+                level_repairs += 1
+
+            # parent_thread_id normalization.
+            pt = init.get("parent_thread_id")
+            if init.get("level") == "thread":
+                # Threads are the top of the hierarchy.
+                if pt is not None:
+                    init["parent_thread_id"] = None
+                    parent_repairs += 1
+            else:
+                if pt is not None and pt not in thread_ids:
+                    init["parent_thread_id"] = None
+                    parent_repairs += 1
+
+    return level_repairs, parent_repairs
+
+
+def apply_promotion_cooldown(new_mm: dict, prior: dict) -> int:
+    """DD-014 — newly-discovered initiatives (id not in PRIOR) are forced
+    to `level: chip` on their first round, regardless of AI's emitted
+    value. This kills the "fanfare for a one-off" failure mode.
+
+    Returns the count of initiatives clamped down.
+    """
+    prior_ids = set()
+    for w in (prior.get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            iid = i.get("id")
+            if iid:
+                prior_ids.add(iid)
+
+    clamped = 0
+    now_iso = now_utc_iso()
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            iid = init.get("id")
+            if not iid or iid in prior_ids:
+                continue
+            # New this round. Force chip + clear parent (threads cannot
+            # be born this round — they have to promote up via a later
+            # classify run).
+            if init.get("level") != "chip":
+                init["level"] = "chip"
+                clamped += 1
+            init["parent_thread_id"] = None
+            init.setdefault("level_set_at", now_iso)
+    return clamped
+
+
+def stamp_level_set_at(new_mm: dict, prior: dict) -> int:
+    """Set/update `level_set_at` whenever an initiative's `level`
+    differs from PRIOR. Cold/unchanged initiatives keep PRIOR's
+    timestamp; new ones get `now`.
+
+    Returns the count of initiatives stamped.
+    """
+    prior_by_id: dict[str, dict] = {}
+    for w in (prior.get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            prior_by_id[i.get("id")] = i
+
+    now_iso = now_utc_iso()
+    stamped = 0
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            iid = init.get("id")
+            prior_init = prior_by_id.get(iid) or {}
+            prior_level = prior_init.get("level")
+            cur_level = init.get("level")
+            prior_stamp = prior_init.get("level_set_at")
+            if cur_level == prior_level and prior_stamp:
+                # Unchanged — preserve PRIOR's stamp byte-identically.
+                init["level_set_at"] = prior_stamp
+            elif not init.get("level_set_at"):
+                init["level_set_at"] = now_iso
+                stamped += 1
+            else:
+                # AI emitted a stamp; trust it only if it looks plausible
+                # (ISO-shaped). Otherwise replace.
+                v = init.get("level_set_at")
+                if not (isinstance(v, str) and len(v) >= 10):
+                    init["level_set_at"] = now_iso
+                    stamped += 1
+    return stamped
 
 
 def aggregate_tasks(new_mm: dict, prior: dict,
@@ -1490,6 +1641,9 @@ def main() -> int:
         return 1
 
     new_mm["generated_at"] = now_utc_iso()
+    # DD-014: schema is v3 once classify writes. AI is instructed to emit
+    # 3 too; force here in case it slipped.
+    new_mm["schema_version"] = 3
     hot_sids = [s for s, _, _, _ in hot]
     repaired = repair_short_session_ids(new_mm, hot_sids)
     if repaired:
@@ -1505,6 +1659,20 @@ def main() -> int:
     status_repairs = enforce_hot_initiative_status(new_mm, hot)
     if status_repairs:
         print(f"[classify] enforced hot-initiative status: {status_repairs} repairs")
+
+    # DD-014: level (thread/card/chip) is a one-way ratchet upward
+    # relative to PRIOR. AI is advisory; we enforce monotone here.
+    # Apply cooldown first (so new initiatives become chip), then
+    # monotone (so PRIOR floors are honored), then stamp.
+    cooled = apply_promotion_cooldown(new_mm, prior)
+    if cooled:
+        print(f"[classify] promotion cooldown clamped {cooled} new initiative(s) to chip")
+    level_repairs, parent_repairs = enforce_level_monotone(new_mm, prior)
+    if level_repairs:
+        print(f"[classify] enforced level-monotone: {level_repairs} repairs")
+    if parent_repairs:
+        print(f"[classify] cleared {parent_repairs} dangling parent_thread_id(s)")
+    stamp_level_set_at(new_mm, prior)
 
     # DD-011: rebuild hot initiatives' tasks[] from PRIOR + hot summary
     # frontmatter + AI output. Single store, tri-state, no archive.
