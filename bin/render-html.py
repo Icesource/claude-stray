@@ -97,6 +97,8 @@ LOCALE = {
         "cc_hero_done_label": "已完成",
         "cc_hero_no_tasks": "（尚无任务）",
         "cc_hero_wheel_hint": "滚轮切换 · ←→",
+        "cc_hero_spread_hint": "点击展开 / 切换",
+        "cc_hero_pick_hint": "点击选择 · ESC 取消",
         "btn_view": "查看",
         "btn_delete": "删除",
         "chip_pending_tasks": "{} 项待办",
@@ -277,6 +279,8 @@ LOCALE = {
         "cc_hero_done_label": "Done",
         "cc_hero_no_tasks": "(no tasks yet)",
         "cc_hero_wheel_hint": "scroll · ←→",
+        "cc_hero_spread_hint": "click to spread",
+        "cc_hero_pick_hint": "pick one · ESC to cancel",
         "btn_view": "view",
         "btn_delete": "delete",
         "chip_pending_tasks": "{} pending",
@@ -1750,23 +1754,24 @@ article.card.full-detail .card-head h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 1. Now hero · stacked-deck carousel ---------------------- */
+/* ---------- 1. Now hero · click-to-fan-out card switcher ------------- */
 .now-hero-carousel {
   position: relative;
-  /* Tall enough for the top card + 2 peek-behind cards' offsets */
-  padding-top: 28px;
+  padding-top: 8px;
   margin-bottom: 14px;
   user-select: none;
 }
 .now-hero-stack {
   position: relative;
-  /* The reserved height is the front card's height; back cards
-     overlay via absolute positioning. */
-  min-height: 400px;
+  min-height: 440px;
+  transition: min-height 0.4s var(--ease-smooth);
 }
+/* Spread state needs extra height to fit the fanned-out cards */
+.now-hero-stack.spread { min-height: 520px; }
+
 .now-hero {
   position: absolute;
-  inset: 0;
+  left: 0; right: 0; top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0;
@@ -1784,62 +1789,147 @@ article.card.full-detail .card-head h3 {
   overflow: hidden;
   isolation: isolate;
   cursor: pointer;
-  transform-origin: center top;
+  transform-origin: center 50%;
   transition:
-    transform 0.45s var(--ease-spring),
-    box-shadow 0.45s var(--ease-smooth),
+    transform 0.55s var(--ease-spring),
+    box-shadow 0.4s var(--ease-smooth),
     border-color 0.2s ease,
     opacity 0.4s var(--ease-smooth);
   will-change: transform, opacity;
 }
-/* Front card (idx === 0 — currently active) */
-.now-hero[data-pos="0"] {
-  transform: translateY(0) scale(1);
+
+/* ============ COLLAPSED state — only current card visible ============ */
+.now-hero-stack:not(.spread) .now-hero[data-pos="0"] {
+  transform: translateY(0) scale(1) rotate(0);
   opacity: 1;
   z-index: 5;
   pointer-events: auto;
 }
-/* Behind cards — peek out from the TOP (paper stack going up) */
-.now-hero[data-pos="1"] {
-  transform: translateY(-12px) scale(0.97);
-  opacity: 0.78;
+.now-hero-stack:not(.spread) .now-hero[data-pos="1"] {
+  transform: translateY(-10px) scale(0.97);
+  opacity: 0.7;
   z-index: 4;
   pointer-events: none;
-  filter: saturate(0.85);
+  filter: saturate(0.8);
 }
-.now-hero[data-pos="2"] {
-  transform: translateY(-22px) scale(0.94);
-  opacity: 0.55;
+.now-hero-stack:not(.spread) .now-hero[data-pos="2"] {
+  transform: translateY(-20px) scale(0.94);
+  opacity: 0.4;
   z-index: 3;
   pointer-events: none;
-  filter: saturate(0.7);
+  filter: saturate(0.65);
 }
-.now-hero[data-pos="3"] {
-  transform: translateY(-30px) scale(0.91);
-  opacity: 0.32;
-  z-index: 2;
-  pointer-events: none;
-  filter: saturate(0.6);
-}
-.now-hero[data-pos="4"] {
-  transform: translateY(-36px) scale(0.88);
-  opacity: 0.16;
-  z-index: 1;
-  pointer-events: none;
-  filter: saturate(0.55);
-}
-/* Cards that have already cycled past — slide off to the right and fade */
-.now-hero[data-pos="-1"] {
-  transform: translateX(60%) translateY(-20px) scale(0.92) rotate(4deg);
-  opacity: 0;
-  z-index: 0;
-  pointer-events: none;
-}
+
 .now-hero-carousel:hover .now-hero[data-pos="0"] {
   box-shadow:
     0 24px 56px rgba(99, 102, 241, 0.18),
     var(--shadow-3);
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+}
+
+/* ============ SPREAD state — all 3 cards fanned out semi-circular ====
+   Cards become COMPACT (no right panel, no actions, no sessions).
+   Three positions in a horizontal arc: left rotated -10°, center
+   pulled forward, right rotated +10°. Click a card → become current.
+*/
+.now-hero-stack.spread .now-hero {
+  cursor: pointer;
+  pointer-events: auto;
+  /* Width capped so all three fit; height shrinks because the grid
+     loses its right column. */
+  left: 50%; right: auto;
+  width: 440px;
+  margin-left: -220px;
+  grid-template-columns: 1fr;
+  transform-origin: center 80%;
+  /* Disable the gradient orb in spread — too noisy with 3 cards */
+}
+.now-hero-stack.spread .now-hero::before { opacity: 0; }
+.now-hero-stack.spread .now-hero .hero-right { display: none; }
+.now-hero-stack.spread .now-hero .hero-actions { display: none; }
+.now-hero-stack.spread .now-hero .hero-sessions { display: none; }
+.now-hero-stack.spread .now-hero .hero-summary { -webkit-line-clamp: 2; }
+.now-hero-stack.spread .now-hero h2.hero-title {
+  font-size: 19px;
+}
+.now-hero-stack.spread .now-hero .hero-left {
+  padding: 18px 18px 18px 20px;
+}
+
+/* Fan positions — by sibling index (so the natural reading order
+   is preserved regardless of which is currently "front"). */
+.now-hero-stack.spread .now-hero:nth-child(1) {
+  transform: translate(-360px, 60px) rotate(-12deg) scale(0.94);
+  opacity: 1; z-index: 4;
+}
+.now-hero-stack.spread .now-hero:nth-child(2) {
+  transform: translate(0, 0) rotate(0deg) scale(1);
+  opacity: 1; z-index: 6;
+  box-shadow:
+    0 28px 60px rgba(99, 102, 241, 0.20),
+    var(--shadow-3);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.now-hero-stack.spread .now-hero:nth-child(3) {
+  transform: translate(360px, 60px) rotate(12deg) scale(0.94);
+  opacity: 1; z-index: 5;
+}
+
+/* Current-card indicator in spread — a tiny "current" badge */
+.now-hero-stack.spread .now-hero.is-current::after {
+  content: "● 当前";
+  position: absolute;
+  top: 12px; left: 18px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  z-index: 8;
+}
+
+.now-hero-stack.spread .now-hero:hover {
+  transform-origin: center 50%;
+}
+.now-hero-stack.spread .now-hero:nth-child(1):hover {
+  transform: translate(-360px, 50px) rotate(-8deg) scale(0.98);
+  z-index: 7;
+}
+.now-hero-stack.spread .now-hero:nth-child(2):hover {
+  transform: translate(0, -8px) rotate(0deg) scale(1.02);
+}
+.now-hero-stack.spread .now-hero:nth-child(3):hover {
+  transform: translate(360px, 50px) rotate(8deg) scale(0.98);
+  z-index: 7;
+}
+
+/* Backdrop-style click-out target — covers the rest of the page
+   while spread is open. Click → close spread without switching. */
+.now-hero-carousel .spread-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 15, 18, 0.18);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 1;
+  cursor: pointer;
+  animation: fadeIn 0.25s var(--ease-smooth);
+}
+.now-hero-carousel.is-spread .spread-backdrop { display: block; }
+.now-hero-carousel.is-spread .now-hero-stack { z-index: 20; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* Spread hint at the top — changes text based on state */
+.now-hero-carousel.is-spread .hero-carousel-hint {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent-2);
+  opacity: 1;
 }
 .now-hero::before {
   content: "";
@@ -1905,6 +1995,50 @@ article.card.full-detail .card-head h3 {
   border-color: color-mix(in srgb, var(--red) 35%, transparent);
 }
 
+/* Blocker callout inside hero — prominent red strip */
+.now-hero .hero-blocker {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background:
+    linear-gradient(to right,
+      var(--red-bg) 0%,
+      color-mix(in srgb, var(--red-bg) 30%, var(--surface)) 100%);
+  border: 1px solid color-mix(in srgb, var(--red) 25%, transparent);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.now-hero .hero-blocker:hover {
+  border-color: color-mix(in srgb, var(--red) 40%, transparent);
+  box-shadow: 0 4px 12px var(--red-glow);
+}
+.now-hero .hero-blocker .hero-blocker-icon {
+  color: var(--red-2);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.now-hero .hero-blocker .hero-blocker-text {
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--red-2);
+  font-weight: 500;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.now-hero .hero-blocker .hero-blocker-more {
+  font-size: 11px;
+  color: var(--red-2);
+  background: rgba(255, 255, 255, 0.6);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
 /* Sessions inline row on the hero — chip style */
 .now-hero .hero-sessions {
   display: flex; flex-wrap: wrap; gap: 6px;
@@ -1920,30 +2054,75 @@ article.card.full-detail .card-head h3 {
   margin-right: 4px;
 }
 .now-hero .hero-sessions .ses-chip {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 0;
   font-family: var(--font-mono);
   font-size: 11px;
-  padding: 3px 9px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 7px;
   color: var(--text-2);
-  cursor: pointer;
   transition: all 0.15s ease;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.005em;
+  overflow: hidden;
 }
 .now-hero .hero-sessions .ses-chip:hover {
-  background: var(--surface);
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-  color: var(--accent-2);
-  transform: translateY(-1px);
   box-shadow: var(--shadow-1);
 }
-.now-hero .hero-sessions .ses-chip .ses-sid { color: var(--text); }
-.now-hero .hero-sessions .ses-chip .ses-age {
+.now-hero .hero-sessions .ses-chip .ses-sid {
+  color: var(--text);
+  padding: 4px 8px;
+  font-weight: 500;
+}
+.now-hero .hero-sessions .ses-chip .ses-pane {
   color: var(--text-mute);
   font-size: 10px;
+  padding: 0 6px 0 0;
+}
+.now-hero .hero-sessions .ses-chip .ses-actions {
+  display: inline-flex;
+  border-left: 1px solid var(--border);
+}
+.now-hero .hero-sessions .ses-chip .ses-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: all 0.12s ease;
+  padding: 0;
+  border-right: 1px solid var(--border);
+  font-family: inherit;
+}
+.now-hero .hero-sessions .ses-chip .ses-btn:last-child { border-right: none; }
+.now-hero .hero-sessions .ses-chip .ses-btn:hover {
+  background: var(--accent-bg);
+  color: var(--accent-2);
+}
+.now-hero .hero-sessions .ses-chip .ses-btn.act-copy:hover {
+  background: var(--green-bg);
+  color: var(--green-2);
+}
+.now-hero .hero-sessions .ses-chip .ses-btn.act-focus:hover {
+  background: var(--accent-bg);
+}
+.now-hero .hero-sessions .ses-more {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 7px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.now-hero .hero-sessions .ses-more:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Carousel pagination dots + arrows under the stack */
@@ -3361,11 +3540,16 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     for (const ws of workspaces) {
       for (const init of (ws.initiatives || [])) {
         if (isDeleted(init.id)) continue;
-        const eff = effective(init.id);
-        const d = eff ? eff.init : init;
+        const effRec = effective(init.id);
+        const d = effRec ? effRec.init : init;
         const status = effectiveStatus(init.id);
         if (status === 'archived') continue;
-        allLive.push({ init: d, ws_name: ws.name, status });
+        allLive.push({
+          init: d,
+          ws_name: ws.name,
+          ws_cwd: ws.cwd || (effRec && effRec.ws_cwd) || '',
+          status,
+        });
       }
     }
 
@@ -3374,10 +3558,10 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       .sort((a, b) => (b.init.last_activity_at || '')
                        .localeCompare(a.init.last_activity_at || ''));
 
-    // Heroes — top 5 most-recently-active items. Rendered as a stacked
-    // carousel; user can wheel/click to cycle. The first is the
-    // "front" card with full info.
-    const heroes = active.slice(0, 5);
+    // Heroes — top 3 most-recently-active items. Default state shows
+    // only the current one; clicking opens a "fan-out" spread of all 3
+    // for the user to pick which one to feature.
+    const heroes = active.slice(0, 3);
     const heroIds = new Set(heroes.map(x => x.init.id));
 
     // Attention = active items with blockers OR pending CR/MR/issue/pr
@@ -3440,7 +3624,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   // Build one hero card. Rich content: action buttons, sessions row,
   // signals, progress, summary, title, next-up list.
   function buildHeroCard(heroEntry) {
-    const { init, ws_name } = heroEntry;
+    const { init, ws_name, ws_cwd } = heroEntry;
     const tasks = (init.tasks || []).map(taskStatus);
     const pending = tasks.filter(t => t._status === 'pending');
     const done = tasks.filter(t => t._status === 'done');
@@ -3563,7 +3747,24 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       left.appendChild(sg);
     }
 
-    // Sessions row (chips with short SID + age, click → open in Zellij/etc.)
+    // Blocker preview (full text of first blocker, if any)
+    if (blockers.length > 0) {
+      const bp = document.createElement('div');
+      bp.className = 'hero-blocker';
+      bp.innerHTML = '<span class="hero-blocker-icon">⚠</span>' +
+        '<span class="hero-blocker-text">' + esc(blockers[0]) + '</span>' +
+        (blockers.length > 1
+          ? '<span class="hero-blocker-more">+' + (blockers.length - 1) + '</span>'
+          : '');
+      bp.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        promoteChipToInspect(init.id);
+      });
+      left.appendChild(bp);
+    }
+
+    // Sessions row with action buttons — full parity with the legacy
+    // card session list (focus 🎯 / new pane 🆕 / copy 📋).
     if (sessions.length > 0) {
       const sesRow = document.createElement('div');
       sesRow.className = 'hero-sessions';
@@ -3571,27 +3772,87 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       slbl.className = 'ses-label';
       slbl.textContent = I18N.sessions || 'Sessions';
       sesRow.appendChild(slbl);
+
       const showS = sessions.slice(0, 4);
+      const wsCwd = ws_cwd || '';
+
       for (const sid of showS) {
+        const loc = LOCATIONS[sid] || {};
+        const sidShort = String(sid).slice(0, 8);
+        const resumeCwd = wsCwd || loc.cwd || '';
+        const resumeCmd = (resumeCwd ? 'cd ' + resumeCwd + ' && ' : '') +
+          'claude --dangerously-skip-permissions --resume ' + sid;
+
         const chip = document.createElement('span');
         chip.className = 'ses-chip';
         chip.title = sid;
-        chip.innerHTML =
-          '<span class="ses-sid">' + esc(String(sid).slice(0, 8)) + '</span>';
-        chip.addEventListener('click', (ev) => {
+        let html =
+          '<span class="ses-sid">' + esc(sidShort) + '</span>';
+        if (loc.zellij_pane_id) {
+          html += '<span class="ses-pane" title="pane ' + esc(loc.zellij_pane_id) +
+                  '">' + esc(loc.zellij_pane_id) + '</span>';
+        }
+        html += '<span class="ses-actions">';
+        if (loc.zellij_pane_id) {
+          html += '<button class="ses-btn act-focus" title="' +
+                  esc(I18N.btn_focus || 'jump to pane') + '">🎯</button>';
+        }
+        html += '<button class="ses-btn act-newpane" title="' +
+                esc(I18N.btn_newpane || 'new pane + resume') + '">🆕</button>' +
+                '<button class="ses-btn act-copy" title="' +
+                esc(I18N.btn_copy || 'copy resume cmd') + '">📋</button>' +
+                '</span>';
+        chip.innerHTML = html;
+
+        const focusBtn = chip.querySelector('.act-focus');
+        if (focusBtn) {
+          focusBtn.addEventListener('click', async (ev) => {
+            ev.stopPropagation();
+            if (helperPort && loc.zellij_pane_id) {
+              const res = await helperCall('focus', {
+                pane: loc.zellij_pane_id, session: loc.zellij_session });
+              if (res.ok) {
+                if (res.body && res.body.noop)
+                  toast(I18N.toast_already_focused.replace('{}', loc.zellij_pane_id));
+                else toast(I18N.toast_jumped.replace('{}', loc.zellij_pane_id));
+                return;
+              }
+              if (res.status === 404) {
+                if (await confirmDialog(I18N.toast_pane_gone.replace('{}', loc.zellij_pane_id) +
+                                         ' — 在新 pane 中 resume?')) {
+                  const r2 = await helperCall('newpane', { sid: sid, cwd: resumeCwd });
+                  if (r2.ok) toast(I18N.toast_new_pane);
+                }
+                return;
+              }
+            }
+            const cmd = 'zellij' +
+              (loc.zellij_session ? ' --session ' + loc.zellij_session : '') +
+              ' action focus-pane-id ' + loc.zellij_pane_id;
+            navigator.clipboard.writeText(cmd)
+              .then(() => toast(I18N.toast_helper_down));
+          });
+        }
+        chip.querySelector('.act-newpane').addEventListener('click', async (ev) => {
           ev.stopPropagation();
-          // Reuse the existing session-open flow (delegate to the
-          // session click handler if available, else fall back to
-          // opening the modal).
-          if (typeof openSession === 'function') openSession(sid);
-          else promoteChipToInspect(init.id);
+          if (helperPort) {
+            const res = await helperCall('newpane', { sid: sid, cwd: resumeCwd });
+            if (res.ok) { toast(I18N.toast_new_pane); return; }
+          }
+          const newPaneCmd = 'zellij run -f -- bash -lc ' + JSON.stringify(resumeCmd);
+          navigator.clipboard.writeText(newPaneCmd)
+            .then(() => toast(I18N.toast_helper_down));
+        });
+        chip.querySelector('.act-copy').addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          navigator.clipboard.writeText(resumeCmd)
+            .then(() => toast(I18N.toast_copied + ': ' + resumeCmd));
         });
         sesRow.appendChild(chip);
       }
       if (sessions.length > showS.length) {
         const more = document.createElement('span');
-        more.className = 'ses-chip';
-        more.style.cursor = 'pointer';
+        more.className = 'ses-more';
         more.textContent = '+' + (sessions.length - showS.length) + ' more';
         more.addEventListener('click', (ev) => {
           ev.stopPropagation();
@@ -3633,11 +3894,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     right.appendChild(ul);
     hero.appendChild(right);
 
-    // Card-body click → opens full detail modal
-    hero.addEventListener('click', (ev) => {
-      if (ev.target.closest('button, a, [data-open-modal], .ses-chip')) return;
-      promoteChipToInspect(init.id);
-    });
+    // No body-click handler here — the carousel wraps these and binds
+    // its own click logic (toggle spread / pick a card). The "view"
+    // button at the top-right opens the full-detail modal explicitly.
 
     return hero;
   }
@@ -3658,9 +3917,16 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     const carousel = document.createElement('div');
     carousel.className = 'now-hero-carousel';
 
+    // Backdrop for spread mode (covers rest of page, click to close)
+    const backdrop = document.createElement('div');
+    backdrop.className = 'spread-backdrop';
+    carousel.appendChild(backdrop);
+
     const hint = document.createElement('div');
     hint.className = 'hero-carousel-hint';
-    hint.textContent = I18N.cc_hero_wheel_hint || 'scroll to switch';
+    hint.textContent = heroes.length > 1
+      ? (I18N.cc_hero_spread_hint || '点击展开 / 切换')
+      : (humanizeAge(heroes[0].init.last_activity_at));
     carousel.appendChild(hint);
 
     const stack = document.createElement('div');
@@ -3673,112 +3939,79 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     });
     carousel.appendChild(stack);
 
-    // Pagination controls
-    const ctrls = document.createElement('div');
-    ctrls.className = 'hero-carousel-controls';
-    const prev = document.createElement('button');
-    prev.className = 'arrow';
-    prev.setAttribute('aria-label', 'previous');
-    prev.textContent = '‹';
-    ctrls.appendChild(prev);
-
-    const dotsWrap = document.createElement('div');
-    dotsWrap.style.cssText = 'display: inline-flex; gap: 6px; align-items: center;';
-    for (let i = 0; i < heroes.length; i++) {
-      const d = document.createElement('span');
-      d.className = 'dot' + (i === 0 ? ' active' : '');
-      d.setAttribute('data-idx', String(i));
-      dotsWrap.appendChild(d);
-    }
-    ctrls.appendChild(dotsWrap);
-
-    const counter = document.createElement('span');
-    counter.className = 'hero-counter';
-    counter.textContent = '1 / ' + heroes.length;
-    ctrls.appendChild(counter);
-
-    const next = document.createElement('button');
-    next.className = 'arrow';
-    next.setAttribute('aria-label', 'next');
-    next.textContent = '›';
-    ctrls.appendChild(next);
-
-    carousel.appendChild(ctrls);
-
-    // ---- Carousel state machine ----
+    // ---- State: which card is "current" (front), and spread on/off ----
     let cur = 0;
+    let spread = false;
     const N = cards.length;
-    const SWITCH_COOLDOWN = 380;  // ms between switches
-    let lastSwitchAt = 0;
 
-    function setPositions() {
+    function applyState() {
+      stack.classList.toggle('spread', spread);
+      carousel.classList.toggle('is-spread', spread);
+      // data-pos: the card relative to current. 0=front, 1/2=back stack.
       cards.forEach((c, i) => {
-        // Offset from current — wraps around to keep all cards positioned
-        // somewhere in the stack (or behind).
-        let off = (i - cur + N) % N;
-        // Cards beyond position 4 are kept at pos 4 (max-back)
-        const pos = off > 4 ? 4 : off;
-        c.setAttribute('data-pos', String(pos));
+        const off = (i - cur + N) % N;
+        c.setAttribute('data-pos', String(off));
+        c.classList.toggle('is-current', i === cur);
       });
-      dotsWrap.querySelectorAll('.dot').forEach((d, i) => {
-        d.classList.toggle('active', i === cur);
-      });
-      counter.textContent = (cur + 1) + ' / ' + N;
+      hint.textContent = spread
+        ? (I18N.cc_hero_pick_hint || '点击选择 · ESC 取消')
+        : (N > 1
+            ? (I18N.cc_hero_spread_hint || '点击展开 / 切换')
+            : humanizeAge(heroes[0].init.last_activity_at));
     }
 
-    function cycle(dir) {
-      const now = performance.now();
-      if (now - lastSwitchAt < SWITCH_COOLDOWN) return;
-      lastSwitchAt = now;
-      if (N <= 1) return;
-      cur = (cur + dir + N) % N;
-      setPositions();
-    }
-
-    function goTo(idx) {
-      if (idx < 0 || idx >= N || idx === cur) return;
-      lastSwitchAt = performance.now();
+    function setCurrent(idx) {
+      if (idx < 0 || idx >= N) return;
       cur = idx;
-      setPositions();
+      spread = false;
+      applyState();
     }
 
-    prev.addEventListener('click', (ev) => { ev.stopPropagation(); cycle(-1); });
-    next.addEventListener('click', (ev) => { ev.stopPropagation(); cycle(+1); });
-    dotsWrap.addEventListener('click', (ev) => {
-      const dot = ev.target.closest('.dot');
-      if (!dot) return;
-      ev.stopPropagation();
-      goTo(Number(dot.getAttribute('data-idx')));
-    });
+    function toggleSpread() {
+      if (N <= 1) {
+        // Single hero — just open detail modal
+        promoteChipToInspect(heroes[0].init.id);
+        return;
+      }
+      spread = !spread;
+      applyState();
+    }
 
-    // Wheel handler: when scrolling over the carousel, switch cards
-    // instead of scrolling the page. Throttled by SWITCH_COOLDOWN.
-    // Only active when there are 2+ heroes.
-    if (N > 1) {
-      let wheelAccum = 0;
-      carousel.addEventListener('wheel', (ev) => {
-        // Only intercept when the wheel intent is "switching": large
-        // enough delta. Trackpad ambient noise stays at the page.
-        if (Math.abs(ev.deltaY) < 8 && Math.abs(ev.deltaX) < 8) return;
-        ev.preventDefault();
-        const delta = Math.abs(ev.deltaY) >= Math.abs(ev.deltaX)
-                      ? ev.deltaY : ev.deltaX;
-        wheelAccum += delta;
-        if (Math.abs(wheelAccum) >= 30) {
-          cycle(wheelAccum > 0 ? +1 : -1);
-          wheelAccum = 0;
+    // Click handling on cards
+    cards.forEach((c, i) => {
+      c.addEventListener('click', (ev) => {
+        // Ignore clicks on interactive children (buttons, ses chips,
+        // session sub-buttons, etc.) — those run their own behavior.
+        if (ev.target.closest('button, a, .ses-chip, .ses-btn, ' +
+                              '[data-open-modal], .hero-blocker, .ses-more')) {
+          return;
         }
-      }, { passive: false });
-    }
-
-    // Keyboard nav when focused
-    carousel.tabIndex = 0;
-    carousel.addEventListener('keydown', (ev) => {
-      if (ev.key === 'ArrowLeft')  { ev.preventDefault(); cycle(-1); }
-      if (ev.key === 'ArrowRight') { ev.preventDefault(); cycle(+1); }
+        if (!spread) {
+          // Collapsed: clicking the FRONT card opens the spread.
+          // Clicking a hidden back card is impossible (pointer-events: none).
+          if (i === cur) toggleSpread();
+        } else {
+          // Spread open. Clicking the current center card OR any other
+          // card sets that card as current and closes the spread.
+          setCurrent(i);
+        }
+      });
     });
 
-    setPositions();
+    // Backdrop click → close spread
+    backdrop.addEventListener('click', () => {
+      if (spread) { spread = false; applyState(); }
+    });
+
+    // ESC closes spread
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && spread) {
+        spread = false;
+        applyState();
+      }
+    });
+
+    applyState();
 
     sec.appendChild(carousel);
     target.appendChild(sec);
