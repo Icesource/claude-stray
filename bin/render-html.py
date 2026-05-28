@@ -2012,8 +2012,13 @@ article.card.full-detail .card-head h3 {
   transition: all 0.15s ease;
 }
 .now-hero .hero-section.progress-section {
-  background: color-mix(in srgb, var(--accent-bg) 50%, var(--surface));
-  border-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--accent-bg) 90%, var(--surface)) 0%,
+      color-mix(in srgb, var(--accent-bg) 40%, var(--surface)) 100%);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  border-left: 3px solid var(--accent);
+  padding: 12px 14px 14px;
 }
 .now-hero .hero-section.blockers-section {
   background:
@@ -2033,12 +2038,12 @@ article.card.full-detail .card-head h3 {
 
 .now-hero .hero-section-label {
   display: inline-flex; align-items: center; gap: 6px;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   color: var(--text-2);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 .now-hero .hero-section-label.progress { color: var(--accent-2); }
 .now-hero .hero-section-label.progress .dot {
@@ -2063,12 +2068,13 @@ article.card.full-detail .card-head h3 {
 }
 
 .now-hero .hero-section-body {
-  font-size: 13px;
-  color: var(--text-2);
-  line-height: 1.5;
+  font-size: 13.5px;
+  color: var(--text);
+  line-height: 1.55;
   margin: 0;
+  font-weight: 450;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -3875,9 +3881,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     }
 
     // Progress narrative — AI-generated "current state" paragraph.
-    // This is the field that summarizes WHAT'S HAPPENING NOW (distinct
-    // from `summary` which describes what the initiative is *about*).
-    if (init.progress && init.progress.trim() && init.progress !== init.summary) {
+    // Always render when present, even if it overlaps with summary —
+    // the user explicitly wanted this info visible at all times.
+    if (init.progress && init.progress.trim()) {
       const wrap = document.createElement('div');
       wrap.className = 'hero-section progress-section';
       wrap.innerHTML =
