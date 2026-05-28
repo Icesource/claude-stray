@@ -989,6 +989,43 @@ def enforce_level_monotone(new_mm: dict, prior: dict) -> tuple[int, int]:
     return level_repairs, parent_repairs
 
 
+def enforce_level_ceiling(new_mm: dict) -> int:
+    """DD-014 — mechanical ceiling on AI's `level` promotion.
+
+    The prompt asks AI to promote conservatively (3+ sessions for
+    thread, 8+ tasks, etc.) but AI can over-promote — the observed
+    failure mode is "AI gives every initiative `level: thread` on first
+    v3 run." This post-process clamps AI's emit DOWN when the
+    underlying signals don't justify the level it picked.
+
+    Mechanical thresholds (matching §8 of the classify prompt):
+      - thread requires:  len(sessions) ≥ 3  OR  len(tasks) ≥ 8
+      - card requires:    anything more substantial than chip
+      - chip:             1 session, ≤ 5 user turns, ≤ 1 task, no
+                          artifacts, no blockers (NOT enforced as a
+                          ceiling — chips bubbling up to card is OK)
+
+    Only the thread-ceiling is enforced here. Card vs chip is a softer
+    distinction we let AI judge (with the floor-monotone preserving
+    PRIOR's card status anyway).
+
+    Returns the count of initiatives clamped.
+    """
+    clamped = 0
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if init.get("level") != "thread":
+                continue
+            sessions_n = len(init.get("sessions") or [])
+            tasks_n = len(init.get("tasks") or [])
+            if sessions_n >= 3 or tasks_n >= 8:
+                continue  # justified
+            # Over-promoted: AI said thread but signals don't support it.
+            init["level"] = "card"
+            clamped += 1
+    return clamped
+
+
 def apply_promotion_cooldown(new_mm: dict, prior: dict) -> int:
     """DD-014 — newly-discovered initiatives (id not in PRIOR) are forced
     to `level: chip` on their first round, regardless of AI's emitted
@@ -1660,10 +1697,19 @@ def main() -> int:
     if status_repairs:
         print(f"[classify] enforced hot-initiative status: {status_repairs} repairs")
 
-    # DD-014: level (thread/card/chip) is a one-way ratchet upward
-    # relative to PRIOR. AI is advisory; we enforce monotone here.
-    # Apply cooldown first (so new initiatives become chip), then
-    # monotone (so PRIOR floors are honored), then stamp.
+    # DD-014: level (thread/card/chip) has two mechanical clamps:
+    #   (a) ceiling — AI's `level: thread` is only allowed when
+    #       len(sessions) ≥ 3 or len(tasks) ≥ 8 (matches §8 thresholds);
+    #       otherwise clamped down to `card`.
+    #   (b) floor — PRIOR's level is a floor; AI can only ratchet up
+    #       relative to it. New-this-round initiatives are forced to
+    #       `chip` regardless of AI output.
+    # Order: ceiling first (caps over-eager thread promotion), then
+    # cooldown (new chip clamp), then monotone (PRIOR floor), then
+    # stamp.
+    ceiling = enforce_level_ceiling(new_mm)
+    if ceiling:
+        print(f"[classify] enforced level ceiling: {ceiling} thread→card clamps")
     cooled = apply_promotion_cooldown(new_mm, prior)
     if cooled:
         print(f"[classify] promotion cooldown clamped {cooled} new initiative(s) to chip")

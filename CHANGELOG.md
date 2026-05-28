@@ -8,6 +8,43 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Added
+
+- **Three-tier work items** (DD-014, commits `d321620` + `270805d`).
+  Every initiative now carries a `level` of `thread`, `card`, or
+  `chip`, plus an optional `parent_thread_id` linking a card/chip into
+  a thread. Schema is v3.
+
+  The dashboard splits each workspace into three tiers:
+
+  - **Threads** render as poker-style stacked decks at the top of the
+    workspace, with two rotated backplate cards behind giving the
+    "stack of paper" look. Hover spreads the stack; clicking opens
+    the thread's full card. Member cards/chips appear as compact
+    pills inside the deck.
+  - **Cards** keep the existing grid layout, now scoped to
+    initiatives without a parent thread.
+  - **Chips** are compact pill-shaped tags for tiny work — 1-session
+    lookups, one-off questions. They sit at the bottom of each
+    workspace and open as a popover when clicked.
+
+  Stability follows the DD-011/012/013 mechanical-floor pattern:
+
+  - `apply_promotion_cooldown` forces every newly-discovered
+    initiative to `chip` on its first round (no "fanfare for a
+    one-off" failure mode).
+  - `enforce_level_monotone` makes `level` a one-way ratchet —
+    chip → card → thread only, never reverse. AI demotion attempts
+    are reverted.
+  - Cold initiatives freeze `level` / `parent_thread_id` /
+    `level_set_at` byte-identically to PRIOR, matching the existing
+    §5 cold rule.
+
+  Migration is transparent: v2 dashboard.json renders as all-cards
+  (the existing layout) until the next pipeline run produces real
+  AI-assigned levels. `level: "card"` is the default for every
+  v2 initiative.
+
 ## [v0.7.0] — 2026-05-26
 
 A "make the dashboard tell the truth" release. Three classes of bugs
