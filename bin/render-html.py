@@ -80,6 +80,9 @@ LOCALE = {
         "thread_stat_subitems": "{} 子项目",
         "thread_stat_sessions": "{} 个会话",
         "thread_stat_tasks": "{} 项任务",
+        "thread_own_card_label": "主项",
+        "focus_zone_label": "正在进行 · Focus",
+        "focus_zone_empty": "没有正在进行的工作",
         "chip_pending_tasks": "{} 项待办",
         "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
@@ -241,6 +244,9 @@ LOCALE = {
         "thread_stat_subitems": "{} sub-items",
         "thread_stat_sessions": "{} sessions",
         "thread_stat_tasks": "{} tasks",
+        "thread_own_card_label": "Main",
+        "focus_zone_label": "In progress · Focus",
+        "focus_zone_empty": "Nothing in progress",
         "chip_pending_tasks": "{} pending",
         "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
@@ -846,17 +852,33 @@ section.archive-zone article.card .from-ws code {
   background: var(--slate-bg); padding: 1px 6px; border-radius: 3px;
 }
 
-section.workspace { margin-bottom: 24px; }
+section.workspace { margin-bottom: 22px; }
 section.workspace > header.ws-head {
-  display: flex; align-items: baseline; gap: 10px; padding: 8px 4px;
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0 8px;
   cursor: pointer; user-select: none;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 12px;
+  transition: border-color 0.15s, color 0.15s;
 }
-section.workspace > header.ws-head:hover { color: var(--accent); }
+section.workspace > header.ws-head:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
 section.workspace > header.ws-head .ws-toggle {
-  font-size: 10px; color: var(--text-mute); width: 14px; display: inline-block;
+  font-size: 10px; color: var(--text-mute); width: 12px; display: inline-block;
 }
-section.workspace > header.ws-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
-section.workspace > header.ws-head .ws-meta { font-size: 12px; color: var(--text-mute); }
+section.workspace > header.ws-head h2 {
+  font-size: 13px; font-weight: 600; margin: 0;
+  letter-spacing: 0.01em;
+}
+section.workspace > header.ws-head .ws-meta {
+  font-size: 11px; color: var(--text-mute);
+  margin-left: auto;
+}
+section.workspace > header.ws-head .ws-meta code {
+  font-size: 10px;
+}
 section.workspace.collapsed .ws-body { display: none; }
 
 /* DD-014: ws-body is now a vertical stack of three tiers.
@@ -974,17 +996,62 @@ div.ws-body {
   border-radius: 4px;
   padding: 1px 8px;
 }
+/* Expanded thread: the backplates fan out dramatically (paper sliding
+   off the top of the deck), and a .thread-deck-expanded-body slides
+   into view containing the thread's full content (summary, tasks,
+   member cards inline). */
 .thread-deck.expanded {
-  /* expanded mode: deck flattens into its own column. The members
-     pills become a clickable list. */
-  transform: translateY(0);
   box-shadow: var(--shadow-hover);
   border-color: var(--accent);
+  cursor: default;
 }
+.thread-deck.expanded::before {
+  transform: translate(-22px, 14px) rotate(-7deg);
+  opacity: 0.6;
+}
+.thread-deck.expanded::after {
+  transform: translate(24px, 18px) rotate(8deg);
+  opacity: 0.5;
+}
+.thread-deck-expanded-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(.4,0,.2,1),
+              margin-top 0.25s, opacity 0.25s 0.05s;
+  opacity: 0;
+}
+.thread-deck.expanded .thread-deck-expanded-body {
+  max-height: 4000px;  /* generous ceiling so any content fits */
+  margin-top: 14px;
+  opacity: 1;
+}
+.thread-deck-expanded-body .expanded-section {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.thread-deck-expanded-body .expanded-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-mute);
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.thread-deck-expanded-body .expanded-members-list {
+  display: flex; flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.thread-deck-expanded-body .expanded-members-list article.card {
+  /* Member cards inside the expanded deck always show in compact form */
+}
+
+.thread-deck-foot .deck-stat.deck-toggle::after { content: " ▾"; }
 .thread-deck.expanded .thread-deck-foot .deck-stat.deck-toggle::after {
   content: " ▴";
 }
-.thread-deck-foot .deck-stat.deck-toggle::after { content: " ▾"; }
 
 /* ---------- Chips (compact tags for tiny initiatives) ---------- */
 .tier-chips {
@@ -1068,14 +1135,193 @@ div.ws-body {
 /* ---------- Card ---------- */
 article.card {
   background: var(--card-bg); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 16px;
+  border-radius: var(--radius);
+  padding: 12px 14px 12px 18px;
   box-shadow: var(--shadow);
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.18s, border-color 0.15s,
+              transform 0.18s cubic-bezier(.2,.7,.3,1.3);
   position: relative;
+  overflow: hidden;
 }
-article.card:hover { box-shadow: var(--shadow-hover); border-color: var(--border-hover); }
+/* Status accent strip on the left edge — instant scan signal */
+article.card::before {
+  content: ""; position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--slate);
+  transition: background 0.15s, width 0.18s;
+}
+article.card[data-status="active"]::before { background: var(--green); }
+article.card[data-status="paused"]::before { background: var(--amber); }
+article.card[data-status="done"]::before { background: var(--slate); }
+article.card[data-status="archived"]::before { background: var(--text-mute); }
+article.card:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-hover);
+}
+article.card:hover::before { width: 4px; }
 article.card.hidden { display: none; }
 article.card.archived { opacity: 0.7; }
+
+/* Compact mode — default state for most cards. Shows only head + age +
+   task-progress bar; full body content is hidden until expanded.
+   Click anywhere on a compact card expands it inline. */
+article.card.compact {
+  cursor: pointer;
+  padding: 10px 14px 10px 18px;
+}
+article.card.compact .card-meta,
+article.card.compact .card-section,
+article.card.compact .blocker-preview,
+article.card.compact footer.card-actions {
+  display: none;
+}
+article.card.compact .card-head h3 {
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+article.card.compact .card-progress-strip {
+  display: block;
+  margin-top: 8px;
+}
+article.card:not(.compact) .card-progress-strip {
+  display: none;
+}
+.card-progress-strip {
+  height: 4px;
+  background: var(--bg);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+.card-progress-strip .progress-fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--green) 0%, #4ade80 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease-out;
+}
+.card-progress-strip .progress-text {
+  position: absolute; right: 4px; top: -16px;
+  font-size: 10px; color: var(--text-mute);
+}
+article.card.compact .card-head .status-badge {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+article.card.compact .card-head .id-tag,
+article.card.compact .card-head .linked-tag {
+  display: none;
+}
+
+/* Expanded mode — clicked compact cards open up; click again to close. */
+article.card.expanded {
+  cursor: default;
+  box-shadow: var(--shadow-hover);
+}
+article.card.expanded::before { width: 4px; }
+
+/* ---------- Focus zone (top-of-page hero strip) ---------- */
+section.focus-zone {
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  background: linear-gradient(
+    to bottom,
+    rgba(59, 130, 246, 0.05) 0%,
+    rgba(59, 130, 246, 0.01) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 12px;
+}
+section.focus-zone > .focus-head {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  font-weight: 600;
+}
+section.focus-zone > .focus-head::before {
+  content: ""; display: inline-block;
+  width: 6px; height: 6px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+  animation: focusPulse 2s ease-in-out infinite;
+}
+section.focus-zone > .focus-head .focus-count {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+@keyframes focusPulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15); }
+  50%      { box-shadow: 0 0 0 6px rgba(22, 163, 74, 0.05); }
+}
+section.focus-zone .focus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 10px;
+}
+section.focus-zone .focus-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px 12px 16px;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.18s, box-shadow 0.18s;
+}
+section.focus-zone .focus-card::before {
+  content: ""; position: absolute;
+  left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--green);
+}
+section.focus-zone .focus-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.12);
+}
+section.focus-zone .focus-card .focus-card-ws {
+  font-size: 11px;
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+section.focus-zone .focus-card .focus-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 6px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+section.focus-zone .focus-card .focus-card-meta {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  font-size: 11px; color: var(--text-dim);
+  margin-top: 6px;
+}
+section.focus-zone .focus-card .focus-pill {
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  border: 1px solid var(--border);
+}
+section.focus-zone .focus-card .focus-pill.pending {
+  background: rgba(59,130,246,0.08);
+  color: var(--accent);
+  border-color: rgba(59,130,246,0.2);
+}
+section.focus-zone .focus-card .focus-pill.blocker {
+  background: var(--red-bg);
+  color: var(--red);
+  border-color: rgba(220,38,38,0.2);
+}
 
 .card-head { display: flex; align-items: flex-start; gap: 8px; }
 .card-head h3 {
@@ -1887,6 +2133,83 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       }
     }
 
+    // ---- Focus zone (top of page) -------------------------------------
+    // Pulls the most-recently-active "active" initiatives from across
+    // ALL workspaces. Hero presentation: title + workspace label +
+    // pending task / blocker pill summary. Click goes straight into
+    // the modal card view.
+    //
+    // Heuristic: status === 'active', sort by last_activity_at desc,
+    // take top 5. If fewer than 1 active, skip the section entirely
+    // (no need to advertise emptiness above the workspace rows).
+    const focusCandidates = [];
+    for (const ws of workspaces) {
+      for (const init of (ws.initiatives || [])) {
+        if (isDeleted(init.id)) continue;
+        const eff = effective(init.id);
+        const d = eff ? eff.init : init;
+        if (d.status !== 'active') continue;
+        if (effectiveStatus(init.id) !== 'active') continue;
+        focusCandidates.push({ init: d, ws_name: ws.name });
+      }
+    }
+    focusCandidates.sort((a, b) =>
+      (b.init.last_activity_at || '').localeCompare(
+        a.init.last_activity_at || ''));
+    const focusTop = focusCandidates.slice(0, 5);
+    if (focusTop.length > 0) {
+      const fz = document.createElement('section');
+      fz.className = 'focus-zone';
+      const fhead = document.createElement('div');
+      fhead.className = 'focus-head';
+      fhead.innerHTML = '<span>' + esc(I18N.focus_zone_label) + '</span>' +
+        '<span class="focus-count">' + focusTop.length + ' / ' +
+        focusCandidates.length + '</span>';
+      fz.appendChild(fhead);
+      const grid = document.createElement('div');
+      grid.className = 'focus-grid';
+      for (const { init, ws_name } of focusTop) {
+        const fc = document.createElement('div');
+        fc.className = 'focus-card';
+        fc.setAttribute('data-init-id', init.id);
+
+        const ws = document.createElement('div');
+        ws.className = 'focus-card-ws';
+        ws.textContent = ws_name;
+        fc.appendChild(ws);
+
+        const ttl = document.createElement('div');
+        ttl.className = 'focus-card-title';
+        ttl.textContent = init.name || '';
+        fc.appendChild(ttl);
+
+        const tasks = (init.tasks || []).map(taskStatus);
+        const pending = tasks.filter(t => t._status === 'pending').length;
+        const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+
+        const meta = document.createElement('div');
+        meta.className = 'focus-card-meta';
+        meta.innerHTML = '<span class="focus-pill">' +
+          esc(humanizeAge(init.last_activity_at)) + '</span>';
+        if (pending > 0) {
+          meta.innerHTML += '<span class="focus-pill pending">' +
+            (I18N.chip_pending_tasks || '{} pending').replace('{}', pending) +
+            '</span>';
+        }
+        if (blockers.length > 0) {
+          meta.innerHTML += '<span class="focus-pill blocker">⚠ ' +
+            (I18N.blocker_chip || '{} blocked').replace('{}', blockers.length) +
+            '</span>';
+        }
+        fc.appendChild(meta);
+
+        fc.addEventListener('click', () => promoteChipToInspect(init.id));
+        grid.appendChild(fc);
+      }
+      fz.appendChild(grid);
+      board.appendChild(fz);
+    }
+
     workspaces.forEach((ws, wsIdx) => {
       // Split: archived inits get peeled off into archivedList
       const liveInits = [];
@@ -2232,17 +2555,43 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     document.querySelectorAll('article.card').forEach(c => _spyObserver.observe(c));
   }
 
-  function renderCard(initId) {
+  // Per-render set of card ids the user has manually expanded.
+  // Cleared on full re-render unless persisted (we don't, intentionally
+  // — re-render = fresh focus). Override via opts.startExpanded.
+  const __expandedCards = new Set();
+
+  function renderCard(initId, opts) {
+    opts = opts || {};
     const eff = effective(initId);
     if (!eff) return document.createDocumentFragment();
     const init = eff.init;
     const isArchived = overrides.archived.indexOf(initId) !== -1;
     const status = isArchived ? 'archived' : init.status;
+    // Compact by default. Caller can pass {startExpanded: true} for
+    // Focus-zone hero cards, archive entries, modal popovers, etc.
+    const startCompact = !opts.startExpanded
+                         && !__expandedCards.has(initId);
 
     const card = document.createElement('article');
-    card.className = 'card' + (isArchived ? ' archived' : '');
+    card.className = 'card'
+                     + (isArchived ? ' archived' : '')
+                     + (startCompact ? ' compact' : ' expanded');
     card.setAttribute('data-init-id', initId);
     card.setAttribute('data-status', status);
+    // Click-to-toggle for compact ↔ expanded. The handler is bound to
+    // the card itself but ignores clicks that originated on an
+    // interactive child (buttons, links, badges-with-modal-data,
+    // tasks, sessions) — those keep their own behavior.
+    card.addEventListener('click', (ev) => {
+      const t = ev.target;
+      if (t.closest('button, a, [data-open-modal], .task, .session, ' +
+                    'input, label, .blocker-preview')) return;
+      const nowExpanded = card.classList.contains('compact');
+      card.classList.toggle('compact', !nowExpanded);
+      card.classList.toggle('expanded', nowExpanded);
+      if (nowExpanded) __expandedCards.add(initId);
+      else __expandedCards.delete(initId);
+    });
 
     // Head
     const head = document.createElement('div');
@@ -2263,6 +2612,22 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     }
     head.innerHTML = headHtml;
     card.appendChild(head);
+
+    // Compact-mode progress strip: only visible when card is collapsed.
+    // Reads task done/total ratio so a glance shows how far along the
+    // work is. Hidden by CSS when card is not .compact.
+    const tasksList = init.tasks || [];
+    if (tasksList.length) {
+      const doneN = tasksList.filter(t => (t.status === 'done')
+                                      || t.done === true).length;
+      const pct = Math.round((doneN / tasksList.length) * 100);
+      const strip = document.createElement('div');
+      strip.className = 'card-progress-strip';
+      strip.innerHTML = '<span class="progress-text">' +
+        doneN + '/' + tasksList.length + ' · ' + pct + '%</span>' +
+        '<div class="progress-fill" style="width:' + pct + '%"></div>';
+      card.appendChild(strip);
+    }
 
     // Meta
     const meta = document.createElement('div');
@@ -2908,11 +3273,55 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       '<span class="deck-stat">' + esc(s) + '</span>').join('');
     deck.appendChild(foot);
 
+    // Real expand-in-place body. Hidden by max-height CSS until
+    // .expanded class is added. Shows the thread's own full card
+    // (with all sections, tasks, sessions, footer) plus its member
+    // cards as compact rows below.
+    const expBody = document.createElement('div');
+    expBody.className = 'thread-deck-expanded-body';
+    deck.appendChild(expBody);
+
+    let bodyBuilt = false;
+    const buildBody = () => {
+      if (bodyBuilt) return;
+      bodyBuilt = true;
+      // The thread's own full card (always expanded) goes first.
+      const ownLbl = document.createElement('div');
+      ownLbl.className = 'expanded-section-label';
+      ownLbl.textContent = I18N.thread_own_card_label || 'Thread';
+      expBody.appendChild(ownLbl);
+      expBody.appendChild(renderCard(thread.id, { startExpanded: true }));
+      // Then the member cards as compact rows.
+      if (members && members.length) {
+        const memLbl = document.createElement('div');
+        memLbl.className = 'expanded-section-label';
+        memLbl.style.marginTop = '12px';
+        memLbl.textContent = (I18N.thread_members_label || 'Members') +
+                             ' · ' + members.length;
+        expBody.appendChild(memLbl);
+        const memList = document.createElement('div');
+        memList.className = 'expanded-members-list';
+        for (const m of members) {
+          memList.appendChild(renderCard(m.id));
+        }
+        expBody.appendChild(memList);
+      }
+    };
+
     deck.addEventListener('click', (ev) => {
+      // Pill clicks inside the head member-list keep their own
+      // popover behavior (legacy). Interactive elements inside the
+      // expanded body bubble up via card click — let those handle.
       if (ev.target.closest('.thread-deck-member-pill')) return;
-      // Clicking the deck itself opens the thread's own full card
-      // (using the chip popover route — reuses the same modal stack).
-      promoteChipToInspect(thread.id);
+      if (ev.target.closest('.thread-deck-expanded-body')) return;
+      buildBody();
+      const isExp = deck.classList.toggle('expanded');
+      if (isExp) {
+        // After expansion lands, scroll the deck head into view so
+        // the user doesn't lose the anchor.
+        setTimeout(() => deck.scrollIntoView(
+          { behavior: 'smooth', block: 'start' }), 50);
+      }
     });
 
     return deck;
