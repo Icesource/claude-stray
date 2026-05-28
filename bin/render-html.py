@@ -96,6 +96,9 @@ LOCALE = {
         "cc_hero_next_label": "接下来",
         "cc_hero_done_label": "已完成",
         "cc_hero_no_tasks": "（尚无任务）",
+        "cc_hero_wheel_hint": "滚轮切换 · ←→",
+        "btn_view": "查看",
+        "btn_delete": "删除",
         "chip_pending_tasks": "{} 项待办",
         "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
@@ -273,6 +276,9 @@ LOCALE = {
         "cc_hero_next_label": "Next up",
         "cc_hero_done_label": "Done",
         "cc_hero_no_tasks": "(no tasks yet)",
+        "cc_hero_wheel_hint": "scroll · ←→",
+        "btn_view": "view",
+        "btn_delete": "delete",
         "chip_pending_tasks": "{} pending",
         "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
@@ -1744,9 +1750,23 @@ article.card.full-detail .card-head h3 {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- 1. Now hero ---------------------------------------------- */
-.now-hero {
+/* ---------- 1. Now hero · stacked-deck carousel ---------------------- */
+.now-hero-carousel {
   position: relative;
+  /* Tall enough for the top card + 2 peek-behind cards' offsets */
+  padding-top: 28px;
+  margin-bottom: 14px;
+  user-select: none;
+}
+.now-hero-stack {
+  position: relative;
+  /* The reserved height is the front card's height; back cards
+     overlay via absolute positioning. */
+  min-height: 400px;
+}
+.now-hero {
+  position: absolute;
+  inset: 0;
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
   gap: 0;
@@ -1764,22 +1784,62 @@ article.card.full-detail .card-head h3 {
   overflow: hidden;
   isolation: isolate;
   cursor: pointer;
+  transform-origin: center top;
   transition:
-    transform 0.3s var(--ease-smooth),
-    box-shadow 0.3s var(--ease-smooth),
-    border-color 0.2s ease;
-  animation: heroIn 0.7s var(--ease-smooth) backwards;
+    transform 0.45s var(--ease-spring),
+    box-shadow 0.45s var(--ease-smooth),
+    border-color 0.2s ease,
+    opacity 0.4s var(--ease-smooth);
+  will-change: transform, opacity;
 }
-@keyframes heroIn {
-  from { opacity: 0; transform: translateY(14px) scale(0.985); }
-  to   { opacity: 1; transform: translateY(0)    scale(1); }
+/* Front card (idx === 0 — currently active) */
+.now-hero[data-pos="0"] {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  z-index: 5;
+  pointer-events: auto;
 }
-.now-hero:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+/* Behind cards — peek out from the TOP (paper stack going up) */
+.now-hero[data-pos="1"] {
+  transform: translateY(-12px) scale(0.97);
+  opacity: 0.78;
+  z-index: 4;
+  pointer-events: none;
+  filter: saturate(0.85);
+}
+.now-hero[data-pos="2"] {
+  transform: translateY(-22px) scale(0.94);
+  opacity: 0.55;
+  z-index: 3;
+  pointer-events: none;
+  filter: saturate(0.7);
+}
+.now-hero[data-pos="3"] {
+  transform: translateY(-30px) scale(0.91);
+  opacity: 0.32;
+  z-index: 2;
+  pointer-events: none;
+  filter: saturate(0.6);
+}
+.now-hero[data-pos="4"] {
+  transform: translateY(-36px) scale(0.88);
+  opacity: 0.16;
+  z-index: 1;
+  pointer-events: none;
+  filter: saturate(0.55);
+}
+/* Cards that have already cycled past — slide off to the right and fade */
+.now-hero[data-pos="-1"] {
+  transform: translateX(60%) translateY(-20px) scale(0.92) rotate(4deg);
+  opacity: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.now-hero-carousel:hover .now-hero[data-pos="0"] {
   box-shadow:
-    0 24px 56px rgba(99, 102, 241, 0.16),
+    0 24px 56px rgba(99, 102, 241, 0.18),
     var(--shadow-3);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
 }
 .now-hero::before {
   content: "";
@@ -1796,18 +1856,162 @@ article.card.full-detail .card-head h3 {
 }
 .now-hero > .hero-left {
   position: relative;
-  padding: 22px 24px 22px 26px;
+  padding: 22px 24px 18px 26px;
   z-index: 1;
+  display: flex; flex-direction: column;
+  min-width: 0;
 }
 .now-hero > .hero-right {
   position: relative;
-  padding: 22px 24px;
+  padding: 22px 24px 18px;
   border-left: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-2) 50%, transparent);
   z-index: 1;
   display: flex; flex-direction: column;
-  gap: 14px;
+  gap: 12px;
+  min-width: 0;
 }
+
+/* Hero kicker now has room for action buttons on the right */
+.now-hero .hero-top {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 8px;
+}
+.now-hero .hero-top .hero-actions {
+  margin-left: auto;
+  display: flex; gap: 6px;
+}
+.now-hero .hero-top .hero-actions button {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  font: 500 11px var(--font-body);
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow-1);
+}
+.now-hero .hero-top .hero-actions button:hover {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+.now-hero .hero-top .hero-actions button.dangerous:hover {
+  color: var(--red-2);
+  background: var(--red-bg);
+  border-color: color-mix(in srgb, var(--red) 35%, transparent);
+}
+
+/* Sessions inline row on the hero — chip style */
+.now-hero .hero-sessions {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  margin-top: 10px;
+}
+.now-hero .hero-sessions .ses-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+  align-self: center;
+  margin-right: 4px;
+}
+.now-hero .hero-sessions .ses-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 3px 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.005em;
+}
+.now-hero .hero-sessions .ses-chip:hover {
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  color: var(--accent-2);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-1);
+}
+.now-hero .hero-sessions .ses-chip .ses-sid { color: var(--text); }
+.now-hero .hero-sessions .ses-chip .ses-age {
+  color: var(--text-mute);
+  font-size: 10px;
+}
+
+/* Carousel pagination dots + arrows under the stack */
+.hero-carousel-controls {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 12px;
+  justify-content: center;
+  user-select: none;
+}
+.hero-carousel-controls .dot {
+  width: 22px; height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  cursor: pointer;
+  transition: all 0.25s var(--ease-smooth);
+}
+.hero-carousel-controls .dot:hover {
+  background: var(--border-strong);
+  transform: translateY(-1px);
+}
+.hero-carousel-controls .dot.active {
+  background: var(--accent-mesh);
+  width: 36px;
+}
+.hero-carousel-controls .arrow {
+  width: 26px; height: 26px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 14px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: var(--shadow-1);
+  margin: 0 4px;
+}
+.hero-carousel-controls .arrow:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+.hero-carousel-controls .hero-counter {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-mute);
+  margin: 0 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  min-width: 36px; text-align: center;
+}
+.hero-carousel-hint {
+  position: absolute;
+  top: 6px; right: 12px;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.04em;
+  background: color-mix(in srgb, var(--surface) 75%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  pointer-events: none;
+  z-index: 6;
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
+}
+.now-hero-carousel:hover .hero-carousel-hint { opacity: 1; }
 .now-hero .hero-kicker {
   display: inline-flex; align-items: center; gap: 8px;
   font-size: 11px;
@@ -3170,8 +3374,11 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       .sort((a, b) => (b.init.last_activity_at || '')
                        .localeCompare(a.init.last_activity_at || ''));
 
-    // Hero = the single most-recent active item (if any).
-    const hero = active[0] || null;
+    // Heroes — top 5 most-recently-active items. Rendered as a stacked
+    // carousel; user can wheel/click to cycle. The first is the
+    // "front" card with full info.
+    const heroes = active.slice(0, 5);
+    const heroIds = new Set(heroes.map(x => x.init.id));
 
     // Attention = active items with blockers OR pending CR/MR/issue/pr
     const attention = active.filter(x => {
@@ -3180,10 +3387,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     });
     const attentionIds = new Set(attention.map(x => x.init.id));
 
-    // In flow = active items NOT the hero AND NOT in attention.
-    // (We DO keep the hero out so it doesn't appear twice on screen.)
+    // In flow = active items NOT in the hero carousel AND NOT in attention.
     const inFlow = active.filter(x =>
-      (!hero || x.init.id !== hero.init.id) && !attentionIds.has(x.init.id));
+      !heroIds.has(x.init.id) && !attentionIds.has(x.init.id));
 
     // Threads — multi-session arcs (level === 'thread'). Separate axis.
     const threads = allLive.filter(x => (x.init.level || 'card') === 'thread');
@@ -3209,12 +3415,12 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       blocked: attention.length,
       done: recentlyDone.length,
       paused: pausedCount,
-      idle: hero
-        ? humanizeAge(hero.init.last_activity_at)
+      idle: heroes.length
+        ? humanizeAge(heroes[0].init.last_activity_at)
         : '—',
     };
 
-    return { hero, attention, inFlow, threads, threadMembers,
+    return { heroes, attention, inFlow, threads, threadMembers,
              recentlyDone, stats, totalLive: allLive.length };
   }
 
@@ -3231,7 +3437,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     return sec;
   }
 
-  function renderNowHero(target, heroEntry) {
+  // Build one hero card. Rich content: action buttons, sessions row,
+  // signals, progress, summary, title, next-up list.
+  function buildHeroCard(heroEntry) {
     const { init, ws_name } = heroEntry;
     const tasks = (init.tasks || []).map(taskStatus);
     const pending = tasks.filter(t => t._status === 'pending');
@@ -3240,35 +3448,82 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     const blockers = Array.isArray(init.blockers) ? init.blockers : [];
     const pendingArts = pendingArtsOf(init);
     const pct = total > 0 ? Math.round((done.length / total) * 100) : 0;
-
-    const sec = document.createElement('section');
-    sec.className = 'section-block';
-    const lbl = document.createElement('div');
-    lbl.className = 'section-label';
-    lbl.innerHTML =
-      '<span class="icon">●</span>' +
-      '<span>' + esc(I18N.cc_now_label || 'Now') + '</span>' +
-      '<span class="count">' + esc(humanizeAge(init.last_activity_at)) + '</span>';
-    sec.appendChild(lbl);
+    const sessions = init.sessions || [];
+    const isArchived = overrides.archived.indexOf(init.id) !== -1;
 
     const hero = document.createElement('article');
     hero.className = 'now-hero';
     hero.setAttribute('data-init-id', init.id);
 
-    // Left side: kicker + title + summary + progress + signal pills
+    // ---- LEFT side ----
     const left = document.createElement('div');
     left.className = 'hero-left';
+
+    // Top row: kicker + action buttons (right-aligned)
+    const topRow = document.createElement('div');
+    topRow.className = 'hero-top';
     const kicker = document.createElement('div');
     kicker.className = 'hero-kicker';
     kicker.innerHTML = '<span>NOW · ACTIVE</span>' +
       '<span class="hero-ws">in ' + esc(ws_name) + '</span>';
-    left.appendChild(kicker);
+    topRow.appendChild(kicker);
 
+    const actions = document.createElement('div');
+    actions.className = 'hero-actions';
+    actions.innerHTML =
+      '<button data-act="open" title="' +
+        esc(I18N.btn_view || 'View details') + '">view</button>' +
+      (isArchived
+        ? '<button data-act="unarchive">↩ ' + esc(I18N.btn_unarchive || 'unarchive') + '</button>'
+        : '<button data-act="archive">' + esc(I18N.btn_archive || 'archive') + '</button>') +
+      '<button data-act="delete" class="dangerous">' +
+        esc(I18N.btn_delete || 'delete') + '</button>';
+    topRow.appendChild(actions);
+    left.appendChild(topRow);
+
+    // Wire action buttons
+    actions.querySelector('[data-act="open"]').addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      promoteChipToInspect(init.id);
+    });
+    const archBtn = actions.querySelector('[data-act="archive"]');
+    if (archBtn) {
+      archBtn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (!(await confirmDialog(I18N.confirm_archive.replace('{}', init.name)))) return;
+        overrides.archived.push(init.id); saveOverrides(); render();
+      });
+    }
+    const unarchBtn = actions.querySelector('[data-act="unarchive"]');
+    if (unarchBtn) {
+      unarchBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        overrides.archived = overrides.archived.filter(x => x !== init.id);
+        saveOverrides(); render();
+      });
+    }
+    actions.querySelector('[data-act="delete"]').addEventListener('click',
+      async (ev) => {
+        ev.stopPropagation();
+        if (!(await confirmDialog(
+              (I18N.confirm_delete || 'Delete "{}"?').replace('{}', init.name)))) return;
+        if (typeof markDeleted === 'function') markDeleted(init.id);
+        else {
+          // Fallback: hide locally
+          const deleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
+          deleted.push(init.id);
+          localStorage.setItem('deleted_ids', JSON.stringify(deleted));
+        }
+        render();
+      });
+
+    // Title
     const ttl = document.createElement('h2');
     ttl.className = 'hero-title';
     ttl.textContent = init.name || '';
     left.appendChild(ttl);
 
+    // Summary
     if (init.summary || init.progress) {
       const sum = document.createElement('p');
       sum.className = 'hero-summary';
@@ -3276,6 +3531,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       left.appendChild(sum);
     }
 
+    // Progress bar
     if (total > 0) {
       const prog = document.createElement('div');
       prog.className = 'hero-progress';
@@ -3284,14 +3540,18 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       left.appendChild(prog);
     }
 
+    // Signal pills
     const sigs = [];
     if (blockers.length > 0) {
       sigs.push('<span class="sig blocker">⚠ ' + blockers.length +
         (blockers.length === 1 ? ' blocker' : ' blockers') + '</span>');
     }
     if (pendingArts.length > 0) {
-      sigs.push('<span class="sig pending">↗ ' + pendingArts.length +
-        ' pending</span>');
+      const first = pendingArts[0];
+      const lbl = (first.title || ((first.type || '').toUpperCase() + ' ' + (first.ref_id || '')))
+                    .trim().slice(0, 32);
+      sigs.push('<span class="sig pending">↗ ' + esc(lbl) +
+        (pendingArts.length > 1 ? ' +' + (pendingArts.length - 1) : '') + '</span>');
     }
     if (pending.length > 0) {
       sigs.push('<span class="sig">◐ ' + pending.length + ' todos</span>');
@@ -3302,20 +3562,57 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       sg.innerHTML = sigs.join('');
       left.appendChild(sg);
     }
+
+    // Sessions row (chips with short SID + age, click → open in Zellij/etc.)
+    if (sessions.length > 0) {
+      const sesRow = document.createElement('div');
+      sesRow.className = 'hero-sessions';
+      const slbl = document.createElement('span');
+      slbl.className = 'ses-label';
+      slbl.textContent = I18N.sessions || 'Sessions';
+      sesRow.appendChild(slbl);
+      const showS = sessions.slice(0, 4);
+      for (const sid of showS) {
+        const chip = document.createElement('span');
+        chip.className = 'ses-chip';
+        chip.title = sid;
+        chip.innerHTML =
+          '<span class="ses-sid">' + esc(String(sid).slice(0, 8)) + '</span>';
+        chip.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          // Reuse the existing session-open flow (delegate to the
+          // session click handler if available, else fall back to
+          // opening the modal).
+          if (typeof openSession === 'function') openSession(sid);
+          else promoteChipToInspect(init.id);
+        });
+        sesRow.appendChild(chip);
+      }
+      if (sessions.length > showS.length) {
+        const more = document.createElement('span');
+        more.className = 'ses-chip';
+        more.style.cursor = 'pointer';
+        more.textContent = '+' + (sessions.length - showS.length) + ' more';
+        more.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          promoteChipToInspect(init.id);
+        });
+        sesRow.appendChild(more);
+      }
+      left.appendChild(sesRow);
+    }
+
     hero.appendChild(left);
 
-    // Right side: top 5 pending tasks (or recent done if no pending)
+    // ---- RIGHT side: next-up / done task list ----
     const right = document.createElement('div');
     right.className = 'hero-right';
     const rlbl = document.createElement('div');
     rlbl.className = 'hero-task-label';
-    const showTasks = pending.length > 0 ? pending.slice(0, 6)
-                                          : done.slice(0, 6);
+    const showTasks = pending.length > 0 ? pending.slice(0, 6) : done.slice(0, 6);
     rlbl.textContent = pending.length > 0
-      ? (I18N.cc_hero_next_label || 'Next up') +
-        ' · ' + Math.min(pending.length, 6)
-      : (I18N.cc_hero_done_label || 'Done') +
-        ' · ' + Math.min(done.length, 6);
+      ? (I18N.cc_hero_next_label || 'Next up') + ' · ' + Math.min(pending.length, 6)
+      : (I18N.cc_hero_done_label || 'Done') + ' · ' + Math.min(done.length, 6);
     right.appendChild(rlbl);
     const ul = document.createElement('ul');
     ul.className = 'hero-task-list';
@@ -3336,12 +3633,154 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     right.appendChild(ul);
     hero.appendChild(right);
 
+    // Card-body click → opens full detail modal
     hero.addEventListener('click', (ev) => {
-      if (ev.target.closest('button, a, [data-open-modal]')) return;
+      if (ev.target.closest('button, a, [data-open-modal], .ses-chip')) return;
       promoteChipToInspect(init.id);
     });
 
-    sec.appendChild(hero);
+    return hero;
+  }
+
+  function renderNowHeroCarousel(target, heroes) {
+    const sec = document.createElement('section');
+    sec.className = 'section-block';
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.innerHTML =
+      '<span class="icon">●</span>' +
+      '<span>' + esc(I18N.cc_now_label || 'Now') + '</span>' +
+      '<span class="count">' +
+        esc(humanizeAge(heroes[0].init.last_activity_at)) +
+      '</span>';
+    sec.appendChild(lbl);
+
+    const carousel = document.createElement('div');
+    carousel.className = 'now-hero-carousel';
+
+    const hint = document.createElement('div');
+    hint.className = 'hero-carousel-hint';
+    hint.textContent = I18N.cc_hero_wheel_hint || 'scroll to switch';
+    carousel.appendChild(hint);
+
+    const stack = document.createElement('div');
+    stack.className = 'now-hero-stack';
+
+    const cards = heroes.map(h => buildHeroCard(h));
+    cards.forEach((c, i) => {
+      c.setAttribute('data-pos', String(i));
+      stack.appendChild(c);
+    });
+    carousel.appendChild(stack);
+
+    // Pagination controls
+    const ctrls = document.createElement('div');
+    ctrls.className = 'hero-carousel-controls';
+    const prev = document.createElement('button');
+    prev.className = 'arrow';
+    prev.setAttribute('aria-label', 'previous');
+    prev.textContent = '‹';
+    ctrls.appendChild(prev);
+
+    const dotsWrap = document.createElement('div');
+    dotsWrap.style.cssText = 'display: inline-flex; gap: 6px; align-items: center;';
+    for (let i = 0; i < heroes.length; i++) {
+      const d = document.createElement('span');
+      d.className = 'dot' + (i === 0 ? ' active' : '');
+      d.setAttribute('data-idx', String(i));
+      dotsWrap.appendChild(d);
+    }
+    ctrls.appendChild(dotsWrap);
+
+    const counter = document.createElement('span');
+    counter.className = 'hero-counter';
+    counter.textContent = '1 / ' + heroes.length;
+    ctrls.appendChild(counter);
+
+    const next = document.createElement('button');
+    next.className = 'arrow';
+    next.setAttribute('aria-label', 'next');
+    next.textContent = '›';
+    ctrls.appendChild(next);
+
+    carousel.appendChild(ctrls);
+
+    // ---- Carousel state machine ----
+    let cur = 0;
+    const N = cards.length;
+    const SWITCH_COOLDOWN = 380;  // ms between switches
+    let lastSwitchAt = 0;
+
+    function setPositions() {
+      cards.forEach((c, i) => {
+        // Offset from current — wraps around to keep all cards positioned
+        // somewhere in the stack (or behind).
+        let off = (i - cur + N) % N;
+        // Cards beyond position 4 are kept at pos 4 (max-back)
+        const pos = off > 4 ? 4 : off;
+        c.setAttribute('data-pos', String(pos));
+      });
+      dotsWrap.querySelectorAll('.dot').forEach((d, i) => {
+        d.classList.toggle('active', i === cur);
+      });
+      counter.textContent = (cur + 1) + ' / ' + N;
+    }
+
+    function cycle(dir) {
+      const now = performance.now();
+      if (now - lastSwitchAt < SWITCH_COOLDOWN) return;
+      lastSwitchAt = now;
+      if (N <= 1) return;
+      cur = (cur + dir + N) % N;
+      setPositions();
+    }
+
+    function goTo(idx) {
+      if (idx < 0 || idx >= N || idx === cur) return;
+      lastSwitchAt = performance.now();
+      cur = idx;
+      setPositions();
+    }
+
+    prev.addEventListener('click', (ev) => { ev.stopPropagation(); cycle(-1); });
+    next.addEventListener('click', (ev) => { ev.stopPropagation(); cycle(+1); });
+    dotsWrap.addEventListener('click', (ev) => {
+      const dot = ev.target.closest('.dot');
+      if (!dot) return;
+      ev.stopPropagation();
+      goTo(Number(dot.getAttribute('data-idx')));
+    });
+
+    // Wheel handler: when scrolling over the carousel, switch cards
+    // instead of scrolling the page. Throttled by SWITCH_COOLDOWN.
+    // Only active when there are 2+ heroes.
+    if (N > 1) {
+      let wheelAccum = 0;
+      carousel.addEventListener('wheel', (ev) => {
+        // Only intercept when the wheel intent is "switching": large
+        // enough delta. Trackpad ambient noise stays at the page.
+        if (Math.abs(ev.deltaY) < 8 && Math.abs(ev.deltaX) < 8) return;
+        ev.preventDefault();
+        const delta = Math.abs(ev.deltaY) >= Math.abs(ev.deltaX)
+                      ? ev.deltaY : ev.deltaX;
+        wheelAccum += delta;
+        if (Math.abs(wheelAccum) >= 30) {
+          cycle(wheelAccum > 0 ? +1 : -1);
+          wheelAccum = 0;
+        }
+      }, { passive: false });
+    }
+
+    // Keyboard nav when focused
+    carousel.tabIndex = 0;
+    carousel.addEventListener('keydown', (ev) => {
+      if (ev.key === 'ArrowLeft')  { ev.preventDefault(); cycle(-1); }
+      if (ev.key === 'ArrowRight') { ev.preventDefault(); cycle(+1); }
+    });
+
+    setPositions();
+
+    sec.appendChild(carousel);
     target.appendChild(sec);
   }
 
@@ -3439,8 +3878,8 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // ==================================================================
     const cc = collectCommandCenter(workspaces);
 
-    // 1) Now hero — single most-recently-active item, large editorial
-    if (cc.hero) renderNowHero(board, cc.hero);
+    // 1) Now hero — stacked carousel of top-5 most-recently-active items
+    if (cc.heroes && cc.heroes.length) renderNowHeroCarousel(board, cc.heroes);
 
     // 2) Stats row — at-a-glance metrics
     renderStatsRow(board, cc.stats);
