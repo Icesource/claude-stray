@@ -83,6 +83,19 @@ LOCALE = {
         "thread_own_card_label": "主项",
         "focus_zone_label": "正在进行 · Focus",
         "focus_zone_empty": "没有正在进行的工作",
+        "cc_now_label": "现在",
+        "cc_attention_label": "需要处理",
+        "cc_inflow_label": "进行中",
+        "cc_threads_label": "工作线",
+        "cc_done_label": "最近完成",
+        "cc_byworkspace_label": "按工作区浏览全部",
+        "cc_stat_active": "进行中",
+        "cc_stat_blocked": "阻塞",
+        "cc_stat_done": "已交付",
+        "cc_stat_idle": "最近活动",
+        "cc_hero_next_label": "接下来",
+        "cc_hero_done_label": "已完成",
+        "cc_hero_no_tasks": "（尚无任务）",
         "chip_pending_tasks": "{} 项待办",
         "tasks_meta": "{} 个任务 · {} 已完成 · {} 已取消",
         "sessions_meta": "{} 个会话",
@@ -247,6 +260,19 @@ LOCALE = {
         "thread_own_card_label": "Main",
         "focus_zone_label": "In progress · Focus",
         "focus_zone_empty": "Nothing in progress",
+        "cc_now_label": "Now",
+        "cc_attention_label": "Attention",
+        "cc_inflow_label": "In flow",
+        "cc_threads_label": "Threads",
+        "cc_done_label": "Recently shipped",
+        "cc_byworkspace_label": "Browse all by workspace",
+        "cc_stat_active": "Active",
+        "cc_stat_blocked": "Blocked",
+        "cc_stat_done": "Shipped",
+        "cc_stat_idle": "Last activity",
+        "cc_hero_next_label": "Next up",
+        "cc_hero_done_label": "Done",
+        "cc_hero_no_tasks": "(no tasks yet)",
         "chip_pending_tasks": "{} pending",
         "tasks_meta": "{} tasks · {} done · {} cancelled",
         "sessions_meta": "{} sessions",
@@ -1662,6 +1688,493 @@ article.card.full-detail .card-head h3 {
   line-height: 1.18;
 }
 
+/* ========== Command Center sections (DD-014 structural redesign) ===========
+   The dashboard's content is organized by USER INTENT rather than
+   physical workspace. Sections in vertical order:
+     1. now-hero        — single biggest entry: what you're doing right now
+     2. stats-row       — at-a-glance counts (active / blocked / done / idle)
+     3. attention-grid  — items needing action (blockers, pending CR/MR)
+     4. in-flow         — active items not in attention
+     5. threads         — multi-session arcs
+     6. done-rail       — recently shipped, horizontal scroll
+     7. by-workspace    — all-things collapsed accordion (the old layout)
+   Each section is wrapped in `.section-block` with a `.section-label`.
+*/
+
+.section-block {
+  margin-bottom: 28px;
+  animation: card-in 0.5s var(--ease-smooth) backwards;
+}
+.section-label {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  user-select: none;
+}
+.section-label .icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px;
+  border-radius: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.section-label.attention .icon { background: var(--red-bg);
+                                 border-color: color-mix(in srgb, var(--red) 30%, transparent);
+                                 color: var(--red-2); }
+.section-label.inflow .icon    { background: var(--green-bg);
+                                 border-color: color-mix(in srgb, var(--green) 30%, transparent);
+                                 color: var(--green-2); }
+.section-label.threads .icon   { background: var(--accent-bg);
+                                 border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+                                 color: var(--accent-2); }
+.section-label.done .icon      { background: var(--surface-2);
+                                 color: var(--slate); }
+.section-label .count {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--text-mute);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 1. Now hero ---------------------------------------------- */
+.now-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 0;
+  background:
+    radial-gradient(800px 320px at 0% 0%,
+      rgba(99, 102, 241, 0.10) 0%, transparent 60%),
+    radial-gradient(700px 240px at 100% 100%,
+      rgba(16, 185, 129, 0.08) 0%, transparent 55%),
+    var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.6) inset,
+    var(--shadow-3);
+  overflow: hidden;
+  isolation: isolate;
+  cursor: pointer;
+  transition:
+    transform 0.3s var(--ease-smooth),
+    box-shadow 0.3s var(--ease-smooth),
+    border-color 0.2s ease;
+  animation: heroIn 0.7s var(--ease-smooth) backwards;
+}
+@keyframes heroIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+.now-hero:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+  box-shadow:
+    0 24px 56px rgba(99, 102, 241, 0.16),
+    var(--shadow-3);
+}
+.now-hero::before {
+  content: "";
+  position: absolute;
+  top: -120px; right: -80px;
+  width: 360px; height: 360px;
+  background: var(--accent-mesh);
+  border-radius: 50%;
+  opacity: 0.10;
+  filter: blur(50px);
+  z-index: 0;
+  pointer-events: none;
+  animation: floatOrb 22s ease-in-out infinite;
+}
+.now-hero > .hero-left {
+  position: relative;
+  padding: 22px 24px 22px 26px;
+  z-index: 1;
+}
+.now-hero > .hero-right {
+  position: relative;
+  padding: 22px 24px;
+  border-left: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
+  z-index: 1;
+  display: flex; flex-direction: column;
+  gap: 14px;
+}
+.now-hero .hero-kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.now-hero .hero-kicker::before {
+  content: ""; width: 7px; height: 7px;
+  background: var(--green);
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px var(--green-glow),
+              0 0 16px var(--green);
+  animation: dotPulse 2.4s var(--ease-smooth) infinite;
+}
+.now-hero .hero-kicker .hero-ws {
+  color: var(--text-dim);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-left: 6px;
+}
+.now-hero h2.hero-title {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  margin: 0 0 12px;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.now-hero .hero-summary {
+  font-size: 14px;
+  color: var(--text-2);
+  line-height: 1.6;
+  margin: 0 0 16px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.now-hero .hero-progress {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 12px;
+}
+.now-hero .hero-progress .pg-bar {
+  flex: 1;
+  height: 7px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  position: relative;
+  overflow: hidden;
+}
+.now-hero .hero-progress .pg-bar::after {
+  content: ""; position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--pg, 0%);
+  background: linear-gradient(to right, var(--green) 0%, var(--green-2) 100%);
+  border-radius: 999px;
+  box-shadow: 0 0 16px var(--green-glow);
+  transition: width 0.8s var(--ease-smooth);
+}
+.now-hero .hero-progress .pg-stat {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.now-hero .hero-signals {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.now-hero .hero-signals .sig {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11.5px;
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.now-hero .hero-signals .sig.blocker {
+  color: var(--red-2);
+  background: var(--red-bg);
+  border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+.now-hero .hero-signals .sig.pending {
+  color: var(--accent-2);
+  background: var(--accent-bg);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* Hero right panel: vertical task list peek */
+.now-hero .hero-task-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-mute);
+}
+.now-hero .hero-task-list {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column;
+  gap: 6px;
+}
+.now-hero .hero-task-list li {
+  display: flex; align-items: flex-start; gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+  padding: 4px 0;
+}
+.now-hero .hero-task-list li .tk-box {
+  width: 13px; height: 13px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  flex-shrink: 0;
+  margin-top: 3px;
+  position: relative;
+  transition: all 0.15s ease;
+}
+.now-hero .hero-task-list li.done .tk-box {
+  background: var(--green);
+  border-color: var(--green-2);
+}
+.now-hero .hero-task-list li.done .tk-box::after {
+  content: "✓"; color: white;
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 700;
+}
+.now-hero .hero-task-list li.done .tk-text {
+  text-decoration: line-through;
+  color: var(--text-mute);
+}
+.now-hero .hero-task-list li .tk-text {
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+@media (max-width: 900px) {
+  .now-hero { grid-template-columns: 1fr; }
+  .now-hero > .hero-right { border-left: none; border-top: 1px solid var(--border); }
+}
+
+/* ---------- 2. Stats row -------------------------------------------- */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.stat-tile {
+  position: relative;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+  transition:
+    transform 0.25s var(--ease-smooth),
+    box-shadow 0.25s var(--ease-smooth),
+    border-color 0.18s ease;
+  animation: card-in 0.5s var(--ease-smooth) backwards;
+  animation-delay: calc(var(--idx, 0) * 70ms);
+}
+.stat-tile::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.4;
+}
+.stat-tile.active::before  { background: var(--green); opacity: 0.7; }
+.stat-tile.blocked::before { background: var(--red); opacity: 0.7; }
+.stat-tile.done::before    { background: var(--slate); opacity: 0.5; }
+.stat-tile.idle::before    { background: var(--amber); opacity: 0.7; }
+
+.stat-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+  border-color: var(--border-strong);
+}
+.stat-tile .stat-label {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.stat-tile .stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+  display: flex; align-items: baseline; gap: 6px;
+}
+.stat-tile .stat-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-mute);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.stat-tile .stat-hint {
+  font-size: 11px;
+  color: var(--text-mute);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 3. Attention grid --------------------------------------- */
+.attention-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 10px;
+}
+.attention-grid article.card {
+  border-color: color-mix(in srgb, var(--red) 30%, var(--border));
+  background:
+    radial-gradient(500px 200px at 0% 0%,
+      var(--red-bg) 0%, transparent 50%),
+    var(--surface);
+}
+.attention-grid article.card:hover {
+  border-color: color-mix(in srgb, var(--red) 50%, var(--border));
+  box-shadow:
+    0 12px 28px var(--red-glow),
+    var(--shadow-2);
+}
+
+/* ---------- 4. In-flow grid ----------------------------------------- */
+.in-flow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 10px;
+}
+
+/* ---------- 5. Threads list ----------------------------------------- */
+.threads-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+/* ---------- 6. Recently shipped horizontal rail --------------------- */
+.done-rail {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 0 16px;
+  margin: 0 -4px;
+}
+.done-rail::-webkit-scrollbar { height: 6px; }
+.done-rail::-webkit-scrollbar-track { background: var(--surface-2); border-radius: 3px; }
+.done-rail::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+.done-rail::-webkit-scrollbar-thumb:hover { background: var(--text-mute); }
+
+.done-card {
+  flex: 0 0 280px;
+  scroll-snap-align: start;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-1);
+  display: grid;
+  gap: 6px;
+  cursor: pointer;
+  opacity: 0.85;
+  transition:
+    opacity 0.18s ease,
+    transform 0.22s var(--ease-smooth),
+    box-shadow 0.22s var(--ease-smooth),
+    border-color 0.18s ease;
+}
+.done-card:hover {
+  opacity: 1;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+  border-color: var(--border-strong);
+}
+.done-card .dc-kicker {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--green-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.done-card .dc-kicker::before {
+  content: "✓"; color: var(--green); font-size: 11px;
+}
+.done-card .dc-title {
+  font-size: 13.5px; font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.done-card .dc-meta {
+  font-size: 11px;
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  display: flex; justify-content: space-between;
+  letter-spacing: -0.005em;
+}
+
+/* ---------- 7. By workspace (collapsed legacy accordion) ------------ */
+.by-workspace-wrap {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 8px;
+}
+.by-workspace-toggle {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 0;
+  transition: color 0.15s ease;
+}
+.by-workspace-toggle:hover { color: var(--text); }
+.by-workspace-toggle::before {
+  content: "▸";
+  color: var(--text-mute);
+  transition: transform 0.2s var(--ease-spring);
+  font-size: 10px;
+}
+.by-workspace-wrap.expanded .by-workspace-toggle::before {
+  transform: rotate(90deg);
+}
+.by-workspace-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.35s var(--ease-smooth);
+}
+.by-workspace-content > .inner { overflow: hidden; min-height: 0; }
+.by-workspace-wrap.expanded .by-workspace-content { grid-template-rows: 1fr; }
+.by-workspace-wrap.expanded .by-workspace-content > .inner { padding-top: 12px; }
+
 /* ---------- Focus zone · elevated panel with depth ---------- */
 section.focus-zone {
   margin: 18px 0 32px;
@@ -2631,6 +3144,263 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     toastTimer = setTimeout(() => t.classList.remove('show'), 2500);
   }
 
+  // ---------- Command Center helpers --------------------------------
+  function pendingArtsOf(init) {
+    const arts = Array.isArray(init.artifacts) ? init.artifacts : [];
+    return arts.filter(a => a
+      && ['pending', 'open', 'unknown'].indexOf(a.status) !== -1
+      && ['cr', 'mr', 'pr', 'issue'].indexOf(a.type) !== -1);
+  }
+
+  function collectCommandCenter(workspaces) {
+    const allLive = [];
+    for (const ws of workspaces) {
+      for (const init of (ws.initiatives || [])) {
+        if (isDeleted(init.id)) continue;
+        const eff = effective(init.id);
+        const d = eff ? eff.init : init;
+        const status = effectiveStatus(init.id);
+        if (status === 'archived') continue;
+        allLive.push({ init: d, ws_name: ws.name, status });
+      }
+    }
+
+    // Active items, sorted by last activity desc
+    const active = allLive.filter(x => x.status === 'active')
+      .sort((a, b) => (b.init.last_activity_at || '')
+                       .localeCompare(a.init.last_activity_at || ''));
+
+    // Hero = the single most-recent active item (if any).
+    const hero = active[0] || null;
+
+    // Attention = active items with blockers OR pending CR/MR/issue/pr
+    const attention = active.filter(x => {
+      const blockers = Array.isArray(x.init.blockers) ? x.init.blockers : [];
+      return blockers.length > 0 || pendingArtsOf(x.init).length > 0;
+    });
+    const attentionIds = new Set(attention.map(x => x.init.id));
+
+    // In flow = active items NOT the hero AND NOT in attention.
+    // (We DO keep the hero out so it doesn't appear twice on screen.)
+    const inFlow = active.filter(x =>
+      (!hero || x.init.id !== hero.init.id) && !attentionIds.has(x.init.id));
+
+    // Threads — multi-session arcs (level === 'thread'). Separate axis.
+    const threads = allLive.filter(x => (x.init.level || 'card') === 'thread');
+    const threadMembers = {};
+    for (const t of threads) {
+      threadMembers[t.init.id] = allLive
+        .filter(x => x.init.parent_thread_id === t.init.id)
+        .map(x => x.init);
+    }
+
+    // Recently shipped — status=done, sorted by last activity desc.
+    // We don't filter by "within N days" because users want to celebrate
+    // shipped work for a while; the horizontal rail self-limits.
+    const recentlyDone = allLive.filter(x => x.status === 'done')
+      .sort((a, b) => (b.init.last_activity_at || '')
+                       .localeCompare(a.init.last_activity_at || ''))
+      .slice(0, 12);
+
+    // Stats: how many of each
+    const pausedCount = allLive.filter(x => x.status === 'paused').length;
+    const stats = {
+      active: active.length,
+      blocked: attention.length,
+      done: recentlyDone.length,
+      paused: pausedCount,
+      idle: hero
+        ? humanizeAge(hero.init.last_activity_at)
+        : '—',
+    };
+
+    return { hero, attention, inFlow, threads, threadMembers,
+             recentlyDone, stats, totalLive: allLive.length };
+  }
+
+  function makeSection(kind, iconText, label, count) {
+    const sec = document.createElement('section');
+    sec.className = 'section-block section-' + kind;
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label ' + kind;
+    lbl.innerHTML =
+      '<span class="icon">' + esc(iconText) + '</span>' +
+      '<span>' + esc(label) + '</span>' +
+      '<span class="count">' + count + '</span>';
+    sec.appendChild(lbl);
+    return sec;
+  }
+
+  function renderNowHero(target, heroEntry) {
+    const { init, ws_name } = heroEntry;
+    const tasks = (init.tasks || []).map(taskStatus);
+    const pending = tasks.filter(t => t._status === 'pending');
+    const done = tasks.filter(t => t._status === 'done');
+    const total = tasks.length;
+    const blockers = Array.isArray(init.blockers) ? init.blockers : [];
+    const pendingArts = pendingArtsOf(init);
+    const pct = total > 0 ? Math.round((done.length / total) * 100) : 0;
+
+    const sec = document.createElement('section');
+    sec.className = 'section-block';
+    const lbl = document.createElement('div');
+    lbl.className = 'section-label';
+    lbl.innerHTML =
+      '<span class="icon">●</span>' +
+      '<span>' + esc(I18N.cc_now_label || 'Now') + '</span>' +
+      '<span class="count">' + esc(humanizeAge(init.last_activity_at)) + '</span>';
+    sec.appendChild(lbl);
+
+    const hero = document.createElement('article');
+    hero.className = 'now-hero';
+    hero.setAttribute('data-init-id', init.id);
+
+    // Left side: kicker + title + summary + progress + signal pills
+    const left = document.createElement('div');
+    left.className = 'hero-left';
+    const kicker = document.createElement('div');
+    kicker.className = 'hero-kicker';
+    kicker.innerHTML = '<span>NOW · ACTIVE</span>' +
+      '<span class="hero-ws">in ' + esc(ws_name) + '</span>';
+    left.appendChild(kicker);
+
+    const ttl = document.createElement('h2');
+    ttl.className = 'hero-title';
+    ttl.textContent = init.name || '';
+    left.appendChild(ttl);
+
+    if (init.summary || init.progress) {
+      const sum = document.createElement('p');
+      sum.className = 'hero-summary';
+      sum.textContent = init.summary || init.progress;
+      left.appendChild(sum);
+    }
+
+    if (total > 0) {
+      const prog = document.createElement('div');
+      prog.className = 'hero-progress';
+      prog.innerHTML = '<div class="pg-bar" style="--pg:' + pct + '%"></div>' +
+        '<span class="pg-stat">' + done.length + '/' + total + ' · ' + pct + '%</span>';
+      left.appendChild(prog);
+    }
+
+    const sigs = [];
+    if (blockers.length > 0) {
+      sigs.push('<span class="sig blocker">⚠ ' + blockers.length +
+        (blockers.length === 1 ? ' blocker' : ' blockers') + '</span>');
+    }
+    if (pendingArts.length > 0) {
+      sigs.push('<span class="sig pending">↗ ' + pendingArts.length +
+        ' pending</span>');
+    }
+    if (pending.length > 0) {
+      sigs.push('<span class="sig">◐ ' + pending.length + ' todos</span>');
+    }
+    if (sigs.length > 0) {
+      const sg = document.createElement('div');
+      sg.className = 'hero-signals';
+      sg.innerHTML = sigs.join('');
+      left.appendChild(sg);
+    }
+    hero.appendChild(left);
+
+    // Right side: top 5 pending tasks (or recent done if no pending)
+    const right = document.createElement('div');
+    right.className = 'hero-right';
+    const rlbl = document.createElement('div');
+    rlbl.className = 'hero-task-label';
+    const showTasks = pending.length > 0 ? pending.slice(0, 6)
+                                          : done.slice(0, 6);
+    rlbl.textContent = pending.length > 0
+      ? (I18N.cc_hero_next_label || 'Next up') +
+        ' · ' + Math.min(pending.length, 6)
+      : (I18N.cc_hero_done_label || 'Done') +
+        ' · ' + Math.min(done.length, 6);
+    right.appendChild(rlbl);
+    const ul = document.createElement('ul');
+    ul.className = 'hero-task-list';
+    if (showTasks.length === 0) {
+      const li = document.createElement('li');
+      li.style.color = 'var(--text-mute)';
+      li.style.fontStyle = 'italic';
+      li.textContent = I18N.cc_hero_no_tasks || '(no tasks yet)';
+      ul.appendChild(li);
+    }
+    for (const t of showTasks) {
+      const li = document.createElement('li');
+      li.className = t._status === 'done' ? 'done' : '';
+      li.innerHTML = '<span class="tk-box"></span>' +
+        '<span class="tk-text">' + esc(t.title || '') + '</span>';
+      ul.appendChild(li);
+    }
+    right.appendChild(ul);
+    hero.appendChild(right);
+
+    hero.addEventListener('click', (ev) => {
+      if (ev.target.closest('button, a, [data-open-modal]')) return;
+      promoteChipToInspect(init.id);
+    });
+
+    sec.appendChild(hero);
+    target.appendChild(sec);
+  }
+
+  function renderStatsRow(target, stats) {
+    const row = document.createElement('div');
+    row.className = 'stats-row';
+    const tiles = [
+      { cls: 'active',  label: I18N.cc_stat_active  || 'Active',
+        value: stats.active, hint: stats.active === 0 ? '—' : 'in flight' },
+      { cls: 'blocked', label: I18N.cc_stat_blocked || 'Blocked',
+        value: stats.blocked,
+        hint: stats.blocked === 0 ? 'all clear' : 'needs unblock' },
+      { cls: 'done',    label: I18N.cc_stat_done    || 'Shipped',
+        value: stats.done,
+        hint: stats.done === 0 ? '—' : 'recently' },
+      { cls: 'idle',    label: I18N.cc_stat_idle    || 'Last activity',
+        value: stats.idle, hint: stats.idle === '—' ? '—' : 'ago',
+        isText: true },
+    ];
+    tiles.forEach((t, idx) => {
+      const tile = document.createElement('div');
+      tile.className = 'stat-tile ' + t.cls;
+      tile.style.setProperty('--idx', idx);
+      let valHtml;
+      if (t.isText) {
+        valHtml = '<span style="font-size: 18px; font-weight: 600;">' +
+          esc(String(t.value)) + '</span>';
+      } else {
+        valHtml = '<span>' + esc(String(t.value)) + '</span>';
+        if (t.cls === 'blocked' && stats.blocked === 0) {
+          valHtml = '<span style="color: var(--green);">0</span>' +
+            '<span class="stat-unit" style="color: var(--green);">' + esc(t.hint) + '</span>';
+        }
+      }
+      tile.innerHTML =
+        '<div class="stat-label">' + esc(t.label) + '</div>' +
+        '<div class="stat-value">' + valHtml + '</div>' +
+        (t.isText || (t.cls === 'blocked' && stats.blocked === 0)
+          ? '' : '<div class="stat-hint">' + esc(t.hint) + '</div>');
+      row.appendChild(tile);
+    });
+    target.appendChild(row);
+  }
+
+  function renderDoneCard(init, ws_name) {
+    const card = document.createElement('div');
+    card.className = 'done-card';
+    card.setAttribute('data-init-id', init.id);
+    card.innerHTML =
+      '<div class="dc-kicker">' + esc(ws_name) + '</div>' +
+      '<div class="dc-title">' + esc(init.name || '') + '</div>' +
+      '<div class="dc-meta">' +
+        '<span>' + esc(humanizeAge(init.last_activity_at)) + '</span>' +
+        '<span>' + ((init.tasks || []).length) + ' tasks</span>' +
+      '</div>';
+    card.addEventListener('click', () => promoteChipToInspect(init.id));
+    return card;
+  }
+
   // ---------- Render -----------------------------------------------------
   function render() {
     const board = document.getElementById('board');
@@ -2662,109 +3432,105 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       }
     }
 
-    // ---- Focus zone (top of page) -------------------------------------
-    // Pulls the most-recently-active "active" initiatives from across
-    // ALL workspaces. Hero presentation: title + workspace label +
-    // pending task / blocker pill summary. Click goes straight into
-    // the modal card view.
-    //
-    // Heuristic: status === 'active', sort by last_activity_at desc,
-    // take top 5. If fewer than 1 active, skip the section entirely
-    // (no need to advertise emptiness above the workspace rows).
-    const focusCandidates = [];
-    for (const ws of workspaces) {
-      for (const init of (ws.initiatives || [])) {
-        if (isDeleted(init.id)) continue;
-        const eff = effective(init.id);
-        const d = eff ? eff.init : init;
-        if (d.status !== 'active') continue;
-        if (effectiveStatus(init.id) !== 'active') continue;
-        focusCandidates.push({ init: d, ws_name: ws.name });
-      }
-    }
-    focusCandidates.sort((a, b) =>
-      (b.init.last_activity_at || '').localeCompare(
-        a.init.last_activity_at || ''));
-    const focusTop = focusCandidates.slice(0, 5);
-    if (focusTop.length > 0) {
-      // Volume / issue tagline. Date stamps the issue.
-      const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const fz = document.createElement('section');
-      fz.className = 'focus-zone';
-      const fhead = document.createElement('div');
-      fhead.className = 'focus-head';
-      fhead.innerHTML =
-        '<span class="fz-roman">Front Page</span>' +
-        '<span class="fz-tag">' + esc(I18N.focus_zone_label || 'In progress') + '</span>' +
-        '<span class="fz-count">' + yyyy + '·' + mm + '·' + dd +
-          '  ·  ' + focusTop.length + ' / ' + focusCandidates.length + '</span>';
-      fz.appendChild(fhead);
+    // ==================================================================
+    // Command Center — content organized by USER INTENT, not workspace.
+    // Sections in vertical order: now-hero, stats, attention, in-flow,
+    // threads, recently-shipped, by-workspace (collapsed accordion).
+    // ==================================================================
+    const cc = collectCommandCenter(workspaces);
 
+    // 1) Now hero — single most-recently-active item, large editorial
+    if (cc.hero) renderNowHero(board, cc.hero);
+
+    // 2) Stats row — at-a-glance metrics
+    renderStatsRow(board, cc.stats);
+
+    // 3) Attention — items with blockers or pending CR/MR (action needed)
+    if (cc.attention.length > 0) {
+      const sec = makeSection('attention', '⚠', I18N.cc_attention_label || 'Attention',
+                               cc.attention.length);
       const grid = document.createElement('div');
-      grid.className = 'focus-grid';
-
-      focusTop.forEach(({ init, ws_name }, idx) => {
-        const fc = document.createElement('div');
-        fc.className = 'focus-card' + (idx === 0 ? ' hero' : '');
-        fc.setAttribute('data-init-id', init.id);
-        fc.style.setProperty('--idx', idx);
-
-        const tasks = (init.tasks || []).map(taskStatus);
-        const pending = tasks.filter(t => t._status === 'pending').length;
-        const done = tasks.filter(t => t._status === 'done').length;
-        const total = tasks.length;
-        const blockers = Array.isArray(init.blockers) ? init.blockers : [];
-
-        const kicker = document.createElement('div');
-        kicker.className = 'focus-card-kicker';
-        const ageTxt = humanizeAge(init.last_activity_at);
-        kicker.innerHTML = '<span>● ACTIVE</span>' +
-          '<span class="ws-name">/ ' + esc(ws_name) + '</span>' +
-          '<span>· ' + esc(ageTxt) + '</span>';
-        fc.appendChild(kicker);
-
-        const ttl = document.createElement('div');
-        ttl.className = 'focus-card-title';
-        ttl.textContent = init.name || '';
-        fc.appendChild(ttl);
-
-        if (idx === 0 && (init.summary || init.progress)) {
-          const sum = document.createElement('div');
-          sum.className = 'focus-card-summary';
-          sum.textContent = init.summary || init.progress;
-          fc.appendChild(sum);
-        }
-
-        const sigs = [];
-        if (total > 0) {
-          sigs.push('<span class="sig progress">' + done + '/' + total +
-            ' · ' + Math.round((done / total) * 100) + '%</span>');
-        }
-        if (pending > 0) {
-          sigs.push('<span class="sig pending">◐ ' + pending + ' pending</span>');
-        }
-        if (blockers.length > 0) {
-          sigs.push('<span class="sig blocker">⚠ ' + blockers.length +
-            (blockers.length === 1 ? ' blocker' : ' blockers') + '</span>');
-        }
-        if (sigs.length) {
-          const sg = document.createElement('div');
-          sg.className = 'focus-card-signals';
-          sg.innerHTML = sigs.join('');
-          fc.appendChild(sg);
-        }
-
-        fc.addEventListener('click', () => promoteChipToInspect(init.id));
-        grid.appendChild(fc);
-      });
-
-      fz.appendChild(grid);
-      board.appendChild(fz);
+      grid.className = 'attention-grid';
+      for (const x of cc.attention) {
+        grid.appendChild(renderCard(x.init.id));
+      }
+      sec.appendChild(grid);
+      board.appendChild(sec);
     }
 
+    // 4) In flow — active items not in attention, not the hero
+    if (cc.inFlow.length > 0) {
+      const sec = makeSection('inflow', '◆', I18N.cc_inflow_label || 'In flow',
+                               cc.inFlow.length);
+      const grid = document.createElement('div');
+      grid.className = 'in-flow-grid';
+      for (const x of cc.inFlow) {
+        grid.appendChild(renderCard(x.init.id));
+      }
+      sec.appendChild(grid);
+      board.appendChild(sec);
+    }
+
+    // 5) Threads — multi-session arcs (kept as their own narrative)
+    if (cc.threads.length > 0) {
+      const sec = makeSection('threads', '⌘', I18N.cc_threads_label || 'Threads',
+                               cc.threads.length);
+      const list = document.createElement('div');
+      list.className = 'threads-list';
+      for (const x of cc.threads) {
+        list.appendChild(renderThreadDeck(x.init,
+          cc.threadMembers[x.init.id] || []));
+      }
+      sec.appendChild(list);
+      board.appendChild(sec);
+    }
+
+    // 6) Recently shipped — horizontal scroll rail of just-done items
+    if (cc.recentlyDone.length > 0) {
+      const sec = makeSection('done', '✓', I18N.cc_done_label || 'Recently shipped',
+                               cc.recentlyDone.length);
+      const rail = document.createElement('div');
+      rail.className = 'done-rail';
+      for (const x of cc.recentlyDone) {
+        rail.appendChild(renderDoneCard(x.init, x.ws_name));
+      }
+      sec.appendChild(rail);
+      board.appendChild(sec);
+    }
+
+    // 7) By workspace — the old layout, collapsed by default. Contains
+    // everything including the entries already shown above. Useful when
+    // the user wants to navigate by physical project location.
+    const bw = document.createElement('div');
+    const bwOpen = collapsedWs.has('__by_workspace_open__');
+    bw.className = 'by-workspace-wrap' + (bwOpen ? ' expanded' : '');
+    const bwTog = document.createElement('div');
+    bwTog.className = 'by-workspace-toggle';
+    bwTog.innerHTML = '<span>' + esc(I18N.cc_byworkspace_label ||
+      'Browse all by workspace') + '</span>' +
+      '<span class="count" style="color: var(--text-mute); font-family: var(--font-mono); margin-left: auto; font-size: 11px;">' +
+      cc.totalLive + '</span>';
+    bw.appendChild(bwTog);
+    const bwContent = document.createElement('div');
+    bwContent.className = 'by-workspace-content';
+    const bwInner = document.createElement('div');
+    bwInner.className = 'inner';
+    bwContent.appendChild(bwInner);
+    bw.appendChild(bwContent);
+    bwTog.addEventListener('click', () => {
+      if (collapsedWs.has('__by_workspace_open__'))
+        collapsedWs.delete('__by_workspace_open__');
+      else collapsedWs.add('__by_workspace_open__');
+      saveCollapsed();
+      bw.classList.toggle('expanded');
+    });
+    board.appendChild(bw);
+
+    // The legacy workspace-grouped layout now lives INSIDE the
+    // by-workspace accordion. Cards rendered here are duplicates of
+    // those in the Command Center sections above — that's intentional:
+    // this section is a "filesystem-view" fallback, not the primary surface.
+    const __bwTarget = bwInner;
     workspaces.forEach((ws, wsIdx) => {
       // Split: archived inits get peeled off into archivedList
       const liveInits = [];
@@ -2896,7 +3662,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       }
 
       wsSec.appendChild(wsBody);
-      board.appendChild(wsSec);
+      __bwTarget.appendChild(wsSec);  // into by-workspace accordion, not board
     });
 
     // Also pull in items persisted to cache/archive/ (already swept from
