@@ -759,6 +759,66 @@ def parse_ai_output(raw: str) -> dict:
     return json.loads(raw)
 
 
+def enforce_carry_forward_initiatives(new_mm: dict, prior: dict,
+                                       deleted_ids: list[str]) -> int:
+    """DD-014 — mechanical guarantee that every PRIOR initiative survives
+    a classify round (unless explicitly in DELETED_IDS).
+
+    Background: prompts/classify-cross-session.md §1 instructs AI to
+    "carry forward all PRIOR initiatives", but AI sometimes drops them
+    silently — observed 2026-05-29: 27 initiatives dropped to 8 across
+    three successive classify runs as AI omitted entries from its
+    output, and each run's PRIOR is the previous output, so dropped
+    items vanish permanently.
+
+    This post-process scans PRIOR for any initiative id that is missing
+    from new_mm's output and re-inserts it into the appropriate
+    workspace (preserving id, name, sessions, level, tasks, artifacts,
+    blockers — basically a byte-identical carry-forward).
+
+    The DELETED_IDS list is honored: ids the user explicitly tombstoned
+    are NOT carried forward.
+
+    Returns the count of initiatives re-inserted (for logging).
+    """
+    deleted_set = set(deleted_ids or [])
+
+    # Index AI output's initiatives by id
+    new_ids = set()
+    for ws in (new_mm.get("workspaces") or []):
+        for i in (ws.get("initiatives") or []):
+            iid = i.get("id")
+            if iid:
+                new_ids.add(iid)
+
+    # Lookup AI's workspaces by name so we can re-attach restored inits
+    new_ws_by_name = {w.get("name"): w for w in (new_mm.get("workspaces") or [])}
+
+    restored = 0
+    for ws_prior in (prior.get("workspaces") or []):
+        ws_name = ws_prior.get("name")
+        for init in (ws_prior.get("initiatives") or []):
+            iid = init.get("id")
+            if not iid or iid in new_ids or iid in deleted_set:
+                continue
+            # AI dropped this initiative — put it back. Find or create
+            # its workspace in new_mm.
+            target_ws = new_ws_by_name.get(ws_name)
+            if target_ws is None:
+                target_ws = {
+                    "name": ws_name,
+                    "cwd": ws_prior.get("cwd"),
+                    "last_activity_at": ws_prior.get("last_activity_at"),
+                    "initiatives": [],
+                }
+                (new_mm.setdefault("workspaces", [])).append(target_ws)
+                new_ws_by_name[ws_name] = target_ws
+            target_ws.setdefault("initiatives", []).append(init)
+            restored += 1
+
+    return restored
+
+
 def enforce_cold_and_terminal_monotone(new_mm: dict, prior: dict,
                                         hot_sids: list[str]) -> int:
     """
@@ -1639,6 +1699,12 @@ def main() -> int:
     repaired = repair_short_session_ids(new_mm, hot_sids)
     if repaired:
         print(f"[classify] repaired {repaired} truncated session_ids")
+    # Carry-forward must run FIRST: if AI dropped initiatives, restore
+    # them so the downstream monotone/status passes see a complete set.
+    restored = enforce_carry_forward_initiatives(new_mm, prior, deleted_ids)
+    if restored:
+        print(f"[classify] !! carry-forward restored {restored} "
+              f"initiative(s) AI dropped from PRIOR", file=sys.stderr)
     rule_repairs = enforce_cold_and_terminal_monotone(new_mm, prior, hot_sids)
     if rule_repairs:
         print(f"[classify] enforced cold/terminal-monotone rules: {rule_repairs} repairs")
