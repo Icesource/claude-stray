@@ -226,9 +226,20 @@ cockpit.
 |---|---|---|
 | user sent a prompt, AI working | `UserPromptSubmit` | `state: running`, `started_at` |
 | AI turn ended | `Stop` | `state: idle`, `idle_since` |
-| AI needs permission / input | `Notification` | `state: needs_you`, `reason` |
+| AI blocked on you | `Notification` (`permission_prompt` / `elicitation_dialog`) | `state: needs_you` |
+| AI idle, waiting for prompt | `Notification` (`idle_prompt`) | `state: idle` |
 | session opened | `SessionStart` | register; capture **zellij coords** (`$ZELLIJ_SESSION_NAME`, `$ZELLIJ_PANE_ID`, cwd) |
 | session ended | `SessionEnd` | deregister |
+
+> **Implemented (Stage 1, 2026-06-01).** Backend done: `bin/live-state.py`
+> (writer) + `bin/live-hook.sh` (pipeline-free hook), wired in
+> `refresh-bg.sh`, registered by `install.sh` (UserPromptSubmit /
+> Notification / SessionEnd → live-hook; Stop / SessionStart already via
+> refresh-bg), and served by `serve.py` `GET /api/live` (snapshot) +
+> `GET /api/events` (SSE). Mapping above verified against the hooks docs:
+> `Notification` carries `notification_type` (no message field); there is
+> no "thinking" hook, so `running` persists from UserPromptSubmit to Stop.
+> Frontend consumer (EventSource → per-session status) lands with the UI port.
 
 `idle_since` powers the cockpit's most important sort: within the
 idle/needs-you bands, **the longest-waiting session ranks first** — this

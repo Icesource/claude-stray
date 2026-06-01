@@ -24,7 +24,7 @@
 | [DD-013](../../design/DD-013-status-is-not-frozen.md) | Initiative 状态是机械派生的,不是粘滞 flag | Accepted |
 | [DD-014](../../design/DD-014-three-tier-work-items.md) | 三层工作项(thread / card / chip)+ hero 布局 | Accepted(V1)· Deferred(V2)· 主方向被 DD-015 取代 |
 | [DD-015](DD-015-attention-cockpit.md) | 注意力驾驶舱:实时会话遥测 + 可交互 web 终端 | **Proposed —— 最高优先级** |
-| DD-016 | 身份模型(session_id 原子 + 持久化成员集合;AI 做标注) | *预留 —— 已在 [DD-015 身份模型小节](DD-015-attention-cockpit.md) 勾勒,完整文档待补* |
+| [DD-016](../../design/DD-016-identity-model.md) | 稳定的 initiative 身份:session_id 原子 + 持久化成员集合;AI 做标注 | **Proposed —— 设计阶段**(DD-015 Stage 1 之后) |
 | [DD-017](../../design/DD-017-cr-watcher.md) | CR/MR 监视器:定时轮询评审状态→任务、新评论自动交给 AI 分诊 | **Proposed —— idea 阶段**(DD-007 的理想首个 POC) |
 
 ## 模板
