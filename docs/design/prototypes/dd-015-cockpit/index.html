@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>claude-stray · 注意力驾驶舱 (DD-015 原型)</title>
+<style>
+  :root{
+    --bg:#141417; --bg-elev:#1b1b21; --bg-row:#191920; --bg-row-hover:#20212a;
+    --hair:#2a2a32; --hair-soft:#232329;
+    --ink:#eae8e2; --ink-dim:#9a9aa6; --ink-faint:#62626c;
+    --needs:#ffb454; --needs-edge:#ff9f43; --needs-bg:rgba(255,168,64,.065);
+    --run:#56d3b6; --run-bg:rgba(86,211,182,.05);
+    --idle:#7c7c88; --done:#74b07f; --paused:#6b6b76;
+    --mr:#6fb4e8; --cr:#bd92e6; --cd:#e0a36b;
+    --topbar-bg:rgba(20,20,23,.92); --disc-bg:rgba(20,20,23,.85);
+    --needs-glow:rgba(255,168,64,.5); --run-glow:rgba(86,211,182,.6);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  }
+  html[data-theme="light"]{
+    --bg:#f5f4f0; --bg-elev:#ffffff; --bg-row:#fbfaf7; --bg-row-hover:#eeece7;
+    --hair:#e3e0d9; --hair-soft:#edece6;
+    --ink:#22242b; --ink-dim:#5f6470; --ink-faint:#9a9aa4;
+    --needs:#c0791d; --needs-edge:#cf872a; --needs-bg:rgba(192,121,29,.09);
+    --run:#1b937e; --run-bg:rgba(27,147,126,.09);
+    --idle:#8a8b95; --done:#3e9a54; --paused:#9a9aa4;
+    --mr:#2f74bd; --cr:#7a50b3; --cd:#a86c1c;
+    --topbar-bg:rgba(245,244,240,.9); --disc-bg:rgba(245,244,240,.9);
+    --needs-glow:rgba(192,121,29,.22); --run-glow:rgba(27,147,126,.25);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--ink);font-family:var(--sans);-webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
+  a{color:inherit;text-decoration:none}
+
+  /* topbar */
+  .topbar{position:sticky;top:0;z-index:20;background:var(--topbar-bg);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--hair);display:flex;align-items:center;gap:28px;padding:13px 28px}
+  .brand{display:flex;align-items:baseline;gap:9px;white-space:nowrap}
+  .brand .mark{width:9px;height:9px;border-radius:2px;background:var(--needs);box-shadow:0 0 8px 1px var(--needs-glow);transform:translateY(1px)}
+  .brand .name{font-family:var(--mono);font-size:13px;letter-spacing:.04em;color:var(--ink-dim)}
+  .brand .sub{font-size:12px;color:var(--ink-faint)}
+  .hud{display:flex;align-items:baseline;gap:20px;margin-left:4px}
+  .hud .stat{display:flex;align-items:baseline;gap:6px}
+  .hud .n{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.01em}
+  .hud .lbl{font-size:12.5px;color:var(--ink-dim)}
+  .hud .sep{color:var(--hair);font-size:16px}
+  .hud .k-needs .n,.hud .k-needs .lbl{color:var(--needs)} .hud .k-run .n{color:var(--run)} .hud .k-idle .n{color:var(--idle)}
+  .topbar .right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .viewtog{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
+  .viewtog button{font-family:var(--sans);font-size:12px;padding:5px 12px;background:transparent;color:var(--ink-dim);border:none;border-right:1px solid var(--hair);cursor:pointer}
+  .viewtog button:last-child{border-right:none}
+  .viewtog button.on{background:var(--bg-elev);color:var(--ink)}
+  .clock{font-family:var(--mono);font-size:12px;color:var(--ink-faint);white-space:nowrap}
+  .mocktag{font-size:11px;color:var(--ink-faint);border:1px dashed var(--hair);border-radius:4px;padding:3px 8px;white-space:nowrap}
+
+  /* mindmap nav (全部 → 项目 → 任务) */
+  .minimap{max-width:1080px;margin:0 auto;padding:10px 24px 0}
+  body[data-view="attention"] .minimap{display:none}
+  .mind-head{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--ink-faint);cursor:pointer;display:inline-flex;gap:7px;align-items:center;padding:4px 2px;user-select:none}
+  .mind-head:hover{color:var(--ink-dim)} .mind-head .mh-chev{transition:transform .15s}
+  .minimap.mclosed .mh-chev{transform:rotate(-90deg)} .minimap.mclosed .mind{display:none}
+  .mind{position:relative;display:flex;align-items:center;gap:56px;padding:12px 4px 8px;overflow-x:auto}
+  .mind-links{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0}
+  .mind-root{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);border:1px solid var(--hair);border-radius:9px;padding:9px 13px;background:var(--bg-row);flex:none}
+  .mind-root b{font-size:17px;color:var(--ink);font-weight:600}
+  .mind-branches{position:relative;z-index:1;display:flex;flex-direction:column;gap:9px}
+  .mbranch{display:flex;align-items:center;gap:16px}
+  .mnode{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--hair);border-radius:8px;padding:7px 11px;background:var(--bg-row);cursor:pointer;white-space:nowrap;flex:none;transition:border-color .12s}
+  .mnode:hover{border-color:var(--ink-faint)} .mnode[data-urg="2"]{border-color:rgba(255,168,64,.4);background:var(--needs-bg)}
+  .mnode .mname{font-family:var(--mono);font-size:11.5px;color:var(--ink);max-width:150px;overflow:hidden;text-overflow:ellipsis}
+  .mnode .mc{font-size:10.5px;color:var(--ink-faint)}
+  .mleaves{display:flex;gap:6px;flex-wrap:wrap;max-width:540px}
+  .mleaf{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--ink-dim);border:1px solid var(--hair-soft);border-radius:5px;padding:2px 8px;background:var(--bg);max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  .mleaf:hover{border-color:var(--ink-faint);color:var(--ink)}
+
+  /* animated status icons */
+  .sic{display:inline-flex;align-items:center;justify-content:center;position:relative;flex:none;vertical-align:middle}
+  .row>.sic,.proj-head>.sic{justify-self:center}
+  .spin{animation:spin .9s linear infinite;transform-origin:center}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .ndot .core{position:absolute;inset:26%;border-radius:50%;background:var(--needs);box-shadow:0 0 6px 1px var(--needs-glow)}
+  .ndot .ping{position:absolute;inset:8%;border-radius:50%;border:1.5px solid var(--needs);animation:ping 1.7s cubic-bezier(0,0,.2,1) infinite}
+  @keyframes ping{0%{transform:scale(.5);opacity:.9}80%,100%{transform:scale(1.6);opacity:0}}
+  .idot{border-radius:50%;border:1.6px solid var(--idle);box-sizing:border-box}
+
+  /* board */
+  .board{max-width:1080px;margin:0 auto;padding:8px 24px 80px}
+
+  /* attention bands */
+  .band{margin-top:18px}
+  .band-head{display:flex;align-items:center;gap:10px;padding:6px 8px;user-select:none}
+  .band-head .glyph{font-size:13px;width:16px;text-align:center}
+  .band-head .htxt{font-size:12.5px;letter-spacing:.06em;font-weight:600}
+  .band-head .cnt{font-family:var(--mono);font-size:12px;color:var(--ink-faint)}
+  .band-head .rule{flex:1;height:1px;background:var(--hair-soft)}
+  .band-head .chev{font-size:11px;color:var(--ink-faint);transition:transform .15s}
+  .band-head.clickable{cursor:pointer}
+  .band.collapsed .chev{transform:rotate(-90deg)} .band.collapsed .rows{display:none}
+  .band[data-band="needs_you"] .band-head .glyph,.band[data-band="needs_you"] .band-head .htxt{color:var(--needs)}
+  .band[data-band="running"] .band-head .glyph,.band[data-band="running"] .band-head .htxt{color:var(--run)}
+  .band[data-band="idle"] .band-head .glyph,.band[data-band="idle"] .band-head .htxt{color:var(--idle)}
+  .band[data-band="done"] .band-head .glyph,.band[data-band="done"] .band-head .htxt{color:var(--done)}
+  .band[data-band="paused"] .band-head .glyph,.band[data-band="paused"] .band-head .htxt{color:var(--paused)}
+
+  /* tiers */
+  .tier-head{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+    color:var(--ink-faint);text-transform:uppercase;margin:20px 8px 4px;user-select:none}
+  .tier-head .tx{white-space:nowrap}
+  .tier-head::after{content:'';flex:1;height:1px;background:var(--hair-soft)}
+  .tier-head.side{opacity:.75}
+  .zone[data-tier="side"] .proj-head{padding:9px 12px}
+  .zone[data-tier="side"] .pname{color:var(--ink-dim)}
+
+  /* project stream line */
+  .proj{margin-top:6px;border:1px solid transparent;border-radius:10px}
+  .proj.dragging{opacity:.45}
+  .proj.flash{outline:1px solid var(--needs-edge);outline-offset:-1px}
+  .proj-head{display:grid;grid-template-columns:18px 14px 11px minmax(96px,168px) auto 1fr auto;
+    align-items:center;gap:11px;padding:12px 12px;border-radius:9px;cursor:pointer;transition:background .12s;min-height:46px}
+  .proj-head:hover{background:var(--bg-row-hover)}
+  .dragh{justify-self:center;color:var(--hair);font-size:13px;cursor:grab;line-height:1}
+  .proj-head:hover .dragh{color:var(--ink-faint)}
+  .proj-head .chev{font-size:11px;color:var(--ink-faint);justify-self:center;transition:transform .15s}
+  .proj:not(.collapsed) .proj-head .chev{transform:rotate(90deg)}
+  .pdot{width:9px;height:9px;border-radius:50%;justify-self:center}
+  .pdot.needs_you{background:var(--needs);box-shadow:0 0 6px 0 rgba(255,168,64,.4)}
+  .pdot.running{background:var(--run);animation:pulse 1.9s ease-in-out infinite}
+  .pdot.idle{background:transparent;border:1.5px solid var(--idle)}
+  .pname{font-family:var(--mono);font-size:13px;color:var(--ink);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pcounts{font-size:11.5px;color:var(--ink-faint);white-space:nowrap}
+  .pcounts .amb{color:var(--needs)} .pcounts .run{color:var(--run)} .pcounts .dim{color:var(--ink-faint)}
+  .pstrip{display:flex;gap:6px;justify-self:end;flex-wrap:wrap;justify-content:flex-end;align-items:center;max-height:46px;overflow:hidden}
+  .it{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border:1px solid var(--hair);border-radius:5px;
+    font-size:11px;color:var(--ink-dim);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bg-row)}
+  .it.more{color:var(--ink-faint);border-style:dashed}
+  .ptimer{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);justify-self:end;white-space:nowrap}
+  .proj-head[data-urg="2"]{box-shadow:inset 3px 0 0 var(--needs-edge);background:var(--needs-bg);border-radius:9px}
+  .proj-head[data-urg="2"] .ptimer{color:var(--needs)}
+  .proj-head[data-urg="2"]:hover{background:rgba(255,168,64,.1)}
+  .proj:not(.collapsed){background:rgba(255,255,255,.012);padding-bottom:6px;margin-top:10px}
+  .proj:not(.collapsed) .pstrip{display:none}
+  .proj .rows{padding:0 8px}
+  .proj.collapsed .rows{display:none}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(86,211,182,0)}50%{box-shadow:0 0 8px 1px rgba(86,211,182,.6)}}
+
+  /* row */
+  .row{display:grid;grid-template-columns:14px minmax(168px,250px) 1fr auto 52px 30px;align-items:center;gap:13px;
+    padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:background .12s}
+  .row:hover{background:var(--bg-row-hover)}
+  .dot{width:9px;height:9px;border-radius:50%;justify-self:center}
+  .dot.needs_you{background:var(--needs);box-shadow:0 0 6px 0 rgba(255,168,64,.4)}
+  .dot.running{background:var(--run);animation:pulse 1.9s ease-in-out infinite}
+  .dot.idle{background:transparent;border:1.5px solid var(--idle)}
+  .dot.done{background:var(--done)} .dot.paused{background:transparent;border:1.5px solid var(--paused)}
+  .name{min-width:0}
+  .name .t{font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .name .ws{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:1px;display:flex;align-items:center;gap:6px}
+  .name .ws .lv{color:var(--hair);border:1px solid var(--hair);border-radius:3px;padding:0 4px;font-size:9.5px}
+  body[data-view="project"] .name .ws{display:none}
+  .mid{min-width:0;font-size:12.5px;color:var(--ink-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:9px}
+  .mid.needs_you{color:var(--needs)} .mid.idle{color:var(--ink-faint)}
+  .mid .rtext{overflow:hidden;text-overflow:ellipsis}
+  .bar{flex:none;width:64px;height:5px;border-radius:3px;background:var(--hair);overflow:hidden}
+  .bar>i{display:block;height:100%;background:var(--run);border-radius:3px}
+  .pct{font-family:var(--mono);font-size:11px;color:var(--run);flex:none}
+  .chips{display:flex;gap:5px;align-items:center;justify-self:end;flex-wrap:nowrap}
+  .chip{font-family:var(--mono);font-size:10.5px;line-height:1;padding:3px 6px;border:1px solid var(--hair);border-radius:4px;color:var(--ink-dim);white-space:nowrap;display:inline-flex;gap:4px;align-items:center}
+  .chip .k{font-weight:700} .chip.mr .k{color:var(--mr)} .chip.cr .k{color:var(--cr)} .chip.cd .k{color:var(--cd)}
+  .chip.link:hover{border-color:var(--ink-faint);color:var(--ink)} .chip.more{color:var(--ink-faint);border-style:dashed}
+  .timer{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);text-align:right;justify-self:end}
+  .row[data-band="needs_you"] .timer{color:var(--needs)}
+  .go{justify-self:center;width:26px;height:26px;border-radius:6px;border:1px solid var(--hair);color:var(--ink-faint);display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .12s}
+  .row:hover .go{border-color:var(--ink-faint);color:var(--ink);background:var(--bg-elev)}
+  .row[data-band="needs_you"]{background:var(--needs-bg);box-shadow:inset 3px 0 0 var(--needs-edge)}
+  .row[data-band="needs_you"]:hover{background:rgba(255,168,64,.11)}
+  .row[data-band="running"]{background:var(--run-bg)}
+  .row[data-band="idle"] .name .t{color:var(--ink-dim)}
+  .row[data-band="done"],.row[data-band="paused"]{opacity:.72}
+
+  /* expand */
+  .detail{display:none;grid-column:1/-1;margin:2px 6px 10px 6px;padding:14px 16px;background:var(--bg-elev);border:1px solid var(--hair);border-radius:8px;border-left:3px solid var(--hair)}
+  .row.open + .detail{display:block}
+  .row[data-band="needs_you"].open + .detail{border-left-color:var(--needs-edge)}
+  .row[data-band="running"].open + .detail{border-left-color:var(--run)}
+  .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
+  .detail .progress{font-size:13px;color:var(--ink);margin-bottom:12px;line-height:1.5}
+  .detail .sectit{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--ink-faint);text-transform:uppercase;margin:11px 0 6px}
+  .detail ul{list-style:none}
+  .detail .blk{font-size:12.5px;color:var(--needs);padding:2px 0;display:flex;gap:8px}
+  .detail .blk .b{color:var(--needs-edge)}
+  .detail .meta{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .detail .acts{display:flex;gap:10px;margin-top:14px}
+  .btn{font-size:12.5px;padding:7px 13px;border-radius:6px;border:1px solid var(--hair);background:var(--bg-row);color:var(--ink);cursor:pointer;font-family:var(--sans)}
+  .btn.primary{background:rgba(255,168,64,.14);border-color:var(--needs-edge);color:var(--needs)}
+  .btn:hover{border-color:var(--ink-faint)}
+  .btn.danger{color:#d9694e} .btn.danger:hover{border-color:#d9694e;background:rgba(217,105,78,.08)}
+  .acts-sp{flex:1}
+  .detail .chips-full{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+
+  .disc{position:fixed;right:14px;bottom:12px;font-size:10.5px;color:var(--ink-faint);background:var(--disc-bg);backdrop-filter:blur(6px);border:1px dashed var(--hair);border-radius:5px;padding:5px 9px;max-width:300px;line-height:1.4;z-index:30}
+  .iconbtn{font-size:14px;line-height:1;padding:5px 9px;border:1px solid var(--hair);border-radius:6px;background:transparent;color:var(--ink-dim);cursor:pointer}
+  .iconbtn:hover{border-color:var(--ink-faint);color:var(--ink)}
+  .disc b{color:var(--idle);font-weight:600}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--bg-elev);border:1px solid var(--hair);border-radius:7px;padding:9px 16px;font-size:12.5px;color:var(--ink);opacity:0;transition:all .2s;z-index:40;pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="mark"></span><span class="name">claude-stray</span><span class="sub">· 注意力驾驶舱</span></div>
+    <div class="hud" id="hud"></div>
+    <div class="right">
+      <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
+      <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button></div>
+      <span class="clock" id="clock"></span>
+      <span class="mocktag">原型 · 实时状态为模拟</span>
+    </div>
+  </div>
+  <div class="minimap" id="minimap"></div>
+  <div class="board" id="board"></div>
+  <div class="disc" id="disc"></div>
+  <div class="toast" id="toast"></div>
+
+  <script id="DATA" type="application/json">{
+  "mocked_now": "2026-05-29T14:00:00Z",
+  "note": "Live state (needs_you/running/idle + idle timers) is SYNTHESIZED for this prototype — telemetry (DD-015 Stage 1) not built. Names/artifacts/blockers/progress/tasks are REAL from cache/dashboard.json.",
+  "counts": {
+    "needs_you": 6,
+    "running": 3,
+    "idle": 2,
+    "done": 6,
+    "paused": 6
+  },
+  "rows": [
+    {
+      "name": "Zellij session 修复",
+      "ws": "claude-session",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 213963,
+      "blockers": [
+        "Accessibility 权限确认",
+        "企业管控干预查证"
+      ],
+      "progress": "根因诊断完成，指向睡眠期自动终止 + 企业管控干预。",
+      "summary": "macOS Tahoe Zellij 问题诊断。",
+      "artifacts": [],
+      "tasks_total": 2,
+      "tasks_pending": 1,
+      "session": "0a3dfdb8-15fa-4fce-90ad-4306434f7eee",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "Accessibility 权限确认"
+    },
+    {
+      "name": "HSFOps app-doc cleanup 流程完洁性 bug 修复",
+      "ws": "hsfops",
+      "status": "active",
+      "level": "chip",
+      "idle": "1天",
+      "idle_secs": 100941,
+      "blockers": [],
+      "progress": "代码实现已完成，编译和单元测试全部通过（27/27）。提交已 push 到分支。CR 已推至分支 tip，但之前失败的构建未自动重跑，等待用户决定是否需要手动触发新构建或重新 submit CR。",
+      "summary": "修复 app-doc cleanup 流程的完洁性 bug，实现最后 2 处 serviceRef 清理。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "c8e7a80f-719f-4b92-a844-d4b66ed2517b",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "等待用户决定是否需要手动触发新构建或重新 submit CR"
+    },
+    {
+      "name": "健身计划完整协商与执行",
+      "ws": "fitness",
+      "status": "active",
+      "level": "card",
+      "idle": "10h10m",
+      "idle_secs": 36641,
+      "blockers": [],
+      "progress": "V3 饮食计划（含补剂表、纤维、水分指引）已基本定稿并落档。训练分化已确认切换到 Upper/Lower 4 练。酸奶冷链方案确定（冰袋+保温袋），Vitamin D3 补剂推荐（汤臣倍健 1000 IU），食材替换（苹果→蓝莓）。等待用户反馈：卧推 50×5 的实际 RPE 等级、冷链方案最终确认、食材采购可行性。",
+      "summary": "基于体测档案协商并确认健身计划，为开始数据记录做准备；建立健身追踪与餐单执行体系。",
+      "artifacts": [
+        {
+          "type": "commit",
+          "ref_id": "db4ced8",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        },
+        {
+          "type": "commit",
+          "ref_id": "438c623",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "5b89b2c8-0e47-4bab-82df-9c7e8a5f13f4",
+      "n_sessions": 2,
+      "band": "needs_you",
+      "reason": "等待用户反馈：卧推 50×5 的实际 RPE 等级、冷链方案最终确认、食材采购可行性"
+    },
+    {
+      "name": "HSFOps 服务测试 Triple 协议缓存混用诊断",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "7h23m",
+      "idle_secs": 26586,
+      "blockers": [
+        "待用户确认是否采纳方案 D（自建缓存）"
+      ],
+      "progress": "根因已定位：HSFApiConsumerBean 的缓存 key（interface+version+generic）不包含协议维度。Issue #82622043 已提交至 Middleware RPC Aone 项目。已评估四个解决方向，倾向方案 D（hsfops 自建缓存），等用户确认。",
+      "summary": "诊断 HSFOps 在服务测试时，某接口虽配置 Triple 协议但落到 HSF 协议链路的问题。",
+      "artifacts": [
+        {
+          "type": "issue",
+          "ref_id": "82622043",
+          "title": "HSF ConsumerBean 缓存复用维度未包含协议，导致 HSFOps 跨协议服务测试结果错乱",
+          "url": "https://project.aone.alibaba-inc.com/v2/project/2078441/bug/82622043",
+          "status": "open"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "05ebd547-1cc5-4ddc-ab19-5b85db4bb8d9",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待用户确认是否采纳方案 D（自建缓存）"
+    },
+    {
+      "name": "HSF maxWaitTimeForCsAddress 配置属性生效诊断",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "7h1m",
+      "idle_secs": 25263,
+      "blockers": [
+        "待 user 执行 vmtool 诊断命令确认实例存在和接口名"
+      ],
+      "progress": "已简化诊断方案至单条 vmtool 命令。核心事实确认：配置值存储在 ReferenceConfig.parameters (key=maxWaitAddressTime) 中，运行时真正消费的是 serviceMetadata.attachments。已准备好简化后的 vmtool 查询命令，用于直接检验 ReferenceConfig 实例参数及接口名。",
+      "summary": "诊断 HSF 应用中 maxWaitTimeForCsAddress 配置属性不生效的根本原因。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "6c861aa9-8342-478c-b192-5ec97a9534d9",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待 user 执行 vmtool 诊断命令确认实例存在和接口名"
+    },
+    {
+      "name": "hsf-hessian JDK 高版本序列化支持评审与测试",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "5h12m",
+      "idle_secs": 18745,
+      "blockers": [],
+      "progress": "已完成 hsf-hessian CR 20401122 的代码评审，hsf-e2e MR #27672466 已提交。当前讨论 Record 类型的 e2e 覆盖方案：采用 MRJAR（多版本 JAR）在 serialization/ 模块下，预计追加 ~100 行改动，待用户同意后实施。",
+      "summary": "为 HSF e2e 集成测试补齐 JDK 高版本新类型的序列化覆盖，跟随 hsf-hessian 4.0.7-bugfix17 的 JDK 21 升级。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27672466",
+          "title": "配合 hsf-hessian JDK 高版本序列化 e2e 测试补齐",
+          "url": "https://code.alibaba-inc.com/mw-e2e/hsf-e2e/codereview/27672466",
+          "status": "pending"
+        },
+        {
+          "type": "cr",
+          "ref_id": "20401122",
+          "title": "hsf-hessian JDK 高版本序列化支持评审",
+          "url": "https://code.alibaba-inc.com/middleware-container/hsf-hessian/codereview/20401122",
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 5,
+      "tasks_pending": 1,
+      "session": "c4109555-a503-4384-8686-30a46c266c06",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待用户同意后实施"
+    },
+    {
+      "name": "建立 AI 知识体系学习框架",
+      "ws": "ai-study",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 198164,
+      "blockers": [],
+      "progress": "第 0 课（地图课）321 行完成，采用 8 层分层模型和快递流程类比。用户正在精读，已提出关键问题关于 Prompt Cache 为何跨层协作。地图课留空 Q&A 一节用于收集学生追问。BACKLOG 整理 20+ 条知识按字母分类，标注为何未入第一轮及推荐课轮。",
+      "summary": "建立 AI 技术栈的系统学习框架。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "ai-study",
+          "title": null,
+          "url": null,
+          "status": "active"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 0,
+      "session": "c5b3edff-84fc-4482-be9a-94982f7da844",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 45,
+      "activity": "正在整理 RAG 章节笔记"
+    },
+    {
+      "name": "hsfops 权限重构国际化与 URL linkify",
+      "ws": "mw-cli",
+      "status": "active",
+      "level": "thread",
+      "idle": "2天",
+      "idle_secs": 195910,
+      "blockers": [
+        "国际化 commit 需要部署到位",
+        "前端 `fix/linkify-error-message-url` PR 需要合并 + 部署",
+        "需要超管账号 / ApiKey / daily-deployed hsfops 实例来跑测试"
+      ],
+      "progress": "后端国际化 + 前端 linkify 实现完成。35 个 curl 用例验证完成。H1-H10 国际化验证用例和 I1-I4 linkify 前端验证用例已文档化，三档 backlog 重组完成。主要阻塞点：国际化 commit 需部署、前端 PR 需合并。",
+      "summary": "国际化和前端 linkify 实现。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "fix/linkify-error-message-url",
+          "title": "Frontend linkify error message URLs",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "fix/linkify-error-message-url",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "branch",
+          "ref_id": "fix/lazy-changefree-on-rule-query",
+          "title": "fix/lazy-changefree-on-rule-query",
+          "url": null,
+          "status": "active"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 3,
+      "session": "8e3ccf4e-fc0a-436f-a5ff-b212a97e7640",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 60,
+      "activity": "正在 linkify MR 描述"
+    },
+    {
+      "name": "HSFOps 权限重构 curl 测试矩阵验证",
+      "ws": "hsfops",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 188754,
+      "blockers": [],
+      "progress": "35 个 curl 用例全部执行完毕，34 个符合预期。发现 C9（QOS by IP）返回 200+success:false 而非 500，经代码分析实为新代码正常行为。所有 10 条 deny 路径的 i18n 文案、Aone 链接都正确解析无 fallback。MessageFormat 千分位格式化问题已识别但决定延后处理。",
+      "summary": "完成权限重构 MR 的 curl 测试矩阵验证，覆盖从 inline 改 aspect-based 鉴权的 35+ API 端点行为预期。",
+      "artifacts": [],
+      "tasks_total": 6,
+      "tasks_pending": 0,
+      "session": "5b6dd0ed-1959-4c39-b45a-2c8fb61fb178",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 70,
+      "activity": "正在跑第 7/10 条 curl 用例"
+    },
+    {
+      "name": "HSFOps 启动失败问题诊断与优化",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 197311,
+      "blockers": [
+        "`dCAccessControlServiceImpl` 的来源与与 `hsfAccessControlService` 的差异",
+        "env lazy 化是否有 DPathRuleDataHolder 预加载的兼容性问题"
+      ],
+      "progress": "已定位主要问题：Spring Bean `AccessControlService` 存在 NoUniqueBeanDefinitionException，容器内有两个候选 Bean。完成启动性能根因分析：全量订阅 60+ pre 单元共 ~100s，而非配置中心超时。产出 4 个优化方案（env lazy、并行+缩短 timeout、后台预热、抑制 Timer 噪音）。诊断被打断。",
+      "summary": "排查并修复 hsfops 启动失败的问题，分析启动性能瓶颈并提出优化方案。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "56a9da33-6aa1-45c6-98fe-6da0c4bae8f5",
+      "n_sessions": 1,
+      "band": "idle"
+    },
+    {
+      "name": "修复 Claude Code 版本更新命令失败",
+      "ws": "claude-chat",
+      "status": "active",
+      "level": "chip",
+      "idle": "5h19m",
+      "idle_secs": 19196,
+      "blockers": [],
+      "progress": "版本已成功升级至 2.1.156。根本原因已定位：env 块会重新设置 HTTPS_PROXY，导致 update 被拦截。已通过直连 curl 下载和手动安装，并在 settings.json 添加 NO_PROXY 配置作为永久修复。用户询问 Hiddify mux 优化方案，已提供三种方法。",
+      "summary": "升级 Claude Code 至最新版本，解决代理配置导致的更新失败。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "e5317b08-6b46-4657-94b4-6317a54dac55",
+      "n_sessions": 1,
+      "band": "idle"
+    },
+    {
+      "name": "hsf-doc-generator 优先级评估与设计",
+      "ws": "hsf-doc-generator",
+      "status": "done",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 181494,
+      "blockers": [],
+      "progress": "五个方向设计文档完成。一键生成详细设计（212 行）已编写，涵盖用户流程、API 规范、数据库表结构、worker 流程、token 管理、沙箱集成、安全隔离、错误处理。",
+      "summary": "优先级方向评估与设计文档完成。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27642413",
+          "title": "hsf-doc-generator 近期方向提案（三个方向）",
+          "url": "https://code.alibaba-inc.com/middleware-container/hsf-workspace/codereview/27642413",
+          "status": "unknown"
+        },
+        {
+          "type": "cr",
+          "ref_id": "27385160",
+          "title": "mw-cli 集成 HSF 服务文档查询功能",
+          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/27385160",
+          "status": "approved"
+        }
+      ],
+      "tasks_total": 2,
+      "tasks_pending": 0,
+      "session": "82ae11d1-61eb-4b5e-8da4-d577d2d4b726",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "mw-cli HSF e2e daily URL scheme 修复",
+      "ws": "mw-cli",
+      "status": "done",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 122800,
+      "blockers": [
+        "网关 trust audience 仅支持 http://，https:// 导致 401"
+      ],
+      "progress": "通过对照实验验证完成。网关 trust audience 仅支持 http://。当前改动（http://）的必要性已完全验证。",
+      "summary": "HSF e2e daily URL scheme 对齐修复。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "fix/hsf-e2e-daily-url-scheme",
+          "title": "HSF e2e daily URL scheme 修复",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "commit",
+          "ref_id": "1958b08",
+          "title": null,
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "commit",
+          "ref_id": "e4069fa",
+          "title": null,
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "cr",
+          "ref_id": null,
+          "title": "对齐 e2e daily URL scheme 与 hsfopsDailyURL",
+          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/new?from=refactor/ncs-integration&to=fix/hsf-e2e-daily-url-scheme",
+          "status": "pending"
+        },
+        {
+          "type": "branch",
+          "ref_id": "refactor/ncs-integration",
+          "title": "HSF e2e daily URL scheme 修复",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "refactor/ncs-integration",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "fix/hsf-e2e-daily-url-scheme",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "commit",
+          "ref_id": "d6a9c64",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 1,
+      "tasks_pending": 0,
+      "session": "65706114-ebb8-4096-a4ec-cb0859ae1b59",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "HSFOps 应用结构化服务文档生成与发布",
+      "ws": "hsfops",
+      "status": "done",
+      "level": "thread",
+      "idle": "1天",
+      "idle_secs": 113423,
+      "blockers": [],
+      "progress": "工作全部完成。文档已成功上传至两个环境：线上（v159），日常（v9）。包含 3 个 providers、9 个 methods、7 个 types、9 个 domains、3 个 todos。",
+      "summary": "为 HSFOps 应用生成结构化服务文档（providers、consumers、types、domains、methods），并上传至线上和日常两个环境。",
+      "artifacts": [
+        {
+          "type": "doc",
+          "ref_id": null,
+          "title": "HSFops 应用文档（日常环境）",
+          "url": "https://hsf.alibaba.net/hsfops/v2/app/detail/hsfops?envType=daily&tab=app-doc",
+          "status": "live"
+        },
+        {
+          "type": "doc",
+          "ref_id": null,
+          "title": "HSFops 应用文档（线上环境）",
+          "url": "https://hsf.alibaba-inc.com/hsfops/v2/app/detail/hsfops?envType=online&tab=app-doc",
+          "status": "live"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 0,
+      "session": "a760249e-d61c-4f77-841c-58c90f00b12c",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "HSF JdkUnsafeUtils JDK 兼容性重写",
+      "ws": "hsf-workspace",
+      "status": "done",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 103861,
+      "blockers": [],
+      "progress": "完成重构。采用反射访问 sun.misc.Unsafe 而非直接引用，消除 IDE 编译期红线；删除冗余的 Jdk8/11UnsafeUtils，统一为单路径设计。验证 sun.misc.Unsafe.allocateInstance 在 JDK 8-26 全部版本完全可用。测试全部通过。",
+      "summary": "重写 HSF 的 JdkUnsafeUtils，解决 IDE 中高版本 JDK 对 sun.misc.Unsafe 直接引用的编译符号检查问题。",
+      "artifacts": [],
+      "tasks_total": 6,
+      "tasks_pending": 0,
+      "session": "e7e59902-6a9e-41a2-833e-61af5a3ccfc6",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "Claude Stray 仪表板 UI 与稳定性改进",
+      "ws": "claude-stray",
+      "status": "done",
+      "level": "thread",
+      "idle": "7h48m",
+      "idle_secs": 28124,
+      "blockers": [],
+      "progress": "修复已部署，根因已除。仪表盘从崩溃的 8 张卡片恢复到完整的 42 张（active 10、paused 19、done 13）。根本问题：AI 偶尔不遵守 carry-forward PRIOR 指令，新的 `enforce_carry_forward_initiatives` post-process 强制补回漏掉的 initiatives。commit 8e602a2 已合并。",
+      "summary": "改进 Claude Stray 仪表板的 UI 设计与稳定性：完成 hero section、stats 视觉对齐、布局调整；诊断并修复 dashboard 过期显示问题。",
+      "artifacts": [
+        {
+          "type": "other",
+          "ref_id": null,
+          "title": "render-html.py (edited)",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "commit",
+          "ref_id": "8e602a2",
+          "title": "DD-014: prevent silent initiative loss",
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 12,
+      "tasks_pending": 0,
+      "session": "39d667af-6793-45ae-8598-40b3fd4bd6d6",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "Claude Code 跨会话运行与恢复机制理解",
+      "ws": "hsf-workspace",
+      "status": "done",
+      "level": "chip",
+      "idle": "4h52m",
+      "idle_secs": 17564,
+      "blockers": [],
+      "progress": "已确认当前会话存储位置及自动上下文加载机制，提供了三种会话恢复方法。用户已确认理解：手机 App 仅同步 sdk-cli 入口会话，无法看到 cli 入口会话。",
+      "summary": "了解 Claude Code 跨会话运行机制，以及通过手机远程控制 Mac 时如何在本地找到并恢复当前会话。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "a6fc1728-3e13-4e21-a8f1-1f97a4d258ad",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "mw-cli env SDK v0.1.1 升级代码评审与决策",
+      "ws": "mw-cli",
+      "status": "paused",
+      "level": "card",
+      "idle": "4天",
+      "idle_secs": 354548,
+      "blockers": [
+        "用户配置破坏风险",
+        "default 语义风险"
+      ],
+      "progress": "评审完成，识别用户配置破坏和 default 语义风险。等待用户决策。",
+      "summary": "完成 MR #27586947 的深度代码评审，识别 2 个值得讨论的风险。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27586947",
+          "title": "chore/env-sdk-0.1.1 分支合并",
+          "url": null,
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "587445b6-0cda-417c-b51b-1db8207995e2",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "OOM 排查工具与内存计算",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "chip",
+      "idle": "3天",
+      "idle_secs": 277057,
+      "blockers": [],
+      "progress": "两个问题回答完毕。",
+      "summary": "OOM 排查工具和内存占用计算。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "dad987f1-5c2d-4b17-972f-f7011b705972",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSF healthcheck 结构化指标发布前安全评审",
+      "ws": "hsf-workspace",
+      "status": "paused",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 122127,
+      "blockers": [
+        "等 CR 作者回应 7 大运行时安全风险点"
+      ],
+      "progress": "已贴 3 条代码审查评论，完成 7 大运行时安全风险深度分析。待确认是否将安全风险作为专项评论贴到 CR。",
+      "summary": "针对 HSF healthcheck 功能的 MR 27619332 执行代码审查与运行时安全评估。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27619332",
+          "title": "HSF healthcheck 结构化指标发布前安全评审",
+          "url": "https://code.alibaba-inc.com/middleware-container/pandora-sar/codereview/27619332",
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "0fe58e11-e507-4318-a9d3-f64f09742be0",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSFOps TRI 生产环境回归诊断",
+      "ws": "hsf-workspace",
+      "status": "paused",
+      "level": "card",
+      "idle": "11h44m",
+      "idle_secs": 42263,
+      "blockers": [
+        "需确认生产环境与预发环境该服务的配置差异"
+      ],
+      "progress": "初步假设（假 group \"HSFOPS\" 阻断订阅）被推翻，两年来大量 TRI 服务在生产正常工作。问题症状为单一服务单一环境异常，调查陷入僵局，需收集生产 vs 预发配置对比或调用链路数据。",
+      "summary": "定位 HSFOps TRI 直连在生产环境的回归原因。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "e25f792c-1dbc-4e4c-9f05-30d00faa98aa",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "在手机 Claude App 中使用二维码连接到电脑 Remote Control 会话",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "chip",
+      "idle": "4h35m",
+      "idle_secs": 16522,
+      "blockers": [],
+      "progress": "已确认 Claude App 内无\"扫一扫\"内置按钮——这是设计如此。用户应使用手机系统相机扫描电脑生成的二维码，系统相机识别后会自动打开 Claude App 进入对应会话。备选方案是直接在 App 的 Code 标签页会话列表中选择带绿色圆点的在线会话。",
+      "summary": "了解如何在手机 Claude App 中使用二维码连接到电脑上运行的 Remote Control 会话。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "fd8c29db-e1a5-4059-a1a8-7108f6df55b9",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSF Hessian JDK 升级与工作状态协调",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "card",
+      "idle": "2h44m",
+      "idle_secs": 9877,
+      "blockers": [
+        "等 hsf-hessian 原作者确认修复 Blocker 问题",
+        "hsfops CR 34405239 待重新触发构建",
+        "hsf-e2e 流水线 JDK 11/17/21 矩阵跑测结果待出"
+      ],
+      "progress": "确认 HSF JDK21/Hessian 升级为主线，其中 hsf-hessian CR 20401122 包含不可变集合支持。hsfops CR 34405239 待重新构建，Record e2e 覆盖方案（MRJAR vs 多 source root）已确定为 MRJAR，等用户确认投入开发。",
+      "summary": "梳理 HSF JDK21/Hessian 升级近期进展，协调多个关联 CR/MR 的审批与构建状态。",
+      "artifacts": [
+        {
+          "type": "cr",
+          "ref_id": "20401122",
+          "title": "HSF Hessian JDK21 升级评审",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27672466",
+          "title": "HSF e2e 测试修复",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "cr",
+          "ref_id": "34405239",
+          "title": "hsfops 发布单",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27665330",
+          "title": "hsfops service_ref 数据清洗",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27665467",
+          "title": "hsf-doc-generator serviceRef 约定修复",
+          "url": null,
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "f67352db-9307-4916-9c0f-c4146a6a8ec8",
+      "n_sessions": 1,
+      "band": "paused"
+    }
+  ]
+}</script>
+  <script>
+  const DATA = JSON.parse(document.getElementById('DATA').textContent);
+  const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
+    {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'今天完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
+  const RANK={needs_you:0,running:1,idle:2,done:3,paused:4};
+  const LV={thread:'主线',card:'卡',chip:'片'};
+  // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
+  const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
+  const tierOf = ws => MAIN_WS.includes(ws)?'main':'side';
+  const board=document.getElementById('board'), mini=document.getElementById('minimap');
+
+  // animated status icon (转圈=在跑 / 脉冲=等你 / 空心=闲置 / ✓=完成 / ⏸=搁置)
+  function statusIcon(b,s){s=s||12;
+    if(b==='running')return `<span class="sic" style="width:${s}px;height:${s}px"><svg class="spin" viewBox="0 0 24 24" width="${s}" height="${s}"><circle cx="12" cy="12" r="9" fill="none" stroke="var(--run)" stroke-width="3" stroke-linecap="round" stroke-dasharray="40 18"/></svg></span>`;
+    if(b==='needs_you')return `<span class="sic ndot" style="width:${s}px;height:${s}px"><span class="ping"></span><span class="core"></span></span>`;
+    if(b==='idle')return `<span class="sic idot" style="width:${s}px;height:${s}px"></span>`;
+    if(b==='done')return `<span class="sic" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M5 13l4 4L19 7" fill="none" stroke="var(--done)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
+    if(b==='paused')return `<span class="sic" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="7" y="6" width="3.6" height="12" rx="1.6" fill="var(--paused)"/><rect x="13.4" y="6" width="3.6" height="12" rx="1.6" fill="var(--paused)"/></svg></span>`;
+    return '';}
+
+  // HUD
+  const c=DATA.counts, active=(c.needs_you||0)+(c.running||0)+(c.idle||0);
+  document.getElementById('hud').innerHTML=
+    `<div class="stat"><span class="n">${active}</span><span class="lbl">进行中</span></div><span class="sep">·</span>`+
+    `<div class="stat k-needs"><span class="n">${c.needs_you||0}</span><span class="lbl">等你</span></div>`+
+    `<div class="stat k-run"><span class="n">${c.running||0}</span><span class="lbl">AI在跑</span></div>`+
+    `<div class="stat k-idle"><span class="n">${c.idle||0}</span><span class="lbl">闲置</span></div>`;
+  document.getElementById('clock').textContent='模拟时间 '+(DATA.mocked_now||'').replace('T',' ').slice(5,16);
+  document.getElementById('disc').innerHTML=`<b>原型说明</b>:工作名 / artifact / blocker / 进展 均真实;「等你/在跑/闲置·计时」「主线/支线」「优先级」为模拟与示例(可拖拽,AI 排序未接线)。`;
+
+  // shared pieces
+  function chip(a){const t=(a.type||'').toLowerCase(),cls=t==='mr'?'mr':(t==='cr'?'cr':'cd');
+    const inner=`<span class="k">${esc(t.toUpperCase()||'REF')}</span><span>!${esc(a.ref_id||'')}</span>`,tip=esc(a.title||'');
+    return a.url?`<a class="chip ${cls} link" href="${esc(a.url)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
+  const chipsRow=arts=>!arts||!arts.length?'':arts.slice(0,3).map(chip).join('')+(arts.length>3?`<span class="chip more">+${arts.length-3}</span>`:'');
+  function midCell(r){
+    if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
+    if(r.band==='running'){const p=r.pct||0;return `<div class="mid running"><span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span><span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
+    if(r.band==='idle')return `<div class="mid idle"><span class="rtext">${esc(r.idle)} 未动</span></div>`;
+    if(r.band==='done')return `<div class="mid idle"><span class="rtext">已完成 · ${esc(r.idle)}前</span></div>`;
+    if(r.band==='paused')return `<div class="mid idle"><span class="rtext">搁置 · ${esc(r.idle)}未动</span></div>`;
+    return `<div class="mid"></div>`;}
+  function detail(r){let h='';
+    if(r.summary)h+=`<div class="summary">${esc(r.summary)}</div>`;
+    if(r.progress)h+=`<div class="progress">${esc(r.progress)}</div>`;
+    if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
+    if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
+    if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
+    h+=`<div class="meta"><span>会话 ${r.n_sessions||0} 个</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="enter(event)">进入会话 →</button><button class="btn" onclick="enter(event)">在终端打开</button><span class="acts-sp"></span><button class="btn" onclick="act(event,'archive')">归档</button><button class="btn danger" onclick="act(event,'delete')">删除</button></div>`;
+    return `<div class="detail">${h}</div>`;}
+  function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
+    return `<div class="row" data-band="${r.band}">${statusIcon(r.band,12)}`+
+      `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}</div></div>`+
+      midCell(r)+`<div class="chips">${chipsRow(r.artifacts)}</div><div class="timer">${esc(r.idle)}</div><div class="go">→</div></div>`+detail(r);}
+  function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
+    if(!rows.length)return '';
+    return `<section class="band collapsed" data-band="${key}"><div class="band-head clickable"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span><span class="chev">▾</span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;}
+
+  // order persistence (draggable priority)
+  const loadOrder=t=>{try{return JSON.parse(localStorage.getItem('cockpit-order-'+t)||'null')}catch(e){return null}};
+  const saveOrder=zone=>{try{localStorage.setItem('cockpit-order-'+zone.dataset.tier,JSON.stringify([...zone.querySelectorAll('.proj')].map(p=>p.dataset.ws)))}catch(e){}};
+
+  // ATTENTION view
+  function renderAttention(){mini.innerHTML='';let html='';
+    BANDS.forEach(b=>{const rows=DATA.rows.filter(r=>r.band===b.key).sort((x,y)=>y.idle_secs-x.idle_secs);
+      if(!rows.length)return; if(b.collapse){html+=collapsedBand(b.key);return;}
+      html+=`<section class="band" data-band="${b.key}"><div class="band-head"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;});
+    board.innerHTML=html;wire();}
+
+  // PROJECT view (tiers + minimap + draggable + item strips)
+  function projectAgg(){
+    const act=DATA.rows.filter(r=>['needs_you','running','idle'].includes(r.band));
+    const byWs={};act.forEach(r=>(byWs[r.ws]=byWs[r.ws]||[]).push(r));
+    return Object.keys(byWs).map(ws=>{const rows=byWs[ws].sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
+      const n=k=>rows.filter(r=>r.band===k).length;
+      const urg=rows.some(r=>r.band==='needs_you')?2:(rows.some(r=>r.band==='running')?1:0);
+      return {ws,rows,tier:tierOf(ws),needs:n('needs_you'),run:n('running'),idleN:n('idle'),urg,recency:Math.min.apply(null,rows.map(r=>r.idle_secs))};});
+  }
+  function sortProjs(arr,tier){const ord=loadOrder(tier);
+    if(ord)return arr.slice().sort((a,b)=>{const ia=ord.indexOf(a.ws),ib=ord.indexOf(b.ws);return (ia<0?999:ia)-(ib<0?999:ib)||b.urg-a.urg;});
+    return arr.slice().sort((a,b)=>b.urg-a.urg||a.recency-b.recency);}
+  function streamLine(p,open){
+    const counts=`${p.rows.length} 件`+(p.needs?` · <span class="amb">${p.needs} 等你</span>`:'')+(p.run?` · <span class="run">${p.run} 跑</span>`:'')+(p.idleN?` · <span class="dim">${p.idleN} 闲</span>`:'');
+    const pcls=p.urg===2?'needs_you':(p.urg===1?'running':'idle');
+    const strip=p.rows.slice(0,6).map(r=>`<span class="it" title="${esc(r.name)}">${statusIcon(r.band,10)}${esc(r.name)}</span>`).join('')+(p.rows.length>6?`<span class="it more">+${p.rows.length-6}</span>`:'');
+    return `<section class="proj${open?'':' collapsed'}" data-ws="${esc(p.ws)}" draggable="true">`+
+      `<div class="proj-head" data-urg="${p.urg}"><span class="dragh" title="拖拽调整优先级">⠿</span><span class="chev">▸</span>`+
+      `${statusIcon(pcls,15)}<span class="pname">${esc(p.ws)}</span><span class="pcounts">${counts}</span>`+
+      `<span class="pstrip">${strip}</span><span class="ptimer">${esc(p.rows[0].idle)}</span></div>`+
+      `<div class="rows">`+p.rows.map(rowEl).join('')+`</div></section>`;}
+  function renderProject(){
+    const projs=projectAgg();
+    const main=sortProjs(projs.filter(p=>p.tier==='main'),'main');
+    const side=sortProjs(projs.filter(p=>p.tier==='side'),'side');
+    // mindmap nav (全部 → 项目 → 任务)
+    const branch=p=>{const pcls=p.urg===2?'needs_you':(p.urg===1?'running':'idle');
+      const leaves=p.rows.slice(0,8).map(r=>`<span class="mleaf" data-ws="${esc(p.ws)}" title="${esc(r.name)}">${statusIcon(r.band,10)}${esc(r.name)}</span>`).join('');
+      return `<div class="mbranch"><div class="mnode" data-ws="${esc(p.ws)}" data-urg="${p.urg}">${statusIcon(pcls,13)}<span class="mname">${esc(p.ws)}</span><span class="mc">${p.rows.length}</span></div><div class="mleaves">${leaves}</div></div>`;};
+    mini.className='minimap';
+    mini.innerHTML=`<div class="mind-head">脑图总览 · 项目 → 任务 <span class="mh-chev">▾</span></div>`+
+      `<div class="mind"><svg class="mind-links"></svg>`+
+      `<div class="mind-root"><span>全部</span><b>${active}</b></div>`+
+      `<div class="mind-branches">`+main.concat(side).map(branch).join('')+`</div></div>`;
+    // board
+    let html='';
+    const zone=(tier,label,arr)=>{
+      if(!arr.length)return '';
+      let topOpen = tier==='main'; // expand top of 主线 only
+      return `<div class="tier-head ${tier==='side'?'side':''}"><span class="tx">${label}</span></div>`+
+        `<div class="zone" data-tier="${tier}">`+arr.map((p,i)=>streamLine(p, topOpen&&i===0)).join('')+`</div>`;
+    };
+    html+=zone('main','主线',main);
+    html+=zone('side','支线 · 个人 / 兴趣',side);
+    html+=collapsedBand('done')+collapsedBand('paused');
+    board.innerHTML=html;wire();bindDnD();requestAnimationFrame(drawMindLinks);}
+
+  // wiring
+  function wire(){
+    board.querySelectorAll('.band-head.clickable').forEach(h=>h.addEventListener('click',()=>h.closest('.band').classList.toggle('collapsed')));
+    board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;h.closest('.proj').classList.toggle('collapsed');}));
+    board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){enter(e);return;}row.classList.toggle('open');}));
+    mini.querySelectorAll('.mnode,.mleaf').forEach(n=>n.addEventListener('click',()=>jumpTo(n.dataset.ws)));
+    const mh=mini.querySelector('.mind-head');
+    if(mh)mh.addEventListener('click',()=>{mini.classList.toggle('mclosed');if(!mini.classList.contains('mclosed'))requestAnimationFrame(drawMindLinks);});
+    if(location.hash.indexOf('open')>=0){const m=location.hash.match(/open=?(\d+)?/),rows=board.querySelectorAll('.row'),idx=m&&m[1]?parseInt(m[1]):0;if(rows[idx])rows[idx].classList.add('open');}
+  }
+  let dragEl=null;
+  function bindDnD(){
+    board.querySelectorAll('.proj').forEach(p=>{
+      p.addEventListener('dragstart',()=>{dragEl=p;p.classList.add('dragging');});
+      p.addEventListener('dragend',()=>{p.classList.remove('dragging');const z=p.closest('.zone');if(z)saveOrder(z);});
+    });
+    board.querySelectorAll('.zone').forEach(z=>{
+      z.addEventListener('dragover',e=>{e.preventDefault();if(!dragEl||dragEl.closest('.zone')!==z)return;
+        const after=dragAfter(z,e.clientY);if(after==null)z.appendChild(dragEl);else z.insertBefore(dragEl,after);});
+    });
+  }
+  function dragAfter(zone,y){const els=[...zone.querySelectorAll('.proj:not(.dragging)')];
+    return els.reduce((c,ch)=>{const b=ch.getBoundingClientRect(),o=y-b.top-b.height/2;return o<0&&o>c.offset?{offset:o,element:ch}:c;},{offset:-Infinity,element:null}).element;}
+  function jumpTo(ws){const sec=board.querySelector('.proj[data-ws="'+(window.CSS&&CSS.escape?CSS.escape(ws):ws)+'"]');
+    if(sec){sec.classList.remove('collapsed');sec.classList.add('flash');setTimeout(()=>sec.classList.remove('flash'),800);}}
+  function drawMindLinks(){
+    const mind=mini.querySelector('.mind');if(!mind||mini.classList.contains('mclosed'))return;
+    const svg=mind.querySelector('.mind-links');if(!svg)return;
+    const box=mind.getBoundingClientRect();
+    svg.setAttribute('viewBox','0 0 '+box.width+' '+box.height);
+    const pt=(el,side)=>{const r=el.getBoundingClientRect();return {x:(side==='r'?r.right:r.left)-box.left,y:r.top-box.top+r.height/2};};
+    const curve=(a,b)=>{const mx=(a.x+b.x)/2;return 'M'+a.x.toFixed(1)+','+a.y.toFixed(1)+' C'+mx.toFixed(1)+','+a.y.toFixed(1)+' '+mx.toFixed(1)+','+b.y.toFixed(1)+' '+b.x.toFixed(1)+','+b.y.toFixed(1);};
+    const root=mind.querySelector('.mind-root');const paths=[];
+    if(root)mind.querySelectorAll('.mbranch').forEach(br=>{const mn=br.querySelector('.mnode');if(mn)paths.push({d:curve(pt(root,'r'),pt(mn,'l')),u:mn.dataset.urg});});
+    svg.innerHTML=paths.map(p=>'<path d="'+p.d+'" fill="none" stroke="'+(p.u==='2'?'rgba(255,168,64,.35)':'var(--hair)')+'" stroke-width="1.5"/>').join('');
+  }
+  window.addEventListener('resize',()=>{if(document.body.dataset.view==='project')drawMindLinks();});
+  function enter(e){e.stopPropagation();toast('→ 将进入该会话 / 终端(原型未接线)');}
+  function act(e,k){e.stopPropagation();toast(k==='delete'?'→ 将删除该工作(原型未接线)':'→ 将归档该工作(原型未接线)');}
+  let tt;function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),1800);}
+
+  function setView(v){document.body.dataset.view=v;try{localStorage.setItem('cockpit-view',v)}catch(e){}
+    document.querySelectorAll('#viewtog button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+    v==='attention'?renderAttention():renderProject();}
+  document.querySelectorAll('#viewtog button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.v)));
+  let initView='project';try{initView=localStorage.getItem('cockpit-view')||'project'}catch(e){}
+  if(location.hash.indexOf('attention')>=0)initView='attention';
+  setView(initView);
+
+  // theme (昼/夜)
+  function setTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem('cockpit-theme',t)}catch(e){}
+    const b=document.getElementById('themetog');if(b)b.textContent=t==='light'?'☀':'☾';
+    if(document.body.dataset.view==='project')requestAnimationFrame(drawMindLinks);}
+  (function(){const b=document.getElementById('themetog');if(b)b.addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='light'?'dark':'light'));
+    let it='dark';try{it=localStorage.getItem('cockpit-theme')||'dark'}catch(e){}
+    if(location.hash.indexOf('light')>=0)it='light'; setTheme(it);})();
+  </script>
+</body>
+</html>

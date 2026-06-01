@@ -1,0 +1,665 @@
+{
+  "mocked_now": "2026-05-29T14:00:00Z",
+  "note": "Live state (needs_you/running/idle + idle timers) is SYNTHESIZED for this prototype — telemetry (DD-015 Stage 1) not built. Names/artifacts/blockers/progress/tasks are REAL from cache/dashboard.json.",
+  "counts": {
+    "needs_you": 6,
+    "running": 3,
+    "idle": 2,
+    "done": 6,
+    "paused": 6
+  },
+  "rows": [
+    {
+      "name": "Zellij session 修复",
+      "ws": "claude-session",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 213963,
+      "blockers": [
+        "Accessibility 权限确认",
+        "企业管控干预查证"
+      ],
+      "progress": "根因诊断完成，指向睡眠期自动终止 + 企业管控干预。",
+      "summary": "macOS Tahoe Zellij 问题诊断。",
+      "artifacts": [],
+      "tasks_total": 2,
+      "tasks_pending": 1,
+      "session": "0a3dfdb8-15fa-4fce-90ad-4306434f7eee",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "Accessibility 权限确认"
+    },
+    {
+      "name": "HSFOps app-doc cleanup 流程完洁性 bug 修复",
+      "ws": "hsfops",
+      "status": "active",
+      "level": "chip",
+      "idle": "1天",
+      "idle_secs": 100941,
+      "blockers": [],
+      "progress": "代码实现已完成，编译和单元测试全部通过（27/27）。提交已 push 到分支。CR 已推至分支 tip，但之前失败的构建未自动重跑，等待用户决定是否需要手动触发新构建或重新 submit CR。",
+      "summary": "修复 app-doc cleanup 流程的完洁性 bug，实现最后 2 处 serviceRef 清理。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "c8e7a80f-719f-4b92-a844-d4b66ed2517b",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "等待用户决定是否需要手动触发新构建或重新 submit CR"
+    },
+    {
+      "name": "健身计划完整协商与执行",
+      "ws": "fitness",
+      "status": "active",
+      "level": "card",
+      "idle": "10h10m",
+      "idle_secs": 36641,
+      "blockers": [],
+      "progress": "V3 饮食计划（含补剂表、纤维、水分指引）已基本定稿并落档。训练分化已确认切换到 Upper/Lower 4 练。酸奶冷链方案确定（冰袋+保温袋），Vitamin D3 补剂推荐（汤臣倍健 1000 IU），食材替换（苹果→蓝莓）。等待用户反馈：卧推 50×5 的实际 RPE 等级、冷链方案最终确认、食材采购可行性。",
+      "summary": "基于体测档案协商并确认健身计划，为开始数据记录做准备；建立健身追踪与餐单执行体系。",
+      "artifacts": [
+        {
+          "type": "commit",
+          "ref_id": "db4ced8",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        },
+        {
+          "type": "commit",
+          "ref_id": "438c623",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "5b89b2c8-0e47-4bab-82df-9c7e8a5f13f4",
+      "n_sessions": 2,
+      "band": "needs_you",
+      "reason": "等待用户反馈：卧推 50×5 的实际 RPE 等级、冷链方案最终确认、食材采购可行性"
+    },
+    {
+      "name": "HSFOps 服务测试 Triple 协议缓存混用诊断",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "7h23m",
+      "idle_secs": 26586,
+      "blockers": [
+        "待用户确认是否采纳方案 D（自建缓存）"
+      ],
+      "progress": "根因已定位：HSFApiConsumerBean 的缓存 key（interface+version+generic）不包含协议维度。Issue #82622043 已提交至 Middleware RPC Aone 项目。已评估四个解决方向，倾向方案 D（hsfops 自建缓存），等用户确认。",
+      "summary": "诊断 HSFOps 在服务测试时，某接口虽配置 Triple 协议但落到 HSF 协议链路的问题。",
+      "artifacts": [
+        {
+          "type": "issue",
+          "ref_id": "82622043",
+          "title": "HSF ConsumerBean 缓存复用维度未包含协议，导致 HSFOps 跨协议服务测试结果错乱",
+          "url": "https://project.aone.alibaba-inc.com/v2/project/2078441/bug/82622043",
+          "status": "open"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "05ebd547-1cc5-4ddc-ab19-5b85db4bb8d9",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待用户确认是否采纳方案 D（自建缓存）"
+    },
+    {
+      "name": "HSF maxWaitTimeForCsAddress 配置属性生效诊断",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "7h1m",
+      "idle_secs": 25263,
+      "blockers": [
+        "待 user 执行 vmtool 诊断命令确认实例存在和接口名"
+      ],
+      "progress": "已简化诊断方案至单条 vmtool 命令。核心事实确认：配置值存储在 ReferenceConfig.parameters (key=maxWaitAddressTime) 中，运行时真正消费的是 serviceMetadata.attachments。已准备好简化后的 vmtool 查询命令，用于直接检验 ReferenceConfig 实例参数及接口名。",
+      "summary": "诊断 HSF 应用中 maxWaitTimeForCsAddress 配置属性不生效的根本原因。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "6c861aa9-8342-478c-b192-5ec97a9534d9",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待 user 执行 vmtool 诊断命令确认实例存在和接口名"
+    },
+    {
+      "name": "hsf-hessian JDK 高版本序列化支持评审与测试",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "5h12m",
+      "idle_secs": 18745,
+      "blockers": [],
+      "progress": "已完成 hsf-hessian CR 20401122 的代码评审，hsf-e2e MR #27672466 已提交。当前讨论 Record 类型的 e2e 覆盖方案：采用 MRJAR（多版本 JAR）在 serialization/ 模块下，预计追加 ~100 行改动，待用户同意后实施。",
+      "summary": "为 HSF e2e 集成测试补齐 JDK 高版本新类型的序列化覆盖，跟随 hsf-hessian 4.0.7-bugfix17 的 JDK 21 升级。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27672466",
+          "title": "配合 hsf-hessian JDK 高版本序列化 e2e 测试补齐",
+          "url": "https://code.alibaba-inc.com/mw-e2e/hsf-e2e/codereview/27672466",
+          "status": "pending"
+        },
+        {
+          "type": "cr",
+          "ref_id": "20401122",
+          "title": "hsf-hessian JDK 高版本序列化支持评审",
+          "url": "https://code.alibaba-inc.com/middleware-container/hsf-hessian/codereview/20401122",
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 5,
+      "tasks_pending": 1,
+      "session": "c4109555-a503-4384-8686-30a46c266c06",
+      "n_sessions": 1,
+      "band": "needs_you",
+      "reason": "待用户同意后实施"
+    },
+    {
+      "name": "建立 AI 知识体系学习框架",
+      "ws": "ai-study",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 198164,
+      "blockers": [],
+      "progress": "第 0 课（地图课）321 行完成，采用 8 层分层模型和快递流程类比。用户正在精读，已提出关键问题关于 Prompt Cache 为何跨层协作。地图课留空 Q&A 一节用于收集学生追问。BACKLOG 整理 20+ 条知识按字母分类，标注为何未入第一轮及推荐课轮。",
+      "summary": "建立 AI 技术栈的系统学习框架。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "ai-study",
+          "title": null,
+          "url": null,
+          "status": "active"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 0,
+      "session": "c5b3edff-84fc-4482-be9a-94982f7da844",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 45,
+      "activity": "正在整理 RAG 章节笔记"
+    },
+    {
+      "name": "hsfops 权限重构国际化与 URL linkify",
+      "ws": "mw-cli",
+      "status": "active",
+      "level": "thread",
+      "idle": "2天",
+      "idle_secs": 195910,
+      "blockers": [
+        "国际化 commit 需要部署到位",
+        "前端 `fix/linkify-error-message-url` PR 需要合并 + 部署",
+        "需要超管账号 / ApiKey / daily-deployed hsfops 实例来跑测试"
+      ],
+      "progress": "后端国际化 + 前端 linkify 实现完成。35 个 curl 用例验证完成。H1-H10 国际化验证用例和 I1-I4 linkify 前端验证用例已文档化，三档 backlog 重组完成。主要阻塞点：国际化 commit 需部署、前端 PR 需合并。",
+      "summary": "国际化和前端 linkify 实现。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "fix/linkify-error-message-url",
+          "title": "Frontend linkify error message URLs",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "fix/linkify-error-message-url",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "branch",
+          "ref_id": "fix/lazy-changefree-on-rule-query",
+          "title": "fix/lazy-changefree-on-rule-query",
+          "url": null,
+          "status": "active"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 3,
+      "session": "8e3ccf4e-fc0a-436f-a5ff-b212a97e7640",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 60,
+      "activity": "正在 linkify MR 描述"
+    },
+    {
+      "name": "HSFOps 权限重构 curl 测试矩阵验证",
+      "ws": "hsfops",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 188754,
+      "blockers": [],
+      "progress": "35 个 curl 用例全部执行完毕，34 个符合预期。发现 C9（QOS by IP）返回 200+success:false 而非 500，经代码分析实为新代码正常行为。所有 10 条 deny 路径的 i18n 文案、Aone 链接都正确解析无 fallback。MessageFormat 千分位格式化问题已识别但决定延后处理。",
+      "summary": "完成权限重构 MR 的 curl 测试矩阵验证，覆盖从 inline 改 aspect-based 鉴权的 35+ API 端点行为预期。",
+      "artifacts": [],
+      "tasks_total": 6,
+      "tasks_pending": 0,
+      "session": "5b6dd0ed-1959-4c39-b45a-2c8fb61fb178",
+      "n_sessions": 1,
+      "band": "running",
+      "pct": 70,
+      "activity": "正在跑第 7/10 条 curl 用例"
+    },
+    {
+      "name": "HSFOps 启动失败问题诊断与优化",
+      "ws": "hsf-workspace",
+      "status": "active",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 197311,
+      "blockers": [
+        "`dCAccessControlServiceImpl` 的来源与与 `hsfAccessControlService` 的差异",
+        "env lazy 化是否有 DPathRuleDataHolder 预加载的兼容性问题"
+      ],
+      "progress": "已定位主要问题：Spring Bean `AccessControlService` 存在 NoUniqueBeanDefinitionException，容器内有两个候选 Bean。完成启动性能根因分析：全量订阅 60+ pre 单元共 ~100s，而非配置中心超时。产出 4 个优化方案（env lazy、并行+缩短 timeout、后台预热、抑制 Timer 噪音）。诊断被打断。",
+      "summary": "排查并修复 hsfops 启动失败的问题，分析启动性能瓶颈并提出优化方案。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "56a9da33-6aa1-45c6-98fe-6da0c4bae8f5",
+      "n_sessions": 1,
+      "band": "idle"
+    },
+    {
+      "name": "修复 Claude Code 版本更新命令失败",
+      "ws": "claude-chat",
+      "status": "active",
+      "level": "chip",
+      "idle": "5h19m",
+      "idle_secs": 19196,
+      "blockers": [],
+      "progress": "版本已成功升级至 2.1.156。根本原因已定位：env 块会重新设置 HTTPS_PROXY，导致 update 被拦截。已通过直连 curl 下载和手动安装，并在 settings.json 添加 NO_PROXY 配置作为永久修复。用户询问 Hiddify mux 优化方案，已提供三种方法。",
+      "summary": "升级 Claude Code 至最新版本，解决代理配置导致的更新失败。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "e5317b08-6b46-4657-94b4-6317a54dac55",
+      "n_sessions": 1,
+      "band": "idle"
+    },
+    {
+      "name": "hsf-doc-generator 优先级评估与设计",
+      "ws": "hsf-doc-generator",
+      "status": "done",
+      "level": "card",
+      "idle": "2天",
+      "idle_secs": 181494,
+      "blockers": [],
+      "progress": "五个方向设计文档完成。一键生成详细设计（212 行）已编写，涵盖用户流程、API 规范、数据库表结构、worker 流程、token 管理、沙箱集成、安全隔离、错误处理。",
+      "summary": "优先级方向评估与设计文档完成。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27642413",
+          "title": "hsf-doc-generator 近期方向提案（三个方向）",
+          "url": "https://code.alibaba-inc.com/middleware-container/hsf-workspace/codereview/27642413",
+          "status": "unknown"
+        },
+        {
+          "type": "cr",
+          "ref_id": "27385160",
+          "title": "mw-cli 集成 HSF 服务文档查询功能",
+          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/27385160",
+          "status": "approved"
+        }
+      ],
+      "tasks_total": 2,
+      "tasks_pending": 0,
+      "session": "82ae11d1-61eb-4b5e-8da4-d577d2d4b726",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "mw-cli HSF e2e daily URL scheme 修复",
+      "ws": "mw-cli",
+      "status": "done",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 122800,
+      "blockers": [
+        "网关 trust audience 仅支持 http://，https:// 导致 401"
+      ],
+      "progress": "通过对照实验验证完成。网关 trust audience 仅支持 http://。当前改动（http://）的必要性已完全验证。",
+      "summary": "HSF e2e daily URL scheme 对齐修复。",
+      "artifacts": [
+        {
+          "type": "branch",
+          "ref_id": "fix/hsf-e2e-daily-url-scheme",
+          "title": "HSF e2e daily URL scheme 修复",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "commit",
+          "ref_id": "1958b08",
+          "title": null,
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "commit",
+          "ref_id": "e4069fa",
+          "title": null,
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "cr",
+          "ref_id": null,
+          "title": "对齐 e2e daily URL scheme 与 hsfopsDailyURL",
+          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/new?from=refactor/ncs-integration&to=fix/hsf-e2e-daily-url-scheme",
+          "status": "pending"
+        },
+        {
+          "type": "branch",
+          "ref_id": "refactor/ncs-integration",
+          "title": "HSF e2e daily URL scheme 修复",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "refactor/ncs-integration",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "branch",
+          "ref_id": null,
+          "title": "fix/hsf-e2e-daily-url-scheme",
+          "url": null,
+          "status": "active"
+        },
+        {
+          "type": "commit",
+          "ref_id": "d6a9c64",
+          "title": null,
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 1,
+      "tasks_pending": 0,
+      "session": "65706114-ebb8-4096-a4ec-cb0859ae1b59",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "HSFOps 应用结构化服务文档生成与发布",
+      "ws": "hsfops",
+      "status": "done",
+      "level": "thread",
+      "idle": "1天",
+      "idle_secs": 113423,
+      "blockers": [],
+      "progress": "工作全部完成。文档已成功上传至两个环境：线上（v159），日常（v9）。包含 3 个 providers、9 个 methods、7 个 types、9 个 domains、3 个 todos。",
+      "summary": "为 HSFOps 应用生成结构化服务文档（providers、consumers、types、domains、methods），并上传至线上和日常两个环境。",
+      "artifacts": [
+        {
+          "type": "doc",
+          "ref_id": null,
+          "title": "HSFops 应用文档（日常环境）",
+          "url": "https://hsf.alibaba.net/hsfops/v2/app/detail/hsfops?envType=daily&tab=app-doc",
+          "status": "live"
+        },
+        {
+          "type": "doc",
+          "ref_id": null,
+          "title": "HSFops 应用文档（线上环境）",
+          "url": "https://hsf.alibaba-inc.com/hsfops/v2/app/detail/hsfops?envType=online&tab=app-doc",
+          "status": "live"
+        }
+      ],
+      "tasks_total": 7,
+      "tasks_pending": 0,
+      "session": "a760249e-d61c-4f77-841c-58c90f00b12c",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "HSF JdkUnsafeUtils JDK 兼容性重写",
+      "ws": "hsf-workspace",
+      "status": "done",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 103861,
+      "blockers": [],
+      "progress": "完成重构。采用反射访问 sun.misc.Unsafe 而非直接引用，消除 IDE 编译期红线；删除冗余的 Jdk8/11UnsafeUtils，统一为单路径设计。验证 sun.misc.Unsafe.allocateInstance 在 JDK 8-26 全部版本完全可用。测试全部通过。",
+      "summary": "重写 HSF 的 JdkUnsafeUtils，解决 IDE 中高版本 JDK 对 sun.misc.Unsafe 直接引用的编译符号检查问题。",
+      "artifacts": [],
+      "tasks_total": 6,
+      "tasks_pending": 0,
+      "session": "e7e59902-6a9e-41a2-833e-61af5a3ccfc6",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "Claude Stray 仪表板 UI 与稳定性改进",
+      "ws": "claude-stray",
+      "status": "done",
+      "level": "thread",
+      "idle": "7h48m",
+      "idle_secs": 28124,
+      "blockers": [],
+      "progress": "修复已部署，根因已除。仪表盘从崩溃的 8 张卡片恢复到完整的 42 张（active 10、paused 19、done 13）。根本问题：AI 偶尔不遵守 carry-forward PRIOR 指令，新的 `enforce_carry_forward_initiatives` post-process 强制补回漏掉的 initiatives。commit 8e602a2 已合并。",
+      "summary": "改进 Claude Stray 仪表板的 UI 设计与稳定性：完成 hero section、stats 视觉对齐、布局调整；诊断并修复 dashboard 过期显示问题。",
+      "artifacts": [
+        {
+          "type": "other",
+          "ref_id": null,
+          "title": "render-html.py (edited)",
+          "url": null,
+          "status": "unknown"
+        },
+        {
+          "type": "commit",
+          "ref_id": "8e602a2",
+          "title": "DD-014: prevent silent initiative loss",
+          "url": null,
+          "status": "pushed"
+        }
+      ],
+      "tasks_total": 12,
+      "tasks_pending": 0,
+      "session": "39d667af-6793-45ae-8598-40b3fd4bd6d6",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "Claude Code 跨会话运行与恢复机制理解",
+      "ws": "hsf-workspace",
+      "status": "done",
+      "level": "chip",
+      "idle": "4h52m",
+      "idle_secs": 17564,
+      "blockers": [],
+      "progress": "已确认当前会话存储位置及自动上下文加载机制，提供了三种会话恢复方法。用户已确认理解：手机 App 仅同步 sdk-cli 入口会话，无法看到 cli 入口会话。",
+      "summary": "了解 Claude Code 跨会话运行机制，以及通过手机远程控制 Mac 时如何在本地找到并恢复当前会话。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "a6fc1728-3e13-4e21-a8f1-1f97a4d258ad",
+      "n_sessions": 1,
+      "band": "done"
+    },
+    {
+      "name": "mw-cli env SDK v0.1.1 升级代码评审与决策",
+      "ws": "mw-cli",
+      "status": "paused",
+      "level": "card",
+      "idle": "4天",
+      "idle_secs": 354548,
+      "blockers": [
+        "用户配置破坏风险",
+        "default 语义风险"
+      ],
+      "progress": "评审完成，识别用户配置破坏和 default 语义风险。等待用户决策。",
+      "summary": "完成 MR #27586947 的深度代码评审，识别 2 个值得讨论的风险。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27586947",
+          "title": "chore/env-sdk-0.1.1 分支合并",
+          "url": null,
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "587445b6-0cda-417c-b51b-1db8207995e2",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "OOM 排查工具与内存计算",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "chip",
+      "idle": "3天",
+      "idle_secs": 277057,
+      "blockers": [],
+      "progress": "两个问题回答完毕。",
+      "summary": "OOM 排查工具和内存占用计算。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "dad987f1-5c2d-4b17-972f-f7011b705972",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSF healthcheck 结构化指标发布前安全评审",
+      "ws": "hsf-workspace",
+      "status": "paused",
+      "level": "card",
+      "idle": "1天",
+      "idle_secs": 122127,
+      "blockers": [
+        "等 CR 作者回应 7 大运行时安全风险点"
+      ],
+      "progress": "已贴 3 条代码审查评论，完成 7 大运行时安全风险深度分析。待确认是否将安全风险作为专项评论贴到 CR。",
+      "summary": "针对 HSF healthcheck 功能的 MR 27619332 执行代码审查与运行时安全评估。",
+      "artifacts": [
+        {
+          "type": "mr",
+          "ref_id": "27619332",
+          "title": "HSF healthcheck 结构化指标发布前安全评审",
+          "url": "https://code.alibaba-inc.com/middleware-container/pandora-sar/codereview/27619332",
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "0fe58e11-e507-4318-a9d3-f64f09742be0",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSFOps TRI 生产环境回归诊断",
+      "ws": "hsf-workspace",
+      "status": "paused",
+      "level": "card",
+      "idle": "11h44m",
+      "idle_secs": 42263,
+      "blockers": [
+        "需确认生产环境与预发环境该服务的配置差异"
+      ],
+      "progress": "初步假设（假 group \"HSFOPS\" 阻断订阅）被推翻，两年来大量 TRI 服务在生产正常工作。问题症状为单一服务单一环境异常，调查陷入僵局，需收集生产 vs 预发配置对比或调用链路数据。",
+      "summary": "定位 HSFOps TRI 直连在生产环境的回归原因。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "e25f792c-1dbc-4e4c-9f05-30d00faa98aa",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "在手机 Claude App 中使用二维码连接到电脑 Remote Control 会话",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "chip",
+      "idle": "4h35m",
+      "idle_secs": 16522,
+      "blockers": [],
+      "progress": "已确认 Claude App 内无\"扫一扫\"内置按钮——这是设计如此。用户应使用手机系统相机扫描电脑生成的二维码，系统相机识别后会自动打开 Claude App 进入对应会话。备选方案是直接在 App 的 Code 标签页会话列表中选择带绿色圆点的在线会话。",
+      "summary": "了解如何在手机 Claude App 中使用二维码连接到电脑上运行的 Remote Control 会话。",
+      "artifacts": [],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "fd8c29db-e1a5-4059-a1a8-7108f6df55b9",
+      "n_sessions": 1,
+      "band": "paused"
+    },
+    {
+      "name": "HSF Hessian JDK 升级与工作状态协调",
+      "ws": "claude-chat",
+      "status": "paused",
+      "level": "card",
+      "idle": "2h44m",
+      "idle_secs": 9877,
+      "blockers": [
+        "等 hsf-hessian 原作者确认修复 Blocker 问题",
+        "hsfops CR 34405239 待重新触发构建",
+        "hsf-e2e 流水线 JDK 11/17/21 矩阵跑测结果待出"
+      ],
+      "progress": "确认 HSF JDK21/Hessian 升级为主线，其中 hsf-hessian CR 20401122 包含不可变集合支持。hsfops CR 34405239 待重新构建，Record e2e 覆盖方案（MRJAR vs 多 source root）已确定为 MRJAR，等用户确认投入开发。",
+      "summary": "梳理 HSF JDK21/Hessian 升级近期进展，协调多个关联 CR/MR 的审批与构建状态。",
+      "artifacts": [
+        {
+          "type": "cr",
+          "ref_id": "20401122",
+          "title": "HSF Hessian JDK21 升级评审",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27672466",
+          "title": "HSF e2e 测试修复",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "cr",
+          "ref_id": "34405239",
+          "title": "hsfops 发布单",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27665330",
+          "title": "hsfops service_ref 数据清洗",
+          "url": null,
+          "status": "pending"
+        },
+        {
+          "type": "mr",
+          "ref_id": "27665467",
+          "title": "hsf-doc-generator serviceRef 约定修复",
+          "url": null,
+          "status": "pending"
+        }
+      ],
+      "tasks_total": 0,
+      "tasks_pending": 0,
+      "session": "f67352db-9307-4916-9c0f-c4146a6a8ec8",
+      "n_sessions": 1,
+      "band": "paused"
+    }
+  ]
+}
