@@ -3431,6 +3431,17 @@ ul.sessions-list li.session .sess-btn {
 }
 ul.sessions-list li.session .sess-btn:hover { background: var(--bg); border-color: var(--border-hover); }
 
+/* DD-015 Stage 1 — live session status indicator (driven by SSE /api/events) */
+.live-ic { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; flex:none; margin-right:5px; vertical-align:middle; }
+.live-ic:empty { display:none; }
+.li-spin { animation: li-spin .9s linear infinite; transform-origin:center; }
+@keyframes li-spin { to { transform: rotate(360deg); } }
+.li-ndot { position:relative; width:11px; height:11px; display:inline-block; }
+.li-ndot .li-core { position:absolute; inset:26%; border-radius:50%; background:#e0792b; box-shadow:0 0 5px 1px rgba(224,121,43,.5); }
+.li-ndot .li-ping { position:absolute; inset:6%; border-radius:50%; border:1.5px solid #e0792b; animation: li-ping 1.7s cubic-bezier(0,0,.2,1) infinite; }
+@keyframes li-ping { 0% { transform:scale(.5); opacity:.9; } 80%,100% { transform:scale(1.6); opacity:0; } }
+.li-idot { width:9px; height:9px; border-radius:50%; border:1.6px solid #b8b8c0; box-sizing:border-box; }
+
 /* Footer actions */
 footer.card-actions {
   display: flex; gap: 6px; flex-wrap: wrap;
@@ -4143,7 +4154,9 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         const chip = document.createElement('span');
         chip.className = 'ses-chip';
         chip.title = sid;
+        chip.dataset.sid = sid;
         let html =
+          '<span class="live-ic"></span>' +
           '<span class="ses-sid">' + esc(sidShort) + '</span>';
         if (loc.zellij_pane_id) {
           html += '<span class="ses-pane" title="pane ' + esc(loc.zellij_pane_id) +
@@ -4799,6 +4812,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     setupScrollSpy();
     applyFilter();
     updateCounts();
+    applyLiveStatus();  // DD-015 Stage 1: re-apply live dots after DOM rebuild
   }
 
   // ---------- Side nav (two levels: workspace > initiative) -------------
@@ -5916,6 +5930,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
       ? '<span class="pane-info">@ pane ' + esc(loc.zellij_pane_id) + ' (' + esc(loc.zellij_session || '?') + ')</span>'
       : '<span class="pane-info dim" title="' + esc(I18N.no_pane) + '">(' + esc(I18N.no_pane) + ')</span>';
     li.innerHTML =
+      '<span class="live-ic"></span>' +
       '<code class="sid" title="' + esc(sid) + '">' + esc(sidShort) + '</code>' + paneHtml +
       '<div class="sess-actions">' +
         ((loc && loc.zellij_pane_id) ? '<button class="sess-btn act-focus" title="' + esc(I18N.btn_focus) + '">🎯</button>' : '') +
@@ -6254,6 +6269,46 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // Subtle toast so user knows data refreshed (skip on first apply at boot)
     if (window.__ccwBooted) toast('数据已更新');
     window.__ccwBooted = true;
+  }
+
+  // ---------- DD-015 Stage 1: live session status (SSE) -------------------
+  // Per-session running/idle/needs-you, pushed from the server. Kept fully
+  // separate from pollAndApply so a live flicker never triggers a render().
+  var LIVE_STATUS = {};
+  const LIVE_LABEL = { running: 'AI 进行中', idle: '空闲', needs_you: '等你', unknown: '状态未知', ended: '已结束' };
+  function liveIconHTML(st) {
+    if (st === 'running')
+      return '<svg class="li-spin" viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="12" r="9" fill="none" stroke="#14b8a6" stroke-width="3" stroke-linecap="round" stroke-dasharray="40 18"/></svg>';
+    if (st === 'needs_you')
+      return '<span class="li-ndot"><span class="li-ping"></span><span class="li-core"></span></span>';
+    if (st === 'idle')
+      return '<span class="li-idot"></span>';
+    return '';  // ended / unknown / none -> hidden via .live-ic:empty
+  }
+  function applyLiveStatus(map) {
+    if (map) LIVE_STATUS = map;
+    const m = LIVE_STATUS || {};
+    document.querySelectorAll('[data-sid]').forEach(function (el) {
+      const ic = el.querySelector('.live-ic');
+      if (!ic) return;
+      const rec = m[el.getAttribute('data-sid')];
+      const st = rec && rec.status;
+      ic.innerHTML = liveIconHTML(st);
+      ic.title = st ? (LIVE_LABEL[st] || st) + (rec && rec.reason ? (' · ' + rec.reason) : '') : '';
+      el.setAttribute('data-live', st || '');
+    });
+  }
+  function startLiveStatus() {
+    if (!SERVER_MODE) return;
+    fetch(SERVER_ORIGIN + '/api/live')
+      .then(function (r) { return r.json(); })
+      .then(function (j) { applyLiveStatus(j.live || {}); })
+      .catch(function () {});
+    try {
+      const es = new EventSource(SERVER_ORIGIN + '/api/events');
+      es.onmessage = function (e) { try { applyLiveStatus(JSON.parse(e.data)); } catch (_) {} };
+      es.onerror = function () { /* EventSource auto-reconnects */ };
+    } catch (_) {}
   }
 
   // ---------- Lifecycle banner (DD-005) -----------------------------------
@@ -6756,6 +6811,7 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
     // First poll runs slightly delayed so the boot render isn't fighting it.
     setTimeout(pollAndApply, 3000);
     setInterval(pollAndApply, 8000);
+    startLiveStatus();  // DD-015 Stage 1: subscribe to live session status
   }
 
   // Manual AI refresh button (server mode wires to /api/refresh; file:// hides it)
