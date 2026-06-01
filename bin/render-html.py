@@ -3967,13 +3967,14 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
         ev.stopPropagation();
         if (!(await confirmDialog(
               (I18N.confirm_delete || 'Delete "{}"?').replace('{}', init.name)))) return;
-        if (typeof markDeleted === 'function') markDeleted(init.id);
-        else {
-          // Fallback: hide locally
-          const deleted = JSON.parse(localStorage.getItem('deleted_ids') || '[]');
-          deleted.push(init.id);
-          localStorage.setItem('deleted_ids', JSON.stringify(deleted));
-        }
+        // Same durable path as the detail-card delete: push the tombstone
+        // into `overrides.deleted` and saveOverrides(), which persists to
+        // localStorage AND syncs to the server's deleted_ids.json. The old
+        // `markDeleted` fallback wrote to a dead 'deleted_ids' key that
+        // isDeleted() never read and never synced, so hero deletes silently
+        // did nothing and the card reappeared on refresh.
+        if (overrides.deleted.indexOf(init.id) === -1) overrides.deleted.push(init.id);
+        saveOverrides();
         render();
       });
 
