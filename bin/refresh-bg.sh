@@ -48,6 +48,11 @@ except Exception:
 # to record-location.py via stdin so it can read the same fields.
 printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/record-location.py" 2>>"$LOG" || true
 
+# Record live session status (DD-015 Stage 1). Cheap, pure-disk, no AI —
+# Stop/SessionStart map to idle here; running/needs_you come from the
+# UserPromptSubmit/Notification hooks via live-hook.sh.
+printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/live-state.py" 2>>"$LOG" || true
+
 # Fork the actual work and detach so the hook returns immediately.
 (
   echo "[hook] $(date -Iseconds) refresh-bg fired (pid=$$, sid=${SID:-?})" >> "$LOG"

@@ -127,47 +127,58 @@ if ! echo ":$PATH:" | grep -q ":$LOCAL_BIN:"; then
   echo "      Add to your shell rc:  export PATH=\"\$HOME/.local/bin:\$PATH\""
 fi
 
-# --- 3. Claude Code hooks (Stop + SessionStart) ------------------------------
+# --- 3. Claude Code hooks ----------------------------------------------------
+# refresh-bg.sh (Stop, SessionStart) runs the AI pipeline + records live state.
+# live-hook.sh (UserPromptSubmit, Notification, SessionEnd) only records live
+# state (DD-015 Stage 1) — it must NOT trigger the pipeline on every prompt.
 SETTINGS="$HOME_DIR/.claude/settings.json"
 HOOK_CMD="bash $REPO_ROOT/bin/refresh-bg.sh"
+LIVE_CMD="bash $REPO_ROOT/bin/live-hook.sh"
 
 if [ ! -f "$SETTINGS" ]; then
   echo "{}" > "$SETTINGS"
 fi
 cp "$SETTINGS" "$SETTINGS.bak.$(date +%s)"
 
-python3 - "$SETTINGS" "$HOOK_CMD" <<'PY'
+python3 - "$SETTINGS" "$HOOK_CMD" "$LIVE_CMD" <<'PY'
 import json, sys
-path, hook_cmd = sys.argv[1], sys.argv[2]
+path, hook_cmd, live_cmd = sys.argv[1], sys.argv[2], sys.argv[3]
 with open(path) as f:
     data = json.load(f)
 
 hooks = data.setdefault("hooks", {})
+OURS = ("refresh-bg.sh", "live-hook.sh")
+PATHS = ("claude-code-worktree", "claude-stray", "claude-mindmap")
 
-# Clean up any stale entries (e.g. from a previous install path or rename).
+# Clean up our own prior entries (any install path / rename) so re-running
+# the installer never stacks duplicate hooks.
 for event in list(hooks.keys()):
     hooks[event] = [
         e for e in hooks[event]
         if not any(
-            "refresh-bg.sh" in h.get("command", "")
-            and ("claude-code-worktree" in h["command"] or "claude-stray" in h["command"] or "claude-mindmap" in h["command"])
+            any(s in h.get("command", "") for s in OURS)
+            and any(p in h.get("command", "") for p in PATHS)
             for h in e.get("hooks", [])
         )
     ]
 
-def ensure_hook(event_name: str) -> None:
+def ensure_hook(event_name: str, cmd: str) -> None:
     entries = hooks.setdefault(event_name, [])
-    entries.append({
-        "hooks": [{"type": "command", "command": hook_cmd}]
-    })
+    for e in entries:  # dedupe by exact command
+        if any(h.get("command") == cmd for h in e.get("hooks", [])):
+            return
+    entries.append({"hooks": [{"type": "command", "command": cmd}]})
 
-ensure_hook("Stop")
-ensure_hook("SessionStart")
+ensure_hook("Stop", hook_cmd)
+ensure_hook("SessionStart", hook_cmd)
+ensure_hook("UserPromptSubmit", live_cmd)
+ensure_hook("Notification", live_cmd)
+ensure_hook("SessionEnd", live_cmd)
 
 with open(path, "w") as f:
     json.dump(data, f, indent=2, ensure_ascii=False)
 PY
-echo "[3/3] installed Claude Code hooks (Stop + SessionStart)"
+echo "[3/3] installed Claude Code hooks (Stop, SessionStart + live: UserPromptSubmit, Notification, SessionEnd)"
 
 # --- 4. Cleanup any pre-existing launchd timer ------------------------------
 # Earlier versions of this installer added a 2h launchd job as a "hook

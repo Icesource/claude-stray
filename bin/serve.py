@@ -57,6 +57,38 @@ DERIVED_DIR = CACHE_DIR / "derived"
 PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
 
+LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
+
+
+def live_snapshot() -> dict:
+    """Per-session live status for the cockpit, keyed by session_id.
+    Light staleness handling: a 'running' record untouched for >6h is
+    likely a crashed turn (-> unknown); 'ended' records >1h old drop out."""
+    import time
+    out: dict = {}
+    if not LIVE_DIR.is_dir():
+        return out
+    now = time.time()
+    for f in LIVE_DIR.glob("*.json"):
+        try:
+            rec = json.loads(f.read_text())
+        except Exception:
+            continue
+        if not isinstance(rec, dict):
+            continue
+        sid = rec.get("session_id") or f.stem
+        try:
+            age = now - f.stat().st_mtime
+        except Exception:
+            age = 0
+        status = rec.get("status")
+        if status == "ended" and age > 3600:
+            continue
+        if status == "running" and age > 6 * 3600:
+            rec = {**rec, "status": "unknown"}
+        out[sid] = rec
+    return out
+
 
 def has_zellij() -> bool:
     return shutil.which("zellij") is not None
@@ -305,6 +337,40 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _handle_sse(self):
+        """Server-Sent Events stream of live session status (DD-015 Stage 1).
+        ThreadingHTTPServer gives each request its own thread, so this
+        blocking loop does not starve other requests."""
+        import time
+        self.send_response(200)
+        self._cors()
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        last_sig = None
+        last_keepalive = time.time()
+        try:
+            while True:
+                snap = live_snapshot()
+                sig = json.dumps(snap, sort_keys=True, ensure_ascii=False)
+                now = time.time()
+                if sig != last_sig:
+                    self.wfile.write(("data: " + sig + "\n\n").encode("utf-8"))
+                    self.wfile.flush()
+                    last_sig = sig
+                    last_keepalive = now
+                elif now - last_keepalive > 15:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    last_keepalive = now
+                time.sleep(1.0)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        except Exception:
+            return
+
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
 
@@ -329,6 +395,10 @@ class Handler(BaseHTTPRequestHandler):
                 "has_zellij": has_zellij(),
                 "can_write_disk": True,  # the server CAN write to cache/
             })
+        if path == "/api/live":
+            return self._reply(200, {"live": live_snapshot()})
+        if path == "/api/events":
+            return self._handle_sse()
         if path == "/api/data":
             data = {}
             try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
