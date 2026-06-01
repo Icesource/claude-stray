@@ -21,6 +21,12 @@ for when to write one.
 | [DD-009](DD-009-task-ownership-and-completion.md) | Session-bound task ownership + semantic dedup + AI-assisted completion | Superseded by DD-011 |
 | [DD-010](DD-010-tasks-additive-only.md) | Tasks are AI-additive-only, user-deletable-only (post-2026-05-18 data-loss incident) | Superseded by DD-011 |
 | [DD-011](DD-011-task-model-final.md) | Final task model: tri-state status (pending/done/cancelled), drop archive directory, AI may cancel with evidence | Accepted |
+| [DD-012](DD-012-task-wording-stability.md) | Task wording stability (prompt-enforced id/title reuse) | Accepted |
+| [DD-013](DD-013-status-is-not-frozen.md) | Initiative status is mechanically derived, not a sticky flag | Accepted |
+| [DD-014](DD-014-three-tier-work-items.md) | Three-tier work items (thread / card / chip) + hero layout | Accepted (V1) · Deferred (V2) · superseded as primary direction by DD-015 |
+| [DD-015](DD-015-attention-cockpit.md) | Attention cockpit: live session telemetry + interactive web terminal | **Proposed — top priority** |
+| DD-016 | Identity model (session_id atom + persisted membership; AI as labeler) | *Reserved — sketched in [DD-015 §Identity model](DD-015-attention-cockpit.md), full doc pending* |
+| [DD-017](DD-017-cr-watcher.md) | CR/MR watcher: poll review state → tasks, auto-triage new comments to AI | **Proposed — idea-stage** (good first POC for DD-007) |
 
 ## Template
 

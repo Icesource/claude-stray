@@ -20,6 +20,12 @@
 | [DD-009](../../design/DD-009-task-ownership-and-completion.md) | Task 绑定 session 所有权 + 语义去重 + AI 辅助完成态推断 | 被 DD-011 取代 |
 | [DD-010](../../design/DD-010-tasks-additive-only.md) | Task 是 AI-additive-only / 用户才能删除(2026-05-18 数据丢失事故后) | 被 DD-011 取代 |
 | [DD-011](../../design/DD-011-task-model-final.md) | Task 模型最终版：三态 status(pending/done/cancelled)、删除归档目录、AI 可以基于证据取消任务 | Accepted |
+| [DD-012](../../design/DD-012-task-wording-stability.md) | Task 措辞稳定性(prompt 约束 id/title 复用) | Accepted |
+| [DD-013](../../design/DD-013-status-is-not-frozen.md) | Initiative 状态是机械派生的,不是粘滞 flag | Accepted |
+| [DD-014](../../design/DD-014-three-tier-work-items.md) | 三层工作项(thread / card / chip)+ hero 布局 | Accepted(V1)· Deferred(V2)· 主方向被 DD-015 取代 |
+| [DD-015](DD-015-attention-cockpit.md) | 注意力驾驶舱:实时会话遥测 + 可交互 web 终端 | **Proposed —— 最高优先级** |
+| DD-016 | 身份模型(session_id 原子 + 持久化成员集合;AI 做标注) | *预留 —— 已在 [DD-015 身份模型小节](DD-015-attention-cockpit.md) 勾勒,完整文档待补* |
+| [DD-017](../../design/DD-017-cr-watcher.md) | CR/MR 监视器:定时轮询评审状态→任务、新评论自动交给 AI 分诊 | **Proposed —— idea 阶段**(DD-007 的理想首个 POC) |
 
 ## 模板
 
