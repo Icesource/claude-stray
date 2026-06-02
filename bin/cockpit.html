@@ -206,6 +206,7 @@
 
   .disc{position:fixed;right:14px;bottom:12px;font-size:10.5px;color:var(--ink-faint);background:var(--disc-bg);backdrop-filter:blur(6px);border:1px dashed var(--hair);border-radius:5px;padding:5px 9px;max-width:300px;line-height:1.4;z-index:30}
   .iconbtn{font-size:14px;line-height:1;padding:5px 9px;border:1px solid var(--hair);border-radius:6px;background:transparent;color:var(--ink-dim);cursor:pointer}
+  .iconbtn.spinning{animation:spin 1s linear infinite;color:var(--run);border-color:var(--run)}
   .iconbtn:hover{border-color:var(--ink-faint);color:var(--ink)}
   .disc b{color:var(--idle);font-weight:600}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--bg-elev);border:1px solid var(--hair);border-radius:7px;padding:9px 16px;font-size:12.5px;color:var(--ink);opacity:0;transition:all .2s;z-index:40;pointer-events:none}
@@ -233,6 +234,7 @@
     <div class="brand"><span class="mark"></span><span class="name">claude-stray</span><span class="sub">· 注意力驾驶舱</span></div>
     <div class="hud" id="hud"></div>
     <div class="right">
+      <button class="iconbtn" id="refreshBtn" title="刷新:重新分析最近会话(后台跑,完成后自动更新)">⟳</button>
       <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
       <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button></div>
       <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
@@ -582,6 +584,21 @@
     let it='dark';try{it=localStorage.getItem('cockpit-theme')||'dark'}catch(e){}
     if(location.hash.indexOf('light')>=0)it='light'; setTheme(it);})();
   loadData(); setInterval(loadData, 8000); startLive();
+  // ⟳ manual refresh — kicks the AI pipeline (summarize dirty sessions + classify);
+  // spins until the data actually changes (or a 2min fallback).
+  (function(){
+    const b=document.getElementById('refreshBtn'); if(!b)return;
+    b.addEventListener('click', async ()=>{
+      if(b.classList.contains('spinning'))return;
+      b.classList.add('spinning');
+      try{
+        const r=await fetch(ORIGIN+'/api/refresh',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+        toast((r.ok||r.status===202)?'正在后台重新分析最近会话…完成后自动更新':'刷新失败');
+      }catch(_){ toast('刷新失败(服务未启动?)'); }
+      const start=lastSig; let waited=0;
+      const iv=setInterval(()=>{ waited+=2500; if(lastSig!==start||waited>120000){clearInterval(iv);b.classList.remove('spinning');} },2500);
+    });
+  })();
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
 </body>
