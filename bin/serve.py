@@ -379,12 +379,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
-        if path in ("/", "/index", "/index.html", "/dashboard.html"):
-            return self._serve_file(HTML_FILE, "text/html")
+        if path in ("/", "/index", "/index.html", "/cockpit", "/cockpit.html"):
+            return self._serve_file(COCKPIT_FILE, "text/html")  # cockpit is the default page now
+        if path in ("/dashboard.html", "/classic"):
+            return self._serve_file(HTML_FILE, "text/html")  # legacy card dashboard
         if path == "/mindmap-tree.html":
             return self._serve_file(TREE_FILE, "text/html")
-        if path in ("/cockpit", "/cockpit.html"):
-            return self._serve_file(COCKPIT_FILE, "text/html")
         if path == "/favicon.ico":
             # Return a 1x1 transparent SVG so browsers stop asking.
             svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="13" font-size="14">\xf0\x9f\x97\x82\xef\xb8\x8f</text></svg>'
@@ -972,10 +972,21 @@ def serve(open_browser: bool = True):
     # If a new release is out and the user is running interactively,
     # offer to upgrade in place before binding the port.
     _check_updates_interactive()
+    class QuietServer(ThreadingHTTPServer):
+        # A browser dropping a connection (closing a tab, aborting an SSE
+        # stream) raises ConnectionResetError/BrokenPipeError deep in the
+        # handler; the default handle_error dumps an alarming traceback. These
+        # are benign — swallow them, surface everything else.
+        def handle_error(self, request, client_address):
+            exc = sys.exc_info()[1]
+            if isinstance(exc, (ConnectionResetError, BrokenPipeError, ConnectionAbortedError)):
+                return
+            super().handle_error(request, client_address)
+
     last_error = None
     for port in PORTS:
         try:
-            httpd = ThreadingHTTPServer((BIND, port), Handler)
+            httpd = QuietServer((BIND, port), Handler)
         except OSError as e:
             last_error = e
             continue

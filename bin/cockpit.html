@@ -219,6 +219,7 @@
     <div class="right">
       <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
       <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button></div>
+      <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
       <span class="clock" id="clock"></span>
       
     </div>
@@ -232,6 +233,9 @@
   <script>
   const ORIGIN = location.origin;
   let DATA = {counts:{}, rows:[]};
+  const OPEN = new Set();   // expanded initiative ids — preserved across re-renders
+  const PCOLLAPSE = {};      // ws -> 'o'|'c' : manual project collapse override
+  let lastSig = null;        // skip re-render when nothing actually changed
   let MINDMAP = {workspaces:[]};
   let LIVE = {};
   const NEEDS_RE = /待用户|待 ?user|用户确认|用户决定|用户反馈|需确认|待确认|权限确认|等你/;
@@ -272,15 +276,20 @@
     DATA={counts, rows};
   }
   function renderCurrent(){ document.body.dataset.view==='attention'?renderAttention():renderProject(); }
+  // Signature of what's actually rendered (excludes the volatile idle timer),
+  // so the 8s poll / SSE only re-render when something really changed — and
+  // your expanded cards don't collapse under you.
+  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length]))+JSON.stringify(DATA.counts||{}); }
+  function refreshUI(force){ const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent(); }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
       fetch(ORIGIN+'/api/data').then(r=>r.json()),
       fetch(ORIGIN+'/api/live').then(r=>r.json()).catch(()=>({live:{}})) ]);
     MINDMAP=(d&&d.mindmap)||{workspaces:[]}; LIVE=(l&&l.live)||{};
-    buildRows(); rebuildHud(); renderCurrent();
+    buildRows(); refreshUI();
   }catch(e){} }
   function startLive(){ try{ const es=new EventSource(ORIGIN+'/api/events');
-    es.onmessage=e=>{ try{ LIVE=JSON.parse(e.data)||{}; buildRows(); rebuildHud(); renderCurrent(); }catch(_){}}; }catch(_){}}
+    es.onmessage=e=>{ try{ LIVE=JSON.parse(e.data)||{}; buildRows(); refreshUI(); }catch(_){}}; }catch(_){}}
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'done_unread',glyph:'✅',label:'完成 · 待查看',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
     {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'今天完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
@@ -338,7 +347,7 @@
     h+=`<div class="acts"><button class="btn primary" onclick="enter(event)">进入会话 →</button><button class="btn" onclick="enter(event)">在终端打开</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="act(event,'archive')">归档</button><button class="btn danger" onclick="act(event,'delete')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
-    return `<div class="row" data-band="${r.band}">${statusIcon(r.band,12)}`+
+    return `<div class="row" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
       `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}</div></div>`+
       midCell(r)+`<div class="chips">${chipsRow(r.artifacts)}</div><div class="timer">${esc(r.idle)}</div><div class="go">→</div></div>`+detail(r);}
   function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
@@ -406,12 +415,15 @@
   // wiring
   function wire(){
     board.querySelectorAll('.band-head.clickable').forEach(h=>h.addEventListener('click',()=>h.closest('.band').classList.toggle('collapsed')));
-    board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;h.closest('.proj').classList.toggle('collapsed');}));
-    board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){enter(e);return;}row.classList.toggle('open');}));
+    board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;const sec=h.closest('.proj');sec.classList.toggle('collapsed');PCOLLAPSE[sec.dataset.ws]=sec.classList.contains('collapsed')?'c':'o';}));
+    board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){enter(e);return;}const id=row.getAttribute('data-id');const willOpen=!row.classList.contains('open');row.classList.toggle('open');if(id){willOpen?OPEN.add(id):OPEN.delete(id);}}));
     mini.querySelectorAll('.mnode,.mleaf').forEach(n=>n.addEventListener('click',()=>jumpTo(n.dataset.ws)));
     const mh=mini.querySelector('.mind-head');
     if(mh)mh.addEventListener('click',()=>{mini.classList.toggle('mclosed');if(!mini.classList.contains('mclosed'))requestAnimationFrame(drawMindLinks);});
     if(location.hash.indexOf('open')>=0){const m=location.hash.match(/open=?(\d+)?/),rows=board.querySelectorAll('.row'),idx=m&&m[1]?parseInt(m[1]):0;if(rows[idx])rows[idx].classList.add('open');}
+    // re-apply preserved UI state so a background refresh never collapses your view
+    board.querySelectorAll('.proj').forEach(sec=>{const v=PCOLLAPSE[sec.dataset.ws];if(v==='o')sec.classList.remove('collapsed');else if(v==='c')sec.classList.add('collapsed');});
+    board.querySelectorAll('.row[data-id]').forEach(row=>{if(OPEN.has(row.getAttribute('data-id')))row.classList.add('open');});
   }
   let dragEl=null;
   function bindDnD(){
