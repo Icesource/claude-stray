@@ -199,6 +199,10 @@
   .row[data-band="running"].open + .detail{border-left-color:var(--run)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
   .detail .progress{font-size:13px;color:var(--ink);margin-bottom:12px;line-height:1.5}
+  .detail .prog-steps{list-style:none;margin:2px 0 12px;padding:0;display:flex;flex-direction:column;gap:5px}
+  .detail .prog-steps li{font-size:12.5px;color:var(--ink);padding-left:17px;position:relative;line-height:1.5}
+  .detail .prog-steps li::before{content:'';position:absolute;left:3px;top:7px;width:5px;height:5px;border-radius:50%;background:var(--run);box-shadow:0 0 0 3px var(--run-bg)}
+  .detail .prog-steps li:last-child{color:var(--ink);font-weight:500}
   .detail .sectit{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--ink-faint);text-transform:uppercase;margin:11px 0 6px}
   .detail ul{list-style:none}
   .detail .blk{font-size:12.5px;color:var(--needs);padding:2px 0;display:flex;gap:8px}
@@ -241,7 +245,11 @@
   .aw-label{font-size:15px;font-weight:600;color:var(--ink)}
   .aw-wk{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
   .aw-cnt{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
-  .aw-summary{font-size:12.5px;color:var(--ink-dim);margin:8px 0 12px}
+  .aw-rep{font-size:10px;color:var(--run);border:1px solid var(--run);border-radius:4px;padding:1px 6px;letter-spacing:.04em;opacity:.85}
+  .aw-summary{font-size:13px;color:var(--ink);margin:9px 0 8px;line-height:1.5}
+  .aw-hl{list-style:none;margin:0 0 12px;padding:0;display:flex;flex-direction:column;gap:3px}
+  .aw-hl li{font-size:12px;color:var(--ink-dim);padding-left:14px;position:relative;line-height:1.5}
+  .aw-hl li::before{content:'';position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:var(--done)}
   .aw-proj{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--hair-soft)}
   .aw-ws{font-family:var(--mono);font-size:11px;color:var(--ink-faint);min-width:130px;padding-top:3px}
   .aw-items{display:flex;flex-wrap:wrap;gap:6px;flex:1}
@@ -331,7 +339,9 @@
       board.innerHTML=weeks.map(w=>{
         const byWs={}; (w.items||[]).forEach(it=>{(byWs[it.ws]=byWs[it.ws]||[]).push(it);});
         const groups=Object.keys(byWs).map(ws=>`<div class="aw-proj"><span class="aw-ws">${esc(ws)}</span><div class="aw-items">`+byWs[ws].map(it=>`<span class="aw-item ${it.kind}" title="${esc((it.when||'').slice(0,10))}">${it.kind==='archived'?'📦':'✓'} ${esc(it.name)}</span>`).join('')+`</div></div>`).join('');
-        return `<section class="aw-week"><div class="aw-head"><span class="aw-label">${esc(w.label)}</span><span class="aw-wk">${esc(w.week)}</span><span class="aw-cnt">${w.count} 项</span></div><div class="aw-summary">${esc(w.summary)}</div>${groups}</section>`;
+        const rep=w.has_report?`<span class="aw-rep" title="基于 DD-006 周报提炼">周报</span>`:'';
+        const hl=(w.highlights&&w.highlights.length)?`<ul class="aw-hl">`+w.highlights.map(h=>`<li>${esc(h)}</li>`).join('')+`</ul>`:'';
+        return `<section class="aw-week"><div class="aw-head"><span class="aw-label">${esc(w.label)}</span><span class="aw-wk">${esc(w.week)}</span>${rep}<span class="aw-cnt">${w.count} 项</span></div><div class="aw-summary">${esc(w.summary)}</div>${hl}${groups}</section>`;
       }).join('');
     }catch(_){ board.innerHTML='<div style="padding:48px;text-align:center;color:var(--ink-faint)">加载失败</div>'; }
   }
@@ -401,9 +411,14 @@
     if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
     if(r.band==='paused')return progMid('idle', r, '搁置 · '+esc(r.idle)+'未动');
     return `<div class="mid"></div>`;}
+  // 把 progress 自由叙述切成「进展节点」,让关键动作各自成行可扫读(轻量补 task 粒度)
+  function progSteps(t){
+    const parts=((t||'').match(/[^。!?；]+[。!?；]?/g)||[]).map(s=>s.trim()).filter(s=>s.length>=6);
+    if(parts.length<=1)return `<div class="progress">${esc(t||'')}</div>`;
+    return `<div class="sectit">进展</div><ul class="prog-steps">`+parts.map(p=>`<li>${esc(p)}</li>`).join('')+`</ul>`;}
   function detail(r){let h='';
     if(r.summary)h+=`<div class="summary">${esc(r.summary)}</div>`;
-    if(r.progress)h+=`<div class="progress">${esc(r.progress)}</div>`;
+    if(r.progress)h+=progSteps(r.progress);
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
     if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
