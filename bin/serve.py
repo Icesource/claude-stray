@@ -648,11 +648,16 @@ class Handler(BaseHTTPRequestHandler):
                 inner = "cd " + shlex.quote(cwd) + " && " + inner
         import socket
         s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+        # Strip ZELLIJ* env: serve.py itself runs inside a zellij session, so a
+        # child would inherit ZELLIJ_SESSION_NAME and `zellij attach <that>`
+        # would panic with "trying to attach to the current session". Clearing
+        # it makes ttyd's shell a fresh client that can attach/mirror.
+        child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
         try:
             proc = subprocess.Popen(
                 [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W", "-t", "titleFixed=" + sid[:8],
                  "bash", "-lc", inner],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
         _TERMINALS[sid] = (port, proc)

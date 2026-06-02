@@ -221,6 +221,11 @@
   .ht-text{font-size:13px;line-height:1.6;padding:9px 13px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
   .ht.user .ht-text{background:var(--needs-bg);border:1px solid var(--hair)}
   .ht.assistant .ht-text{background:var(--bg-row);border:1px solid var(--hair-soft);color:var(--ink-dim)}
+  /* web terminal modal (DD-015 Stage 3b) */
+  .termmask{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:24px}
+  .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1100px,96vw);height:min(740px,90vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55)}
+  .termhead{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--hair);font-size:13px;color:var(--ink-dim);font-family:var(--mono)}
+  .termframe{flex:1;width:100%;border:none;background:#000}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -483,7 +488,7 @@
       try{
         const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
         const j=await r.json();
-        if(r.ok&&j.url){ toast(j.mode==='attach'?'已镜像 zellij 会话(实时)':'已打开浏览器终端(resume)'); window.open(j.url,'_blank'); return; }
+        if(r.ok&&j.url){ openTermModal(j.url, j.mode); return; }
         toast(j.hint||j.error||'终端打开失败');
       }catch(_){ toast('终端打开失败'); }
       return;
@@ -515,6 +520,13 @@
       m.onclick=ev=>{if(ev.target===m)m.remove();};
       const hb=m.querySelector('.histbody'); if(hb)hb.scrollTop=hb.scrollHeight;
     }catch(_){toast('加载对话失败');}
+  }
+  // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
+  function openTermModal(url, mode){
+    let m=document.getElementById('termModal');
+    if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
+    m.innerHTML=`<div class="termbox"><div class="termhead"><span>${mode==='attach'?'⟲ 实时镜像 zellij 会话':'▸ 终端 · claude --resume'}</span><div style="display:flex;gap:8px"><a class="btn" href="${esc(url)}" target="_blank">↗ 新标签</a><button class="btn" onclick="document.getElementById('termModal').remove()">关闭</button></div></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
+    m.onclick=ev=>{if(ev.target===m)m.remove();};
   }
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){
