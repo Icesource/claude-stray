@@ -483,7 +483,7 @@
       try{
         const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
         const j=await r.json();
-        if(r.ok&&j.url){ toast('已打开浏览器终端'); window.open(j.url,'_blank'); return; }
+        if(r.ok&&j.url){ toast(j.mode==='attach'?'已镜像 zellij 会话(实时)':'已打开浏览器终端(resume)'); window.open(j.url,'_blank'); return; }
         toast(j.hint||j.error||'终端打开失败');
       }catch(_){ toast('终端打开失败'); }
       return;
