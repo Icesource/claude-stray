@@ -508,19 +508,31 @@
     try{ const r=await fetch(ORIGIN+'/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); if(!r.ok)throw 0; OPEN.delete(id); toast('已删除'); setTimeout(()=>loadData(),400);}catch(_){toast('删除失败');}
   }
   // DD-015 Stage 3a: read-only recent conversation
-  async function viewHistory(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
-    toast('加载对话…');
+  // Live read-only conversation mirror: reads the session jsonl (which Claude
+  // Code writes in real time), auto-refreshing — so you watch the session
+  // progress as you work in Ghostty, with NO terminal resize.
+  let _histTimer=null;
+  async function loadHist(sid){
+    const m=document.getElementById('histModal'); if(!m)return;
     try{
       const j=await fetch(ORIGIN+'/api/transcript?sid='+encodeURIComponent(sid)+'&n=16').then(r=>r.json());
       const turns=j.turns||[];
-      const body=turns.length?turns.map(t=>`<div class="ht ${t.role}"><div class="ht-role">${t.role==='user'?'你':'Claude'}</div><div class="ht-text">${esc(t.text)}</div></div>`).join(''):'<div style="color:var(--ink-faint);padding:24px;text-align:center">没有可显示的对话</div>';
-      let m=document.getElementById('histModal');
-      if(!m){m=document.createElement('div');m.id='histModal';m.className='histmask';document.body.appendChild(m);}
-      m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 ${turns.length} 轮</span><button class="btn" onclick="document.getElementById('histModal').remove()">关闭</button></div><div class="histbody">${body}</div></div>`;
-      m.onclick=ev=>{if(ev.target===m)m.remove();};
-      const hb=m.querySelector('.histbody'); if(hb)hb.scrollTop=hb.scrollHeight;
-    }catch(_){toast('加载对话失败');}
+      const hb=m.querySelector('.histbody'); if(!hb)return;
+      const atBottom = hb.scrollHeight-hb.scrollTop-hb.clientHeight < 80;
+      hb.innerHTML = turns.length?turns.map(t=>`<div class="ht ${t.role}"><div class="ht-role">${t.role==='user'?'你':'Claude'}</div><div class="ht-text">${esc(t.text)}</div></div>`).join(''):'<div style="color:var(--ink-faint);padding:24px;text-align:center">没有可显示的对话</div>';
+      const cnt=m.querySelector('.hist-cnt'); if(cnt)cnt.textContent=turns.length;
+      if(atBottom) hb.scrollTop=hb.scrollHeight;
+    }catch(_){}
   }
+  function viewHistory(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
+    let m=document.getElementById('histModal');
+    if(!m){m=document.createElement('div');m.id='histModal';m.className='histmask';document.body.appendChild(m);}
+    m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 <b class="hist-cnt">…</b> 轮 · <span style="color:var(--run)">● 实时</span></span><button class="btn" onclick="closeHist()">关闭</button></div><div class="histbody"><div style="color:var(--ink-faint);padding:24px;text-align:center">加载中…</div></div></div>`;
+    m.onclick=ev=>{if(ev.target===m)closeHist();};
+    loadHist(sid);
+    clearInterval(_histTimer); _histTimer=setInterval(()=>loadHist(sid), 4000);
+  }
+  function closeHist(){ clearInterval(_histTimer); _histTimer=null; const m=document.getElementById('histModal'); if(m)m.remove(); }
   // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
   function openTermModal(url, mode, sid){
     let m=document.getElementById('termModal');
