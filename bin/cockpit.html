@@ -488,7 +488,7 @@
       try{
         const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
         const j=await r.json();
-        if(r.ok&&j.url){ openTermModal(j.url, j.mode); return; }
+        if(r.ok&&j.url){ openTermModal(j.url, j.mode, sid); return; }
         toast(j.hint||j.error||'终端打开失败');
       }catch(_){ toast('终端打开失败'); }
       return;
@@ -522,11 +522,15 @@
     }catch(_){toast('加载对话失败');}
   }
   // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
-  function openTermModal(url, mode){
+  function openTermModal(url, mode, sid){
     let m=document.getElementById('termModal');
     if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
-    m.innerHTML=`<div class="termbox"><div class="termhead"><span>${mode==='attach'?'⟲ 实时镜像 zellij 会话':'▸ 终端 · claude --resume'}</span><div style="display:flex;gap:8px"><a class="btn" href="${esc(url)}" target="_blank">↗ 新标签</a><button class="btn" onclick="document.getElementById('termModal').remove()">关闭</button></div></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
-    m.onclick=ev=>{if(ev.target===m)m.remove();};
+    m.innerHTML=`<div class="termbox"><div class="termhead"><span>${mode==='attach'?'⟲ 实时镜像 zellij 会话':'▸ 终端 · claude --resume'}</span><div style="display:flex;gap:8px"><a class="btn" href="${esc(url)}" target="_blank">↗ 新标签</a><button class="btn" onclick="closeTerm('${esc(sid)}')">关闭</button></div></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
+    m.onclick=ev=>{if(ev.target===m)closeTerm(sid);};
+  }
+  function closeTerm(sid){
+    const m=document.getElementById('termModal'); if(m)m.remove();
+    fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
   }
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){

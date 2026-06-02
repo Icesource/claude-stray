@@ -600,7 +600,20 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/delete": return self._handle_delete(body)
         if path == "/api/archive": return self._handle_archive(body)
         if path == "/api/terminal": return self._handle_terminal(body)
+        if path == "/api/terminal-close": return self._handle_terminal_close(body)
         self._reply(404, {"error": "not found", "path": path})
+
+    def _handle_terminal_close(self, body: dict):
+        """Kill the ttyd spawned for a session (called when the cockpit closes
+        the terminal modal) so claude/ttyd processes don't pile up."""
+        sid = (body.get("sid") or "").strip()
+        ent = _TERMINALS.pop(sid, None)
+        if ent:
+            try:
+                ent[1].terminate()
+            except Exception:
+                pass
+        return self._reply(200, {"ok": True})
 
     def _handle_terminal(self, body: dict):
         """DD-015 Stage 3: spawn a localhost ttyd running `claude --resume <sid>`
@@ -628,8 +641,12 @@ class Handler(BaseHTTPRequestHandler):
         # (a true live mirror — shared input, you see the real pane). Only fall
         # back to `claude --resume` (a fresh parallel continuation) when there's
         # no live pane to mirror.
+        # Default to resume (a separate continuation). ATTACH is a true live
+        # mirror but zellij shares one size across all clients (smallest wins),
+        # so attaching a small browser terminal SHRINKS your real terminal —
+        # only do it when explicitly requested.
         mode = "resume"
-        if zsess and has_zellij():
+        if body.get("attach") and zsess and has_zellij():
             rc, out, _ = run_cmd(["zellij", "list-sessions"])
             if rc == 0:
                 for line in (out or "").splitlines():
