@@ -52,6 +52,19 @@ else
 fi
 mkdir -p "$(dirname "$LOG")"
 
+# Corrupt-lock cleanup. The lock is a *directory* (atomic mkdir). If the
+# path exists as a NON-directory (e.g. a 0-byte file left by an older or
+# interrupted run), `mkdir` can never succeed and Layer 2 is blocked
+# FOREVER — every trigger just sets the pending marker and exits, so
+# classify.py never runs and dashboard.json goes permanently stale.
+# (Observed 2026-06-02: a May-29 0-byte `layer2.lock.d` file froze Layer 2
+# for days.) The stale-dir check below only fires for directories, so this
+# non-dir case must be handled explicitly.
+if [ -e "$LOCK_DIR_PATH" ] && [ ! -d "$LOCK_DIR_PATH" ]; then
+  echo "[layer2-trigger] $(date -Iseconds) removing corrupt non-dir lock" >> "$LOG"
+  rm -f "$LOCK_DIR_PATH" 2>/dev/null || true
+fi
+
 # Stale-lock cleanup. If a previous run was killed -9 the lockdir lingers
 # and blocks all future runs. Use `find -mtime` since `stat` is non-portable.
 if [ -d "$LOCK_DIR_PATH" ]; then
