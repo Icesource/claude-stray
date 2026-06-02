@@ -482,6 +482,15 @@ class Handler(BaseHTTPRequestHandler):
             data = {}
             try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
             except Exception: data["mindmap"] = None
+            # DD-016 safety net: never serve same-session duplicate cards, even if
+            # a stale/racy classify wrote them (the file is fixed on the next run).
+            try:
+                if data.get("mindmap"):
+                    sys.path.insert(0, str(REPO_ROOT / "bin"))
+                    import classify
+                    classify.dedup_by_session(data["mindmap"])
+            except Exception:
+                pass
             try: data["locations"] = json.load(open(LOCATIONS_JSON))
             except Exception: data["locations"] = None
             # Archived items from cache/archive/<ws>/<id>.json — these are
