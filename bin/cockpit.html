@@ -209,6 +209,18 @@
   .iconbtn:hover{border-color:var(--ink-faint);color:var(--ink)}
   .disc b{color:var(--idle);font-weight:600}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--bg-elev);border:1px solid var(--hair);border-radius:7px;padding:9px 16px;font-size:12.5px;color:var(--ink);opacity:0;transition:all .2s;z-index:40;pointer-events:none}
+  /* conversation history modal (DD-015 Stage 3a) */
+  .histmask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:40px}
+  .histbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:760px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .histhead{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;border-bottom:1px solid var(--hair);font-size:13px;color:var(--ink-dim);font-family:var(--mono)}
+  .histbody{overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:13px}
+  .ht{max-width:82%}
+  .ht.user{align-self:flex-end} .ht.assistant{align-self:flex-start}
+  .ht-role{font-size:10.5px;color:var(--ink-faint);margin-bottom:3px;font-family:var(--mono)}
+  .ht.user .ht-role{text-align:right}
+  .ht-text{font-size:13px;line-height:1.6;padding:9px 13px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
+  .ht.user .ht-text{background:var(--needs-bg);border:1px solid var(--hair)}
+  .ht.assistant .ht-text{background:var(--bg-row);border:1px solid var(--hair-soft);color:var(--ink-dim)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -347,7 +359,7 @@
     if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
     h+=`<div class="meta"><span>会话 ${r.n_sessions||0} 个</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
-    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">进入会话 →</button><button class="btn" onclick="openTerminal(event,'${sid0}')">在终端打开</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">进入会话 →</button><button class="btn" onclick="openTerminal(event,'${sid0}')">在终端打开</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     return `<div class="row" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
@@ -479,6 +491,20 @@
     if(!confirm('删除「'+name+'」?会从看板移除(记录到 deleted_ids)。')) return;
     try{ const r=await fetch(ORIGIN+'/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); if(!r.ok)throw 0; OPEN.delete(id); toast('已删除'); setTimeout(()=>loadData(),400);}catch(_){toast('删除失败');}
   }
+  // DD-015 Stage 3a: read-only recent conversation
+  async function viewHistory(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
+    toast('加载对话…');
+    try{
+      const j=await fetch(ORIGIN+'/api/transcript?sid='+encodeURIComponent(sid)+'&n=16').then(r=>r.json());
+      const turns=j.turns||[];
+      const body=turns.length?turns.map(t=>`<div class="ht ${t.role}"><div class="ht-role">${t.role==='user'?'你':'Claude'}</div><div class="ht-text">${esc(t.text)}</div></div>`).join(''):'<div style="color:var(--ink-faint);padding:24px;text-align:center">没有可显示的对话</div>';
+      let m=document.getElementById('histModal');
+      if(!m){m=document.createElement('div');m.id='histModal';m.className='histmask';document.body.appendChild(m);}
+      m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 ${turns.length} 轮</span><button class="btn" onclick="document.getElementById('histModal').remove()">关闭</button></div><div class="histbody">${body}</div></div>`;
+      m.onclick=ev=>{if(ev.target===m)m.remove();};
+      const hb=m.querySelector('.histbody'); if(hb)hb.scrollTop=hb.scrollHeight;
+    }catch(_){toast('加载对话失败');}
+  }
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){
     e.stopPropagation();
@@ -524,6 +550,7 @@
     let it='dark';try{it=localStorage.getItem('cockpit-theme')||'dark'}catch(e){}
     if(location.hash.indexOf('light')>=0)it='light'; setTheme(it);})();
   loadData(); setInterval(loadData, 8000); startLive();
+  if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
 </body>
 </html>

@@ -374,6 +374,75 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return
 
+    def _handle_transcript(self):
+        """Read-only recent conversation for a session (DD-015 Stage 3a).
+        Locates the jsonl via cache/sessions/<sid>.json's source_file, parses
+        the last N user/assistant turns into {role, text, at}."""
+        from urllib.parse import parse_qs as _pqs
+        qs = _pqs(urlparse(self.path).query)
+        sid = (qs.get("sid") or [""])[0]
+        try:
+            n = max(1, min(60, int((qs.get("n") or ["14"])[0])))
+        except Exception:
+            n = 14
+        if not sid or "/" in sid or ".." in sid:
+            return self._reply(400, {"error": "bad sid"})
+        meta = CACHE_DIR / "sessions" / f"{sid}.json"
+        try:
+            sf = json.loads(meta.read_text()).get("source_file")
+        except Exception:
+            sf = None
+        if not sf or not os.path.exists(sf):
+            return self._reply(404, {"error": "transcript not found"})
+        turns = []
+        try:
+            with open(sf, encoding="utf-8") as f:
+                for ln in f:
+                    try:
+                        o = json.loads(ln)
+                    except Exception:
+                        continue
+                    t = o.get("type")
+                    if t not in ("user", "assistant"):
+                        continue
+                    content = (o.get("message") or {}).get("content")
+                    if t == "user":
+                        if isinstance(content, str):
+                            text = content
+                        elif isinstance(content, list):
+                            parts = [c.get("text", "") for c in content
+                                     if isinstance(c, dict) and c.get("type") == "text"]
+                            if not parts:
+                                continue  # tool_result feedback, not a real user message
+                            text = "\n".join(parts)
+                        else:
+                            continue
+                        turns.append({"role": "user", "text": text, "at": o.get("timestamp")})
+                    else:
+                        if not isinstance(content, list):
+                            continue
+                        texts, tools = [], []
+                        for c in content:
+                            if not isinstance(c, dict):
+                                continue
+                            if c.get("type") == "text" and (c.get("text") or "").strip():
+                                texts.append(c["text"])
+                            elif c.get("type") == "tool_use":
+                                tools.append(c.get("name") or "")
+                        text = "\n".join(texts)
+                        if not text and tools:
+                            text = "[使用工具: " + ", ".join(t for t in tools if t) + "]"
+                        if not text:
+                            continue
+                        turns.append({"role": "assistant", "text": text, "at": o.get("timestamp")})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        turns = turns[-n:]
+        for t in turns:
+            if len(t["text"]) > 2000:
+                t["text"] = t["text"][:2000] + " …(截断)"
+        return self._reply(200, {"sid": sid, "turns": turns})
+
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
 
@@ -404,6 +473,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, {"live": live_snapshot()})
         if path == "/api/events":
             return self._handle_sse()
+        if path == "/api/transcript":
+            return self._handle_transcript()
         if path == "/api/data":
             data = {}
             try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
