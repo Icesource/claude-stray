@@ -523,6 +523,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/consolidate-tasks": return self._handle_consolidate(body)
         if path == "/api/update": return self._handle_update(body)
         if path == "/api/merge": return self._handle_merge(body)
+        if path == "/api/delete": return self._handle_delete(body)
+        if path == "/api/archive": return self._handle_archive(body)
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_merge(self, body: dict):
@@ -623,6 +625,75 @@ class Handler(BaseHTTPRequestHandler):
         if rc != 0:
             return self._reply(500, {"error": err.strip() or "newpane failed"})
         return self._reply(200, {"ok": True})
+
+    # ---- Per-item delete / archive (append, not overwrite) ----------------
+
+    def _remove_from_dashboard(self, iid: str):
+        """Drop an initiative from dashboard.json now + regen, so the cockpit
+        reflects a delete/archive immediately (classify also honors it via
+        deleted_ids.json / the archive dir on the next run)."""
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text())
+            for ws in d.get("workspaces", []):
+                ws["initiatives"] = [i for i in (ws.get("initiatives") or []) if i.get("id") != iid]
+            d["workspaces"] = [w for w in d.get("workspaces", []) if (w.get("initiatives") or [])]
+            sys.path.insert(0, str(REPO_ROOT / "bin"))
+            import classify
+            classify.atomic_write_json(DASHBOARD_JSON, d)
+            threading.Thread(target=regenerate_html, daemon=True).start()
+        except Exception:
+            pass
+
+    def _handle_delete(self, body: dict):
+        iid = (body.get("id") or "").strip()
+        if not iid:
+            return self._reply(400, {"error": "id required"})
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            try:
+                doc = json.loads(DELETED_JSON.read_text())
+                if not isinstance(doc, dict): doc = {}
+            except Exception:
+                doc = {}
+            inits = doc.setdefault("initiatives", [])
+            if not any(x.get("id") == iid for x in inits):
+                inits.append({"id": iid, "deleted_at": now})
+            doc["version"] = 1
+            doc["updated_at"] = now
+            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            self._remove_from_dashboard(iid)
+            return self._reply(200, {"ok": True})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+
+    def _handle_archive(self, body: dict):
+        iid = (body.get("id") or "").strip()
+        if not iid:
+            return self._reply(400, {"error": "id required"})
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text())
+            found = fws = None
+            for ws in d.get("workspaces", []):
+                for i in (ws.get("initiatives") or []):
+                    if i.get("id") == iid:
+                        found, fws = i, ws; break
+                if found:
+                    break
+            if not found:
+                return self._reply(404, {"error": "not found"})
+            ws_name = fws.get("name") or "unknown"
+            ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
+            ws_dir.mkdir(parents=True, exist_ok=True)
+            payload = {"archived_at": now, "archived_by": "user",
+                       "from_workspace": ws_name, "initiative": found}
+            (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            self._remove_from_dashboard(iid)
+            return self._reply(200, {"ok": True})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
 
     # ---- Save overrides directly to cache/ --------------------------------
 
