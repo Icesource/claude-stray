@@ -522,7 +522,50 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/lifecycle": return self._handle_lifecycle(body)
         if path == "/api/consolidate-tasks": return self._handle_consolidate(body)
         if path == "/api/update": return self._handle_update(body)
+        if path == "/api/merge": return self._handle_merge(body)
         self._reply(404, {"error": "not found", "path": path})
+
+    def _handle_merge(self, body: dict):
+        """DD-016: record a user-declared merge into initiative_links.json and
+        apply it to dashboard.json immediately. Body:
+            {sessions: [sid...], canonical_id?: str, name?: str}
+        The merge is durable — classify.apply_initiative_links re-applies it on
+        every future run, so re-clustering can never re-split it."""
+        try:
+            sessions = [s for s in (body.get("sessions") or []) if s]
+            if len(sessions) < 2:
+                return self._reply(400, {"error": "need >= 2 sessions"})
+            links = CACHE_DIR / "initiative_links.json"
+            try:
+                doc = json.loads(links.read_text())
+                if not isinstance(doc, dict):
+                    doc = {}
+            except Exception:
+                doc = {}
+            doc.setdefault("version", 1)
+            groups = doc.setdefault("groups", [])
+            sset = set(sessions)
+            # fold into any existing group that shares a session
+            target = next((g for g in groups if sset.intersection(g.get("sessions") or [])), None)
+            if target is None:
+                target = {"sessions": []}
+                groups.append(target)
+            target["sessions"] = sorted(set((target.get("sessions") or []) + sessions))
+            if body.get("canonical_id"):
+                target["canonical_id"] = body["canonical_id"]
+            if body.get("name"):
+                target["name"] = body["name"]
+            links.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            # apply immediately + regen HTML
+            sys.path.insert(0, str(REPO_ROOT / "bin"))
+            import classify
+            d = json.loads(DASHBOARD_JSON.read_text())
+            n = classify.apply_initiative_links(d)
+            classify.atomic_write_json(DASHBOARD_JSON, d)
+            threading.Thread(target=regenerate_html, daemon=True).start()
+            return self._reply(200, {"ok": True, "merged": n})
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
 
     def _handle_lifecycle(self, body: dict):
         """Pause / resume the pipeline (DD-005). Body:
