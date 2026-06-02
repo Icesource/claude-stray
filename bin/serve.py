@@ -444,6 +444,33 @@ class Handler(BaseHTTPRequestHandler):
                 t["text"] = t["text"][:2000] + " …(截断)"
         return self._reply(200, {"sid": sid, "turns": turns})
 
+    @staticmethod
+    def _parse_weekly_report(text):
+        """从 DD-006 周报 markdown 提取 (一句话总结, [亮点标题...])。
+        总结优先取「已交付」段导语,回退到亮点标题拼接;亮点取各 bullet
+        的 **加粗** 标题。纯字符串解析,不依赖 re。"""
+        section = None
+        highlights, delivered = [], []
+        for ln in text.splitlines():
+            s = ln.strip()
+            if s.startswith("## "):
+                h = s[3:]
+                section = "hl" if "亮点" in h else ("deliver" if "交付" in h else "other")
+                continue
+            if section == "hl" and s.startswith("- ") and "**" in s:
+                body = s[2:].strip()
+                a = body.find("**"); b = body.find("**", a + 2)
+                if b > a and body[a + 2:b].strip():
+                    highlights.append(body[a + 2:b].strip())
+            elif section == "deliver" and s and not s.startswith(("#", "-")):
+                delivered.append(s)
+        lead = None
+        if delivered:
+            lead = delivered[0].rstrip("：: ").replace("**", "").strip()
+        elif highlights:
+            lead = "、".join(highlights[:3])
+        return lead, highlights[:5]
+
     def _handle_archive_weeks(self):
         """Completed/archived work grouped by ISO week, for the cockpit's 归档
         view. Sources: cache/archive/<ws>/<id>.json + status==done initiatives.
@@ -493,16 +520,19 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 label = key
             names = [it["name"] for it in its if it.get("name")]
-            summary = f"完成/归档 {len(its)} 项:" + "、".join(names[:4]) + ("…" if len(names) > 4 else "")
+            tally = f"完成/归档 {len(its)} 项:" + "、".join(names[:4]) + ("…" if len(names) > 4 else "")
             rep = DERIVED_DIR / "reports" / f"{key}.md"
-            report = None
+            lead, highlights, has_report = None, [], False
             if rep.exists():
                 try:
-                    report = rep.read_text()[:600]
+                    lead, highlights = self._parse_weekly_report(rep.read_text())
+                    has_report = True
                 except Exception:
-                    report = None
+                    pass
             out.append({"week": key, "label": label, "count": len(its),
-                        "summary": summary, "items": its, "report": report})
+                        "summary": lead or tally, "tally": tally,
+                        "highlights": highlights, "has_report": has_report,
+                        "items": its})
         return self._reply(200, {"weeks": out})
 
     def do_OPTIONS(self):
