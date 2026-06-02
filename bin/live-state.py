@@ -12,7 +12,7 @@ State machine (verified against the hooks docs, 2026-06-01):
   UserPromptSubmit                       -> running   (you sent a prompt, AI working)
   Stop                                   -> idle      (turn ended)
   Notification permission_prompt/elicit  -> needs_you (AI blocked on your approval/input)
-  Notification idle_prompt               -> idle      (AI idle, waiting for next prompt)
+  Notification idle_prompt               -> (no change; never downgrades done_unread)
   SessionStart (startup/resume)          -> idle      (opened, nothing running yet)
   SessionEnd                             -> ended
   (other notifications)                  -> ignored   (don't clobber current status)
@@ -43,7 +43,6 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LIVE_DIR = REPO_ROOT / "cache" / "live"
 
 NEEDS_YOU_NOTIFICATIONS = {"permission_prompt", "elicitation_dialog"}
-IDLE_NOTIFICATIONS = {"idle_prompt"}
 
 
 def _now() -> str:
@@ -80,9 +79,12 @@ def status_for(payload: dict) -> tuple[str | None, str | None]:
         nt = payload.get("notification_type") or ""
         if nt in NEEDS_YOU_NOTIFICATIONS:
             return "needs_you", "等待你授权 / 输入"
-        if nt in IDLE_NOTIFICATIONS:
-            return "idle", None
-        return None, None  # auth_success etc. — don't change status
+        # idle_prompt fires right after EVERY Stop ("Claude is idle, waiting
+        # for you"). Mapping it to idle used to clobber the done_unread that
+        # Stop had just set, so a finished turn instantly looked "idle" and the
+        # card never showed 在跑/待查看. Leave the status untouched instead —
+        # done_unread persists until you re-engage (UserPromptSubmit) or decay.
+        return None, None  # idle_prompt / auth_success etc. — never downgrade
     return None, None
 
 
