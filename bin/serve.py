@@ -49,6 +49,7 @@ LOCATIONS_JSON = CACHE_DIR / "session_locations.json"
 OVERRIDES_JSON = CACHE_DIR / "user_overrides.json"
 DELETED_JSON = CACHE_DIR / "deleted_ids.json"
 ARCHIVE_DIR = CACHE_DIR / "archive"
+COCKPIT_FILE = REPO_ROOT / "bin" / "cockpit.html"  # DD-015 cockpit (live, real data)
 RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
@@ -380,6 +381,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_file(HTML_FILE, "text/html")
         if path == "/mindmap-tree.html":
             return self._serve_file(TREE_FILE, "text/html")
+        if path in ("/cockpit", "/cockpit.html"):
+            return self._serve_file(COCKPIT_FILE, "text/html")
         if path == "/favicon.ico":
             # Return a 1x1 transparent SVG so browsers stop asking.
             svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="13" font-size="14">\xf0\x9f\x97\x82\xef\xb8\x8f</text></svg>'
