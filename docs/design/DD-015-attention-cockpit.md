@@ -288,6 +288,22 @@ WS↔PTY bridge (more code, one fewer external dep). Decide at build time
 
 ## Security model (Capability C only)
 
+> **Distribution design (implemented 2026-06-02).** Because claude-stray is
+> open-source and installed by others, the web terminal is **optional,
+> off by default, and degrades gracefully** — the default install needs no
+> `ttyd` and gains no new attack surface:
+> - Enabled only with `stray --serve --enable-terminal`. `/api/terminal`
+>   returns 403 otherwise.
+> - `ttyd` is an **optional runtime dependency**, auto-detected (`which ttyd`).
+>   Missing → `/api/terminal` returns 503 with an install hint; `/ping`
+>   advertises `terminal`/`ttyd`/`terminal_enabled` so the cockpit adapts.
+> - The cockpit's "在终端打开" uses the browser terminal only when available;
+>   otherwise it falls back to opening a **zellij pane** (`/newpane`, no ttyd).
+> - `install.sh` prints an *optional* per-OS ttyd hint, never requires it.
+> - ttyd binds `127.0.0.1` on an ephemeral port (same localhost-trust model as
+>   the existing `/newpane`, which already runs `claude --dangerously-skip-
+>   permissions`). A URL token is a future hardening item.
+
 > **Deferred — not a current concern.** Stage 1 (telemetry) and Stage 2
 > (next-step) have **zero** security surface, so security does not block
 > the priority path. This section applies only when Capability C is

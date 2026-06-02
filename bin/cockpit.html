@@ -246,6 +246,7 @@
   const ORIGIN = location.origin;
   let DATA = {counts:{}, rows:[]};
   let LOCATIONS = {};        // session_id -> {zellij_pane_id, zellij_session, cwd}
+  let CAP = {};              // server capabilities (/ping): terminal, ttyd, has_zellij
   const OPEN = new Set();   // expanded initiative ids — preserved across re-renders
   const PCOLLAPSE = {};      // ws -> 'o'|'c' : manual project collapse override
   let lastSig = null;        // skip re-render when nothing actually changed
@@ -477,10 +478,20 @@
         .catch(()=>toast('聚焦失败'));
     } else { openTerminal(e,sid); }
   }
-  function openTerminal(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
+  async function openTerminal(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
+    if(CAP.terminal){  // browser terminal available (ttyd + --enable-terminal)
+      try{
+        const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
+        const j=await r.json();
+        if(r.ok&&j.url){ toast('已打开浏览器终端'); window.open(j.url,'_blank'); return; }
+        toast(j.hint||j.error||'终端打开失败');
+      }catch(_){ toast('终端打开失败'); }
+      return;
+    }
+    // fallback (no ttyd / not enabled): open a zellij pane running claude --resume
     const loc=LOCATIONS[sid]||{};
     fetch(ORIGIN+'/newpane',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,cwd:loc.cwd||''})})
-      .then(r=>r.json()).then(j=>toast(j.ok?'已在新窗格打开 claude --resume':'打开失败:'+(j.error||'')))
+      .then(r=>r.json()).then(j=>toast(j.ok?'已在 zellij 新窗格打开':(j.error==='zellij not installed'?'未启用浏览器终端,且未装 zellij':'打开失败:'+(j.error||''))))
       .catch(()=>toast('打开失败'));
   }
   async function archiveInit(e,id,name){ e.stopPropagation(); if(!id)return;
@@ -549,6 +560,7 @@
   (function(){const b=document.getElementById('themetog');if(b)b.addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='light'?'dark':'light'));
     let it='dark';try{it=localStorage.getItem('cockpit-theme')||'dark'}catch(e){}
     if(location.hash.indexOf('light')>=0)it='light'; setTheme(it);})();
+  fetch(ORIGIN+'/ping').then(r=>r.json()).then(j=>{CAP=j||{};}).catch(()=>{});
   loadData(); setInterval(loadData, 8000); startLive();
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>

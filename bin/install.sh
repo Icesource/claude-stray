@@ -180,6 +180,16 @@ with open(path, "w") as f:
 PY
 echo "[3/3] installed Claude Code hooks (Stop, SessionStart + live: UserPromptSubmit, Notification, SessionEnd)"
 
+# Optional: in-browser terminal (DD-015). Off by default; needs ttyd. Never required.
+if ! command -v ttyd >/dev/null 2>&1; then
+  echo "      (optional) in-browser terminal needs ttyd — install it to enable:"
+  case "$OS" in
+    Darwin) echo "         brew install ttyd" ;;
+    *)      echo "         apt install ttyd   # or your distro's package / https://github.com/tsl0922/ttyd" ;;
+  esac
+  echo "      then run:  stray --serve --enable-terminal   (without it, the in-card terminal action falls back to a zellij pane)"
+fi
+
 # --- 4. Cleanup any pre-existing launchd timer ------------------------------
 # Earlier versions of this installer added a 2h launchd job as a "hook
 # missed" backup. We removed that — the hook is reliable, the
