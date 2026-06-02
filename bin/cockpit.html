@@ -13,6 +13,7 @@
     --run:#56d3b6; --run-bg:rgba(86,211,182,.05);
     --idle:#7c7c88; --done:#74b07f; --paused:#6b6b76;
     --mr:#6fb4e8; --cr:#bd92e6; --cd:#e0a36b;
+    --proj-open:rgba(255,255,255,.028); --connector:#34343e;
     --topbar-bg:rgba(20,20,23,.92); --disc-bg:rgba(20,20,23,.85);
     --needs-glow:rgba(255,168,64,.5); --run-glow:rgba(86,211,182,.6);
     --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
@@ -26,6 +27,7 @@
     --run:#147a68; --run-bg:rgba(20,122,104,.10);
     --idle:#73747e; --done:#2f8245; --paused:#86868f;
     --mr:#235f9f; --cr:#6a44a0; --cd:#94600f;
+    --proj-open:#efece3; --connector:#cbc5b7;
     --topbar-bg:rgba(245,243,238,.92); --disc-bg:rgba(245,243,238,.92);
     --needs-glow:rgba(168,101,15,.28); --run-glow:rgba(20,122,104,.3);
   }
@@ -119,7 +121,7 @@
   .zone[data-tier="side"] .pname{color:var(--ink-dim)}
 
   /* project stream line */
-  .proj{margin-top:6px;border:1px solid transparent;border-radius:10px}
+  .proj{margin-top:4px;border:1px solid transparent;border-radius:10px;background:transparent;transition:background .14s}
   .proj.dragging{opacity:.45}
   .proj.flash{outline:1px solid var(--needs-edge);outline-offset:-1px}
   .proj-head{display:grid;grid-template-columns:18px 14px 11px minmax(96px,168px) auto 1fr auto;
@@ -141,12 +143,18 @@
     font-size:11px;color:var(--ink-dim);max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--bg-row)}
   .it.more{color:var(--ink-faint);border-style:dashed}
   .ptimer{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);justify-self:end;white-space:nowrap}
-  .proj-head[data-urg="2"]{box-shadow:inset 3px 0 0 var(--needs-edge);background:var(--needs-bg);border-radius:9px}
+  .proj-head[data-urg="2"]{box-shadow:inset 3px 0 0 var(--needs-edge);background:var(--needs-bg);border-radius:10px}
   .proj-head[data-urg="2"] .ptimer{color:var(--needs)}
   .proj-head[data-urg="2"]:hover{background:rgba(255,168,64,.1)}
-  .proj:not(.collapsed){background:rgba(255,255,255,.012);padding-bottom:6px;margin-top:10px}
+  /* 展开:不是白框,而是一层极淡的区域底 + 主次连接线,凸显「正在看的这组」 */
+  .proj:not(.collapsed){background:var(--proj-open);border-radius:11px;margin:11px 0;padding-bottom:7px}
+  .proj:not(.collapsed) .proj-head{border-radius:11px 11px 0 0}
   .proj:not(.collapsed) .pstrip{display:none}
-  .proj .rows{padding:0 8px}
+  /* 子任务挂在一条从父项目引下的 stream line 上,横向小枝连接每条 */
+  .proj .rows{padding:3px 12px 2px 14px}
+  .proj:not(.collapsed) .rows{margin-left:27px;padding-left:19px;border-left:1.5px solid var(--connector)}
+  .proj:not(.collapsed) .rows .row{position:relative}
+  .proj:not(.collapsed) .rows .row::before{content:'';position:absolute;left:-19px;top:50%;width:13px;height:1.5px;background:var(--connector)}
   .proj.collapsed .rows{display:none}
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(86,211,182,0)}50%{box-shadow:0 0 8px 1px rgba(86,211,182,.6)}}
 
