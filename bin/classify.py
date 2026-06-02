@@ -470,6 +470,45 @@ def _merge_tasks(a, b):
     return out
 
 
+def dedup_by_session(mindmap: dict) -> int:
+    """Merge initiatives that share a session_id. A session belongs to exactly
+    ONE work unit, so two cards containing the same session are duplicates — the
+    AI minted two slugs for one piece of work (observed under hsfops: two
+    identical 'DPath 规则日志修复' / 'TRI 回归诊断' cards on one session). Keep the
+    most-recently-active; union sessions/artifacts/tasks/blockers. Deterministic
+    anti-duplication, runs every classify so dupes can't persist."""
+    ws_of = {}
+    owners = {}
+    for ws in mindmap.get("workspaces") or []:
+        for i in (ws.get("initiatives") or []):
+            ws_of[id(i)] = ws
+            for s in (i.get("sessions") or []):
+                bucket = owners.setdefault(s, [])
+                if all(x is not i for x in bucket):
+                    bucket.append(i)
+    merged = 0
+    for s, inits in owners.items():
+        live = [i for i in inits
+                if any(x is i for x in (ws_of.get(id(i)) or {}).get("initiatives", []))]
+        if len(live) <= 1:
+            continue
+        canon = max(live, key=lambda i: i.get("last_activity_at") or "")
+        for i in live:
+            if i is canon:
+                continue
+            canon["sessions"] = _union_list(canon.get("sessions"), i.get("sessions"))
+            canon["artifacts"] = _merge_artifacts(canon.get("artifacts"), i.get("artifacts"))
+            canon["tasks"] = _merge_tasks(canon.get("tasks"), i.get("tasks"))
+            canon["blockers"] = _union_list(canon.get("blockers"), i.get("blockers"))
+            canon["linked_cwds"] = _union_list(canon.get("linked_cwds"), i.get("linked_cwds"))
+            ws = ws_of.get(id(i))
+            if ws:
+                ws["initiatives"] = [x for x in (ws.get("initiatives") or []) if x is not i]
+            merged += 1
+    mindmap["workspaces"] = [w for w in (mindmap.get("workspaces") or []) if (w.get("initiatives") or [])]
+    return merged
+
+
 def apply_initiative_links(mindmap: dict) -> int:
     """Fold initiatives that a link-group says are one work unit into a single
     canonical initiative. Sessions/artifacts/tasks accumulate (union); name/
@@ -1842,8 +1881,12 @@ def main() -> int:
     if artifact_inits:
         print(f"[classify] artifacts: rebuilt for {artifact_inits} initiative(s)")
 
-    # DD-016: fold user-declared merges. Runs last so the AI can never
-    # re-split a merged work unit (the durable identity primitive).
+    # DD-016: auto-merge duplicate cards that share a session (AI minted two
+    # slugs for one work unit), then fold user-declared merges. Both run last
+    # so the AI can never re-split / re-duplicate a work unit.
+    dedup_n = dedup_by_session(new_mm)
+    if dedup_n:
+        print(f"[classify] DD-016: auto-merged {dedup_n} duplicate initiative(s) sharing a session")
     merged_n = apply_initiative_links(new_mm)
     if merged_n:
         print(f"[classify] DD-016: merged {merged_n} initiative(s) per initiative_links.json")
