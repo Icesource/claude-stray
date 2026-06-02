@@ -48,6 +48,7 @@ SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
 DASHBOARD_FILE = CACHE_DIR / "dashboard.json"
 DELETED_FILE = CACHE_DIR / "deleted_ids.json"
+LINKS_FILE = CACHE_DIR / "initiative_links.json"  # DD-016 — durable merges
 OVERRIDES_FILE = CACHE_DIR / "user_overrides.json"
 CONFIG_FILE = CACHE_DIR / "config.json"
 PROMPT_FILE = REPO_ROOT / "prompts" / "classify-cross-session.md"
@@ -422,6 +423,97 @@ def load_deleted_ids() -> list[str]:
     except (OSError, json.JSONDecodeError):
         return []
     return [x.get("id") for x in (d.get("initiatives") or []) if x.get("id")]
+
+
+# ---------- DD-016: durable initiative merges -------------------------------
+# A "link group" declares that a set of session_ids are ONE work unit, even if
+# the AI clustered them into separate initiatives (e.g. a problem investigated
+# in workspace A, resolved by work in workspace B). apply_initiative_links runs
+# AFTER the AI + every other post-process, so the AI can never re-split a
+# user-declared merge — the durable identity primitive of DD-016.
+
+def load_initiative_links() -> list[dict]:
+    if not LINKS_FILE.exists():
+        return []
+    try:
+        d = json.loads(LINKS_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [g for g in (d.get("groups") or []) if g.get("sessions")]
+
+
+def _union_list(a, b):
+    out = list(a or [])
+    seen = set(map(str, out))
+    for x in (b or []):
+        if str(x) not in seen:
+            out.append(x); seen.add(str(x))
+    return out
+
+
+def _merge_artifacts(a, b):
+    out = list(a or [])
+    seen = {(x.get("type"), x.get("ref_id")) for x in out if isinstance(x, dict)}
+    for x in (b or []):
+        key = (x.get("type"), x.get("ref_id")) if isinstance(x, dict) else None
+        if key and key not in seen:
+            out.append(x); seen.add(key)
+    return out
+
+
+def _merge_tasks(a, b):
+    out = list(a or [])
+    seen = {x.get("id") for x in out if isinstance(x, dict)}
+    for x in (b or []):
+        if isinstance(x, dict) and x.get("id") not in seen:
+            out.append(x); seen.add(x.get("id"))
+    return out
+
+
+def apply_initiative_links(mindmap: dict) -> int:
+    """Fold initiatives that a link-group says are one work unit into a single
+    canonical initiative. Sessions/artifacts/tasks accumulate (union); name/
+    summary/progress/status/blockers come from the most-recently-active member
+    (current state wins, so a stale blocker on the old card drops off)."""
+    groups = load_initiative_links()
+    if not groups:
+        return 0
+    merged = 0
+    for g in groups:
+        gsess = set(g.get("sessions") or [])
+        if not gsess:
+            continue
+        hits = []  # [(ws, init)]
+        for ws in mindmap.get("workspaces") or []:
+            for i in (ws.get("initiatives") or []):
+                if gsess.intersection(i.get("sessions") or []):
+                    hits.append((ws, i))
+        if len(hits) <= 1:
+            continue
+        canon = None
+        if g.get("canonical_id"):
+            canon = next((wi for wi in hits if wi[1].get("id") == g["canonical_id"]), None)
+        if canon is None:
+            canon = max(hits, key=lambda wi: wi[1].get("last_activity_at") or "")
+        cinit = canon[1]
+        recent = max(hits, key=lambda wi: wi[1].get("last_activity_at") or "")[1]
+        for ws, i in hits:
+            if i is cinit:
+                continue
+            cinit["sessions"] = _union_list(cinit.get("sessions"), i.get("sessions"))
+            cinit["artifacts"] = _merge_artifacts(cinit.get("artifacts"), i.get("artifacts"))
+            cinit["tasks"] = _merge_tasks(cinit.get("tasks"), i.get("tasks"))
+            cinit["linked_cwds"] = _union_list(cinit.get("linked_cwds"), i.get("linked_cwds"))
+            ws["initiatives"] = [x for x in (ws.get("initiatives") or []) if x is not i]
+            merged += 1
+        # current state wins (incl. blockers — drops a superseded stale blocker)
+        for f in ("name", "summary", "progress", "status", "last_activity_at", "blockers"):
+            if recent is not cinit and recent.get(f) is not None:
+                cinit[f] = recent[f]
+        if g.get("name"):
+            cinit["name"] = g["name"]
+    mindmap["workspaces"] = [w for w in (mindmap.get("workspaces") or []) if (w.get("initiatives") or [])]
+    return merged
 
 
 def load_overrides() -> dict | None:
@@ -1749,6 +1841,12 @@ def main() -> int:
                                           hidden_by_init)
     if artifact_inits:
         print(f"[classify] artifacts: rebuilt for {artifact_inits} initiative(s)")
+
+    # DD-016: fold user-declared merges. Runs last so the AI can never
+    # re-split a merged work unit (the durable identity primitive).
+    merged_n = apply_initiative_links(new_mm)
+    if merged_n:
+        print(f"[classify] DD-016: merged {merged_n} initiative(s) per initiative_links.json")
 
     # ---- 6. Write + diff + log ----
     atomic_write_json(output_path, new_mm)
