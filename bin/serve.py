@@ -601,7 +601,40 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/archive": return self._handle_archive(body)
         if path == "/api/terminal": return self._handle_terminal(body)
         if path == "/api/terminal-close": return self._handle_terminal_close(body)
+        if path == "/api/send": return self._handle_send(body)
         self._reply(404, {"error": "not found", "path": path})
+
+    def _handle_send(self, body: dict):
+        """Inject a message into a session's LIVE zellij pane — writes to the
+        real interactive claude's stdin, so Ghostty + the read-only view both
+        update (true two-way, NO attach/resize). Needs a known live pane."""
+        sid = (body.get("sid") or "").strip()
+        text = body.get("text") or ""
+        if not sid or not text.strip():
+            return self._reply(400, {"error": "sid and text required"})
+        if not has_zellij():
+            return self._reply(503, {"error": "zellij not installed"})
+        try:
+            loc = json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}
+        except Exception:
+            loc = {}
+        zsess, zpane = loc.get("zellij_session"), loc.get("zellij_pane_id")
+        if not zsess or not zpane:
+            return self._reply(409, {"error": "no live pane",
+                                     "hint": "该会话不在已知的 zellij pane 里(可能已结束)"})
+        rc, out, _ = run_cmd(["zellij", "list-sessions"])
+        alive = rc == 0 and any(
+            (re.sub(r"\x1b\[[0-9;]*m", "", l).strip().split() or [""])[0] == zsess and "EXITED" not in l
+            for l in (out or "").splitlines())
+        if not alive:
+            return self._reply(409, {"error": "zellij session not alive"})
+        base = ["zellij", "--session", zsess, "action"]
+        run_cmd(base + ["focus-pane-id", str(zpane)])
+        rc, _, err = run_cmd(base + ["write-chars", text])
+        if rc != 0:
+            return self._reply(500, {"error": err.strip() or "write-chars failed"})
+        run_cmd(base + ["write", "13"])  # Enter (CR) to submit the prompt
+        return self._reply(200, {"ok": True})
 
     def _handle_terminal_close(self, body: dict):
         """Kill the ttyd spawned for a session (called when the cockpit closes

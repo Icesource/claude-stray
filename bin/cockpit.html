@@ -221,6 +221,9 @@
   .ht-text{font-size:13px;line-height:1.6;padding:9px 13px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
   .ht.user .ht-text{background:var(--needs-bg);border:1px solid var(--hair)}
   .ht.assistant .ht-text{background:var(--bg-row);border:1px solid var(--hair-soft);color:var(--ink-dim)}
+  .histfoot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
+  .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
+  .histin:focus{outline:none;border-color:var(--ink-faint)}
   /* web terminal modal (DD-015 Stage 3b) */
   .termmask{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:24px}
   .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1100px,96vw);height:min(740px,90vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55)}
@@ -527,12 +530,24 @@
   function viewHistory(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
     let m=document.getElementById('histModal');
     if(!m){m=document.createElement('div');m.id='histModal';m.className='histmask';document.body.appendChild(m);}
-    m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 <b class="hist-cnt">…</b> 轮 · <span style="color:var(--run)">● 实时</span></span><button class="btn" onclick="closeHist()">关闭</button></div><div class="histbody"><div style="color:var(--ink-faint);padding:24px;text-align:center">加载中…</div></div></div>`;
+    m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 <b class="hist-cnt">…</b> 轮 · <span style="color:var(--run)">● 实时</span></span><button class="btn" onclick="closeHist()">关闭</button></div><div class="histbody"><div style="color:var(--ink-faint);padding:24px;text-align:center">加载中…</div></div><div class="histfoot"><input id="histInput" class="histin" placeholder="发条消息到这个会话(注入到 zellij pane)…" onkeydown="if(event.key==='Enter'){event.preventDefault();sendMsg('${esc(sid)}')}"><button class="btn primary" onclick="sendMsg('${esc(sid)}')">发送</button></div></div>`;
     m.onclick=ev=>{if(ev.target===m)closeHist();};
     loadHist(sid);
     clearInterval(_histTimer); _histTimer=setInterval(()=>loadHist(sid), 4000);
   }
   function closeHist(){ clearInterval(_histTimer); _histTimer=null; const m=document.getElementById('histModal'); if(m)m.remove(); }
+  // Send a message into the session's live zellij pane (drives the real claude)
+  async function sendMsg(sid){
+    const inp=document.getElementById('histInput'); if(!inp||!inp.value.trim())return;
+    const text=inp.value; inp.disabled=true;
+    try{
+      const r=await fetch(ORIGIN+'/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,text})});
+      const j=await r.json();
+      if(r.ok){ inp.value=''; toast('已发送到会话'); setTimeout(()=>loadHist(sid),1200); }
+      else toast(j.hint||j.error||'发送失败');
+    }catch(_){ toast('发送失败'); }
+    inp.disabled=false; inp.focus();
+  }
   // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
   function openTermModal(url, mode, sid){
     let m=document.getElementById('termModal');
