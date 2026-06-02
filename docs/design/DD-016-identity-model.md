@@ -1,6 +1,10 @@
 # DD-016: Stable initiative identity — session_id atom + persisted membership, AI as labeler
 
-**Status**: Proposed — design-stage (implement after DD-015 Stage 1)
+**Status**: Partially implemented — the **durable merge engine** is live
+(`classify.py` `apply_initiative_links`, driven by `cache/initiative_links.json`,
+2026-06-02). Still pending: user-facing merge action (cockpit/endpoint),
+AI-suggested merges via shared-artifact hints, the full session→initiative
+registry, and blocker freshness.
 **Author**: Claude (with user)
 **Date**: 2026-06-01
 **Predecessors**: DD-002 (pipeline), DD-011/012/013 (AI advisory, mechanical
