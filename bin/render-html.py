@@ -3441,6 +3441,8 @@ ul.sessions-list li.session .sess-btn:hover { background: var(--bg); border-colo
 .li-ndot .li-ping { position:absolute; inset:6%; border-radius:50%; border:1.5px solid #e0792b; animation: li-ping 1.7s cubic-bezier(0,0,.2,1) infinite; }
 @keyframes li-ping { 0% { transform:scale(.5); opacity:.9; } 80%,100% { transform:scale(1.6); opacity:0; } }
 .li-idot { width:9px; height:9px; border-radius:50%; border:1.6px solid #b8b8c0; box-sizing:border-box; }
+.li-dchk { display:inline-flex; animation: li-dpulse 1.8s ease-in-out infinite; }
+@keyframes li-dpulse { 0%,100% { opacity:1; } 50% { opacity:.45; } }
 
 /* Footer actions */
 footer.card-actions {
@@ -6275,12 +6277,14 @@ footer.card-actions button.danger:hover { background: var(--red-bg); border-colo
   // Per-session running/idle/needs-you, pushed from the server. Kept fully
   // separate from pollAndApply so a live flicker never triggers a render().
   var LIVE_STATUS = {};
-  const LIVE_LABEL = { running: 'AI 进行中', idle: '空闲', needs_you: '等你', unknown: '状态未知', ended: '已结束' };
+  const LIVE_LABEL = { running: 'AI 进行中', idle: '空闲', needs_you: '等你', done_unread: '完成 · 待查看', unknown: '状态未知', ended: '已结束' };
   function liveIconHTML(st) {
     if (st === 'running')
       return '<svg class="li-spin" viewBox="0 0 24 24" width="12" height="12"><circle cx="12" cy="12" r="9" fill="none" stroke="#14b8a6" stroke-width="3" stroke-linecap="round" stroke-dasharray="40 18"/></svg>';
     if (st === 'needs_you')
       return '<span class="li-ndot"><span class="li-ping"></span><span class="li-core"></span></span>';
+    if (st === 'done_unread')
+      return '<span class="li-dchk"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M5 13l4 4L19 7" fill="none" stroke="#3e9a54" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
     if (st === 'idle')
       return '<span class="li-idot"></span>';
     return '';  // ended / unknown / none -> hidden via .live-ic:empty

@@ -68,7 +68,10 @@ def status_for(payload: dict) -> tuple[str | None, str | None]:
     if event == "UserPromptSubmit":
         return "running", None
     if event == "Stop":
-        return "idle", None
+        # AI finished a turn but the human hasn't necessarily returned to it.
+        # "done_unread" = finished, awaiting your attention. Clears on the next
+        # UserPromptSubmit (you went back) or decays to idle after a while.
+        return "done_unread", None
     if event == "SessionStart":
         return "idle", None
     if event == "SessionEnd":

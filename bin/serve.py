@@ -87,6 +87,8 @@ def live_snapshot() -> dict:
             continue
         if status == "running" and age > 6 * 3600:
             rec = {**rec, "status": "unknown"}
+        if status == "done_unread" and age > 16 * 3600:
+            rec = {**rec, "status": "idle"}  # stale unread -> you've moved on
         out[sid] = rec
     return out
 

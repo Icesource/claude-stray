@@ -45,7 +45,7 @@
   .hud .n{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.01em}
   .hud .lbl{font-size:12.5px;color:var(--ink-dim)}
   .hud .sep{color:var(--hair);font-size:16px}
-  .hud .k-needs .n,.hud .k-needs .lbl{color:var(--needs)} .hud .k-run .n{color:var(--run)} .hud .k-idle .n{color:var(--idle)}
+  .hud .k-needs .n,.hud .k-needs .lbl{color:var(--needs)} .hud .k-run .n{color:var(--run)} .hud .k-idle .n{color:var(--idle)} .hud .k-dun .n,.hud .k-dun .lbl{color:var(--done)}
   .topbar .right{margin-left:auto;display:flex;align-items:center;gap:14px}
   .viewtog{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
   .viewtog button{font-family:var(--sans);font-size:12px;padding:5px 12px;background:transparent;color:var(--ink-dim);border:none;border-right:1px solid var(--hair);cursor:pointer}
@@ -102,6 +102,12 @@
   .band[data-band="idle"] .band-head .glyph,.band[data-band="idle"] .band-head .htxt{color:var(--idle)}
   .band[data-band="done"] .band-head .glyph,.band[data-band="done"] .band-head .htxt{color:var(--done)}
   .band[data-band="paused"] .band-head .glyph,.band[data-band="paused"] .band-head .htxt{color:var(--paused)}
+  .band[data-band="done_unread"] .band-head .glyph,.band[data-band="done_unread"] .band-head .htxt{color:var(--done)}
+  .sic.dchk{animation:dpulse 1.8s ease-in-out infinite}
+  @keyframes dpulse{0%,100%{opacity:1}50%{opacity:.5}}
+  .mid.dunread{color:var(--done)}
+  .pcounts .gdone{color:var(--done)}
+  .row[data-band="done_unread"]{box-shadow:inset 3px 0 0 var(--done)}
 
   /* tiers */
   .tier-head{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
@@ -235,14 +241,16 @@
   function idleSecs(iso){ const u=Date.parse(iso); return isNaN(u)?0:Math.max(0,(Date.now()-u)/1000); }
   // band = real status + live telemetry + blocker text (DD-015)
   function bandFor(init){
-    const sids=init.sessions||[]; let run=false,need=false,since=null,reason=null;
+    const sids=init.sessions||[]; let run=false,need=false,dun=false,since=null,reason=null;
     for(const s of sids){ const r=LIVE[s]; if(!r)continue;
       if(r.status==='needs_you'){need=true; reason=r.reason; since=r.status_since||since;}
-      else if(r.status==='running'){run=true; since=r.status_since||since;} }
+      else if(r.status==='running'){run=true; since=r.status_since||since;}
+      else if(r.status==='done_unread'){dun=true; if(!since)since=r.status_since;} }
     if(need) return {band:'needs_you', reason:reason||'等你确认下一步', since};
     if(init.status==='done') return {band:'done'};
     if(init.status==='paused') return {band:'paused'};
     if(run) return {band:'running', activity:'AI 进行中', since};
+    if(dun) return {band:'done_unread', reason:'AI 已完成,待你查看', since};
     const blk=(init.blockers||[]).find(b=>NEEDS_RE.test(b));
     if(blk) return {band:'needs_you', reason:blk};
     return {band:'idle'};
@@ -274,9 +282,9 @@
   function startLive(){ try{ const es=new EventSource(ORIGIN+'/api/events');
     es.onmessage=e=>{ try{ LIVE=JSON.parse(e.data)||{}; buildRows(); rebuildHud(); renderCurrent(); }catch(_){}}; }catch(_){}}
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
+  const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'done_unread',glyph:'✅',label:'完成 · 待查看',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
     {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'今天完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
-  const RANK={needs_you:0,running:1,idle:2,done:3,paused:4};
+  const RANK={needs_you:0,done_unread:1,running:2,idle:3,done:4,paused:5};
   const LV={thread:'主线',card:'卡',chip:'片'};
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
   const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
@@ -290,15 +298,17 @@
     if(b==='idle')return `<span class="sic idot" style="width:${s}px;height:${s}px"></span>`;
     if(b==='done')return `<span class="sic" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M5 13l4 4L19 7" fill="none" stroke="var(--done)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
     if(b==='paused')return `<span class="sic" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" width="${s}" height="${s}"><rect x="7" y="6" width="3.6" height="12" rx="1.6" fill="var(--paused)"/><rect x="13.4" y="6" width="3.6" height="12" rx="1.6" fill="var(--paused)"/></svg></span>`;
+    if(b==='done_unread')return `<span class="sic dchk" style="width:${s}px;height:${s}px"><svg viewBox="0 0 24 24" width="${s}" height="${s}"><path d="M5 13l4 4L19 7" fill="none" stroke="var(--done)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`;
     return '';}
 
   // HUD
   let active=0;
   function rebuildHud(){
-  const c=DATA.counts||{}; active=(c.needs_you||0)+(c.running||0)+(c.idle||0);
+  const c=DATA.counts||{}; active=(c.needs_you||0)+(c.done_unread||0)+(c.running||0)+(c.idle||0);
   document.getElementById('hud').innerHTML=
     `<div class="stat"><span class="n">${active}</span><span class="lbl">进行中</span></div><span class="sep">·</span>`+
     `<div class="stat k-needs"><span class="n">${c.needs_you||0}</span><span class="lbl">等你</span></div>`+
+    `<div class="stat k-dun"><span class="n">${c.done_unread||0}</span><span class="lbl">待查看</span></div>`+
     `<div class="stat k-run"><span class="n">${c.running||0}</span><span class="lbl">AI在跑</span></div>`+
     `<div class="stat k-idle"><span class="n">${c.idle||0}</span><span class="lbl">闲置</span></div>`;
   const _cl=document.getElementById('clock'); if(_cl)_cl.textContent='实时 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
@@ -313,6 +323,7 @@
   function midCell(r){
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;return `<div class="mid running"><span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span><span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
+    if(r.band==='done_unread')return `<div class="mid dunread"><span class="rtext">${esc(r.reason||'AI 已完成,待你查看')}</span></div>`;
     if(r.band==='idle')return `<div class="mid idle"><span class="rtext">${esc(r.idle)} 未动</span></div>`;
     if(r.band==='done')return `<div class="mid idle"><span class="rtext">已完成 · ${esc(r.idle)}前</span></div>`;
     if(r.band==='paused')return `<div class="mid idle"><span class="rtext">搁置 · ${esc(r.idle)}未动</span></div>`;
@@ -347,18 +358,18 @@
 
   // PROJECT view (tiers + minimap + draggable + item strips)
   function projectAgg(){
-    const act=DATA.rows.filter(r=>['needs_you','running','idle'].includes(r.band));
+    const act=DATA.rows.filter(r=>['needs_you','done_unread','running','idle'].includes(r.band));
     const byWs={};act.forEach(r=>(byWs[r.ws]=byWs[r.ws]||[]).push(r));
     return Object.keys(byWs).map(ws=>{const rows=byWs[ws].sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
       const n=k=>rows.filter(r=>r.band===k).length;
-      const urg=rows.some(r=>r.band==='needs_you')?2:(rows.some(r=>r.band==='running')?1:0);
-      return {ws,rows,tier:tierOf(ws),needs:n('needs_you'),run:n('running'),idleN:n('idle'),urg,recency:Math.min.apply(null,rows.map(r=>r.idle_secs))};});
+      const urg=rows.some(r=>r.band==='needs_you'||r.band==='done_unread')?2:(rows.some(r=>r.band==='running')?1:0);
+      return {ws,rows,tier:tierOf(ws),needs:n('needs_you'),dun:n('done_unread'),run:n('running'),idleN:n('idle'),urg,recency:Math.min.apply(null,rows.map(r=>r.idle_secs))};});
   }
   function sortProjs(arr,tier){const ord=loadOrder(tier);
     if(ord)return arr.slice().sort((a,b)=>{const ia=ord.indexOf(a.ws),ib=ord.indexOf(b.ws);return (ia<0?999:ia)-(ib<0?999:ib)||b.urg-a.urg;});
     return arr.slice().sort((a,b)=>b.urg-a.urg||a.recency-b.recency);}
   function streamLine(p,open){
-    const counts=`${p.rows.length} 件`+(p.needs?` · <span class="amb">${p.needs} 等你</span>`:'')+(p.run?` · <span class="run">${p.run} 跑</span>`:'')+(p.idleN?` · <span class="dim">${p.idleN} 闲</span>`:'');
+    const counts=`${p.rows.length} 件`+(p.needs?` · <span class="amb">${p.needs} 等你</span>`:'')+(p.dun?` · <span class="gdone">${p.dun} 待查看</span>`:'')+(p.run?` · <span class="run">${p.run} 跑</span>`:'')+(p.idleN?` · <span class="dim">${p.idleN} 闲</span>`:'');
     const pcls=p.urg===2?'needs_you':(p.urg===1?'running':'idle');
     const strip=p.rows.slice(0,6).map(r=>`<span class="it" title="${esc(r.name)}">${statusIcon(r.band,10)}${esc(r.name)}</span>`).join('')+(p.rows.length>6?`<span class="it more">+${p.rows.length-6}</span>`:'');
     return `<section class="proj${open?'':' collapsed'}" data-ws="${esc(p.ws)}" draggable="true">`+
