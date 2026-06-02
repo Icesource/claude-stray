@@ -292,11 +292,13 @@ WS↔PTY bridge (more code, one fewer external dep). Decide at build time
 > open-source and installed by others, the web terminal is **optional,
 > off by default, and degrades gracefully** — the default install needs no
 > `ttyd` and gains no new attack surface:
-> - Enabled only with `stray --serve --enable-terminal`. `/api/terminal`
->   returns 403 otherwise.
+> - **No enable flag.** The terminal is available whenever `ttyd` is present —
+>   the threat model is already "localhost = trusted" (the existing `/newpane`
+>   runs `claude --dangerously-skip-permissions` on localhost with no flag), so
+>   a separate gate added only friction.
 > - `ttyd` is an **optional runtime dependency**, auto-detected (`which ttyd`).
 >   Missing → `/api/terminal` returns 503 with an install hint; `/ping`
->   advertises `terminal`/`ttyd`/`terminal_enabled` so the cockpit adapts.
+>   advertises `terminal`/`ttyd` so the cockpit adapts.
 > - The cockpit's "在终端打开" uses the browser terminal only when available;
 >   otherwise it falls back to opening a **zellij pane** (`/newpane`, no ttyd).
 > - `install.sh` prints an *optional* per-OS ttyd hint, never requires it.

@@ -187,7 +187,8 @@ if ! command -v ttyd >/dev/null 2>&1; then
     Darwin) echo "         brew install ttyd" ;;
     *)      echo "         apt install ttyd   # or your distro's package / https://github.com/tsl0922/ttyd" ;;
   esac
-  echo "      then run:  stray --serve --enable-terminal   (without it, the in-card terminal action falls back to a zellij pane)"
+  echo "      with ttyd installed, the cockpit's 在终端打开 opens a browser terminal;"
+  echo "      without it, that action falls back to opening a zellij pane."
 fi
 
 # --- 4. Cleanup any pre-existing launchd timer ------------------------------

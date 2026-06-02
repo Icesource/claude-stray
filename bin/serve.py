@@ -59,7 +59,6 @@ PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
 
 LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
-TERMINAL_ENABLED = False        # DD-015 Stage 3: web terminal — opt-in via --enable-terminal
 _TERMINALS = {}                 # sid -> (port, Popen) for spawned ttyd instances
 
 
@@ -470,9 +469,8 @@ class Handler(BaseHTTPRequestHandler):
                 "service": "claude-stray", "version": 2,
                 "has_zellij": has_zellij(),
                 "can_write_disk": True,  # the server CAN write to cache/
-                "terminal": TERMINAL_ENABLED and shutil.which("ttyd") is not None,
+                "terminal": shutil.which("ttyd") is not None,
                 "ttyd": shutil.which("ttyd") is not None,
-                "terminal_enabled": TERMINAL_ENABLED,
             })
         if path == "/api/live":
             return self._reply(200, {"live": live_snapshot()})
@@ -606,11 +604,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_terminal(self, body: dict):
         """DD-015 Stage 3: spawn a localhost ttyd running `claude --resume <sid>`
-        and return its URL. Opt-in (--enable-terminal) and needs ttyd — both
-        degrade gracefully (the cockpit falls back to opening a zellij pane)."""
-        if not TERMINAL_ENABLED:
-            return self._reply(403, {"error": "terminal disabled",
-                                     "hint": "restart with: stray --serve --enable-terminal"})
+        and return its URL. Needs ttyd (localhost-trust model, same as /newpane
+        which already runs `claude --dangerously-skip-permissions`); degrades
+        gracefully — the cockpit falls back to a zellij pane when ttyd absent."""
         ttyd = shutil.which("ttyd")
         if not ttyd:
             return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
@@ -1279,6 +1275,4 @@ def serve(open_browser: bool = True):
 if __name__ == "__main__":
     # --no-open suppresses auto-opening the browser.
     open_browser = "--no-open" not in sys.argv
-    # --enable-terminal turns on the opt-in web terminal (DD-015 Stage 3).
-    TERMINAL_ENABLED = "--enable-terminal" in sys.argv
     sys.exit(serve(open_browser=open_browser))
