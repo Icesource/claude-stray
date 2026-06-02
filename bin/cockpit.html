@@ -389,13 +389,17 @@
     const inner=`<span class="k">${esc(t.toUpperCase()||'REF')}</span><span>!${esc(a.ref_id||'')}</span>`,tip=esc(a.title||'');
     return a.url?`<a class="chip ${cls} link" href="${esc(a.url)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
   const chipsRow=arts=>!arts||!arts.length?'':arts.slice(0,3).map(chip).join('')+(arts.length>3?`<span class="chip more">+${arts.length-3}</span>`:'');
+  // 取 progress 首句,让搁置/空闲的卡在列表行也能瞥见最新进展(完整文本进 tooltip)
+  function firstSent(s){s=(s||'').replace(/\s+/g,' ').trim();if(!s)return '';const i=s.search(/[。!?；]/);const out=i>0?s.slice(0,i+1):s;return out.length>80?out.slice(0,80)+'…':out;}
+  function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
+    return `<div class="mid ${cls}"${tip}><span class="rtext">${p?esc(p):fallback}</span></div>`;}
   function midCell(r){
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;return `<div class="mid running"><span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span><span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
-    if(r.band==='done_unread')return `<div class="mid dunread"><span class="rtext">${esc(r.reason||'AI 已完成,待你查看')}</span></div>`;
-    if(r.band==='idle')return `<div class="mid idle"><span class="rtext">${esc(r.idle)} 未动</span></div>`;
-    if(r.band==='done')return `<div class="mid idle"><span class="rtext">已完成 · ${esc(r.idle)}前</span></div>`;
-    if(r.band==='paused')return `<div class="mid idle"><span class="rtext">搁置 · ${esc(r.idle)}未动</span></div>`;
+    if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
+    if(r.band==='idle')return progMid('idle', r, esc(r.idle)+' 未动');
+    if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
+    if(r.band==='paused')return progMid('idle', r, '搁置 · '+esc(r.idle)+'未动');
     return `<div class="mid"></div>`;}
   function detail(r){let h='';
     if(r.summary)h+=`<div class="summary">${esc(r.summary)}</div>`;
