@@ -227,6 +227,18 @@
   .histin:focus{outline:none;border-color:var(--ink-faint)}
   /* web terminal modal (DD-015 Stage 3b) */
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* 归档周视图 */
+  .aw-week{margin:14px 0;border:1px solid var(--hair-soft);border-radius:10px;padding:14px 16px;background:var(--bg-row)}
+  .aw-head{display:flex;align-items:baseline;gap:10px}
+  .aw-label{font-size:15px;font-weight:600;color:var(--ink)}
+  .aw-wk{font-family:var(--mono);font-size:11px;color:var(--ink-faint)}
+  .aw-cnt{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-faint)}
+  .aw-summary{font-size:12.5px;color:var(--ink-dim);margin:8px 0 12px}
+  .aw-proj{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--hair-soft)}
+  .aw-ws{font-family:var(--mono);font-size:11px;color:var(--ink-faint);min-width:130px;padding-top:3px}
+  .aw-items{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+  .aw-item{font-size:12px;color:var(--ink-dim);border:1px solid var(--hair);border-radius:6px;padding:3px 9px;background:var(--bg)}
+  .aw-item.done{color:var(--done)}
 </style>
 </head>
 <body>
@@ -236,7 +248,7 @@
     <div class="right">
       <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill">⟳</button>
       <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
-      <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button></div>
+      <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button><button data-v="archive">归档</button></div>
       <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
       <span class="clock" id="clock"></span>
       
@@ -271,7 +283,12 @@
       else if(r.status==='done_unread'){dun=true; if(!since)since=r.status_since;} }
     if(need) return {band:'needs_you', reason:reason||'等你确认下一步', since};
     if(init.status==='done') return {band:'done'};
-    if(init.status==='paused') return {band:'paused'};
+    if(init.status==='paused'){
+      // recently-touched parked work still shows (as idle); only long-dormant
+      // paused collapses — so "近期的" cards aren't hidden.
+      const iso=init.last_activity_at; const days=iso?(Date.now()-Date.parse(iso))/86400000:999;
+      return days<=4 ? {band:'idle'} : {band:'paused'};
+    }
     if(run) return {band:'running', activity:'AI 进行中', since};
     if(dun) return {band:'done_unread', reason:'AI 已完成,待你查看', since};
     const blk=(init.blockers||[]).find(b=>NEEDS_RE.test(b));
@@ -294,7 +311,22 @@
     const counts={}; rows.forEach(r=>counts[r.band]=(counts[r.band]||0)+1);
     DATA={counts, rows};
   }
-  function renderCurrent(){ document.body.dataset.view==='attention'?renderAttention():renderProject(); }
+  function renderCurrent(){ const v=document.body.dataset.view; if(v==='archive')return renderArchive(); v==='attention'?renderAttention():renderProject(); }
+  // 归档周视图:已完成/归档的工作按 ISO 周分组,每周一句话小结
+  async function renderArchive(){
+    mini.innerHTML='';
+    board.innerHTML='<div style="padding:40px;text-align:center;color:var(--ink-faint)">加载归档…</div>';
+    try{
+      const j=await fetch(ORIGIN+'/api/archive-weeks').then(r=>r.json());
+      const weeks=j.weeks||[];
+      if(!weeks.length){ board.innerHTML='<div style="padding:48px;text-align:center;color:var(--ink-faint)">还没有完成 / 归档的工作</div>'; return; }
+      board.innerHTML=weeks.map(w=>{
+        const byWs={}; (w.items||[]).forEach(it=>{(byWs[it.ws]=byWs[it.ws]||[]).push(it);});
+        const groups=Object.keys(byWs).map(ws=>`<div class="aw-proj"><span class="aw-ws">${esc(ws)}</span><div class="aw-items">`+byWs[ws].map(it=>`<span class="aw-item ${it.kind}" title="${esc((it.when||'').slice(0,10))}">${it.kind==='archived'?'📦':'✓'} ${esc(it.name)}</span>`).join('')+`</div></div>`).join('');
+        return `<section class="aw-week"><div class="aw-head"><span class="aw-label">${esc(w.label)}</span><span class="aw-wk">${esc(w.week)}</span><span class="aw-cnt">${w.count} 项</span></div><div class="aw-summary">${esc(w.summary)}</div>${groups}</section>`;
+      }).join('');
+    }catch(_){ board.innerHTML='<div style="padding:48px;text-align:center;color:var(--ink-faint)">加载失败</div>'; }
+  }
   // Signature of what's actually rendered (excludes the volatile idle timer),
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
@@ -570,10 +602,11 @@
 
   function setView(v){document.body.dataset.view=v;try{localStorage.setItem('cockpit-view',v)}catch(e){}
     document.querySelectorAll('#viewtog button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
-    v==='attention'?renderAttention():renderProject();}
+    renderCurrent();}
   document.querySelectorAll('#viewtog button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.v)));
   let initView='project';try{initView=localStorage.getItem('cockpit-view')||'project'}catch(e){}
   if(location.hash.indexOf('attention')>=0)initView='attention';
+  if(location.hash.indexOf('archive')>=0)initView='archive';
   setView(initView);
 
   // theme (昼/夜)

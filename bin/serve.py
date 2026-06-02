@@ -444,6 +444,67 @@ class Handler(BaseHTTPRequestHandler):
                 t["text"] = t["text"][:2000] + " …(截断)"
         return self._reply(200, {"sid": sid, "turns": turns})
 
+    def _handle_archive_weeks(self):
+        """Completed/archived work grouped by ISO week, for the cockpit's 归档
+        view. Sources: cache/archive/<ws>/<id>.json + status==done initiatives.
+        Each week gets a derived one-line summary (+ a weekly-report snippet if
+        DD-006 generated one)."""
+        items = []
+        if ARCHIVE_DIR.is_dir():
+            for ws_dir in ARCHIVE_DIR.iterdir():
+                if not ws_dir.is_dir():
+                    continue
+                for f in ws_dir.glob("*.json"):
+                    try:
+                        rec = json.loads(f.read_text())
+                    except Exception:
+                        continue
+                    init = rec.get("initiative") or {}
+                    items.append({"name": init.get("name") or init.get("id"),
+                                  "ws": rec.get("from_workspace") or ws_dir.name,
+                                  "kind": "archived",
+                                  "when": rec.get("archived_at") or init.get("last_activity_at")})
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text())
+            for w in d.get("workspaces", []):
+                for i in (w.get("initiatives") or []):
+                    if i.get("status") == "done":
+                        items.append({"name": i.get("name"), "ws": w.get("name"),
+                                      "kind": "done", "when": i.get("last_activity_at")})
+        except Exception:
+            pass
+        weeks = {}
+        for it in items:
+            iso = (it.get("when") or "")[:10]
+            try:
+                y, wk, _ = datetime.strptime(iso, "%Y-%m-%d").isocalendar()
+            except Exception:
+                continue
+            key = f"{y}-W{wk:02d}"
+            weeks.setdefault(key, []).append(it)
+        cur_y, cur_wk, _ = datetime.now(timezone.utc).isocalendar()
+        out = []
+        for key in sorted(weeks, reverse=True):
+            its = sorted(weeks[key], key=lambda x: x.get("when") or "", reverse=True)
+            try:
+                y, w = int(key[:4]), int(key[6:])
+                delta = (cur_y - y) * 52 + (cur_wk - w)
+                label = {0: "本周", 1: "上周"}.get(delta, f"{delta} 周前" if delta > 1 else key)
+            except Exception:
+                label = key
+            names = [it["name"] for it in its if it.get("name")]
+            summary = f"完成/归档 {len(its)} 项:" + "、".join(names[:4]) + ("…" if len(names) > 4 else "")
+            rep = DERIVED_DIR / "reports" / f"{key}.md"
+            report = None
+            if rep.exists():
+                try:
+                    report = rep.read_text()[:600]
+                except Exception:
+                    report = None
+            out.append({"week": key, "label": label, "count": len(its),
+                        "summary": summary, "items": its, "report": report})
+        return self._reply(200, {"weeks": out})
+
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
 
@@ -478,6 +539,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_sse()
         if path == "/api/transcript":
             return self._handle_transcript()
+        if path == "/api/archive-weeks":
+            return self._handle_archive_weeks()
         if path == "/api/data":
             data = {}
             try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
