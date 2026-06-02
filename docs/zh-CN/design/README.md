@@ -26,6 +26,7 @@
 | [DD-015](DD-015-attention-cockpit.md) | 注意力驾驶舱:实时会话遥测 + 可交互 web 终端 | **Proposed —— 最高优先级** |
 | [DD-016](../../design/DD-016-identity-model.md) | 稳定的 initiative 身份:session_id 原子 + 持久化成员集合;AI 做标注 | **Proposed —— 设计阶段**(DD-015 Stage 1 之后) |
 | [DD-017](../../design/DD-017-cr-watcher.md) | CR/MR 监视器:定时轮询评审状态→任务、新评论自动交给 AI 分诊 | **Proposed —— idea 阶段**(DD-007 的理想首个 POC) |
+| [DD-018](../../design/DD-018-session-interaction-model.md) | 会话交互模型:伴随式(观察/注入/跳转)vs 托管式(驾驶舱原生终端) | **Accepted**(伴随)· **Proposed**(托管,长期) |
 
 ## 模板
 

@@ -662,40 +662,19 @@ class Handler(BaseHTTPRequestHandler):
         ex = _TERMINALS.get(sid)
         if ex and ex[1].poll() is None:  # reuse a live ttyd for this session
             return self._reply(200, {"url": f"http://127.0.0.1:{ex[0]}/", "reused": True})
-        loc = {}
+        cwd = ""
         try:
-            loc = json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}
+            cwd = (json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}).get("cwd") or ""
         except Exception:
             pass
-        cwd = loc.get("cwd") or ""
-        zsess = loc.get("zellij_session")
-        zpane = loc.get("zellij_pane_id")
-        # If the session is still living in a known zellij session, ATTACH to it
-        # (a true live mirror — shared input, you see the real pane). Only fall
-        # back to `claude --resume` (a fresh parallel continuation) when there's
-        # no live pane to mirror.
-        # Default to resume (a separate continuation). ATTACH is a true live
-        # mirror but zellij shares one size across all clients (smallest wins),
-        # so attaching a small browser terminal SHRINKS your real terminal —
-        # only do it when explicitly requested.
+        # DD-018: resume-only. This browser terminal is the SEED for the future
+        # host model (server-owned sessions); it is intentionally NOT wired into
+        # the converged local path (observe/inject/jump). We never `zellij
+        # attach` a local session — that resizes the user's real terminal.
         mode = "resume"
-        if body.get("attach") and zsess and has_zellij():
-            rc, out, _ = run_cmd(["zellij", "list-sessions"])
-            if rc == 0:
-                for line in (out or "").splitlines():
-                    plain = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-                    toks = plain.split()
-                    if toks and toks[0] == zsess and "EXITED" not in plain:
-                        mode = "attach"
-                        break
-        if mode == "attach":
-            if zpane:  # land the mirror on this session's pane (best-effort)
-                run_cmd(["zellij", "--session", zsess, "action", "focus-pane-id", str(zpane)])
-            inner = "zellij attach " + shlex.quote(zsess)
-        else:
-            inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
-            if cwd:
-                inner = "cd " + shlex.quote(cwd) + " && " + inner
+        inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
+        if cwd:
+            inner = "cd " + shlex.quote(cwd) + " && " + inner
         import socket
         s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
         # Strip ZELLIJ* env: serve.py itself runs inside a zellij session, so a

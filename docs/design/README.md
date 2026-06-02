@@ -27,6 +27,7 @@ for when to write one.
 | [DD-015](DD-015-attention-cockpit.md) | Attention cockpit: live session telemetry + interactive web terminal | **Proposed — top priority** |
 | [DD-016](DD-016-identity-model.md) | Stable initiative identity: session_id atom + persisted membership; AI as labeler | **Proposed — design-stage** (after DD-015 Stage 1) |
 | [DD-017](DD-017-cr-watcher.md) | CR/MR watcher: poll review state → tasks, auto-triage new comments to AI | **Proposed — idea-stage** (good first POC for DD-007) |
+| [DD-018](DD-018-session-interaction-model.md) | Session interaction: companion (observe/inject/jump) vs host (cockpit-native terminal) | **Accepted** (companion) · **Proposed** (host, long-term) |
 
 ## Template
 

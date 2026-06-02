@@ -225,10 +225,6 @@
   .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
   .histin:focus{outline:none;border-color:var(--ink-faint)}
   /* web terminal modal (DD-015 Stage 3b) */
-  .termmask{position:fixed;inset:0;background:rgba(0,0,0,.62);z-index:70;display:flex;align-items:center;justify-content:center;padding:24px}
-  .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1100px,96vw);height:min(740px,90vh);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.55)}
-  .termhead{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--hair);font-size:13px;color:var(--ink-dim);font-family:var(--mono)}
-  .termframe{flex:1;width:100%;border:none;background:#000}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 </style>
 </head>
@@ -254,7 +250,6 @@
   const ORIGIN = location.origin;
   let DATA = {counts:{}, rows:[]};
   let LOCATIONS = {};        // session_id -> {zellij_pane_id, zellij_session, cwd}
-  let CAP = {};              // server capabilities (/ping): terminal, ttyd, has_zellij
   const OPEN = new Set();   // expanded initiative ids — preserved across re-renders
   const PCOLLAPSE = {};      // ws -> 'o'|'c' : manual project collapse override
   let lastSig = null;        // skip re-render when nothing actually changed
@@ -368,7 +363,7 @@
     if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
     h+=`<div class="meta"><span>会话 ${r.n_sessions||0} 个</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
-    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">进入会话 →</button><button class="btn" onclick="openTerminal(event,'${sid0}')">在终端打开</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">进入会话 →</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     return `<div class="row" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
@@ -478,28 +473,20 @@
   window.addEventListener('resize',()=>{if(document.body.dataset.view==='project')drawMindLinks();});
   function enter(e){ if(e&&e.stopPropagation)e.stopPropagation(); }  // legacy [→] in row: no-op (use detail buttons)
   // Enter the session: focus its zellij pane if we know it, else open a new pane (claude --resume).
+  // DD-018 companion path: "enter" = jump to the session's zellij pane in YOUR
+  // terminal (focus), or open it in a new pane. No browser terminal here.
   function enterSession(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
     const loc=LOCATIONS[sid];
     if(loc&&loc.zellij_pane_id){
       fetch(ORIGIN+'/focus',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pane:loc.zellij_pane_id,session:loc.zellij_session||''})})
-        .then(r=>r.json()).then(j=>{ if(j.ok)toast('已聚焦该会话窗格'); else if(j.error==='pane_gone'){toast('窗格已关闭,改为新开');openTerminal(e,sid);} else toast('聚焦失败:'+(j.error||'')); })
+        .then(r=>r.json()).then(j=>{ if(j.ok)toast('已跳到该会话窗格'); else if(j.error==='pane_gone'){toast('窗格已关闭,新开一个');openPane(sid);} else toast('聚焦失败:'+(j.error||'')); })
         .catch(()=>toast('聚焦失败'));
-    } else { openTerminal(e,sid); }
+    } else { openPane(sid); }
   }
-  async function openTerminal(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
-    if(CAP.terminal){  // browser terminal available (ttyd + --enable-terminal)
-      try{
-        const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
-        const j=await r.json();
-        if(r.ok&&j.url){ openTermModal(j.url, j.mode, sid); return; }
-        toast(j.hint||j.error||'终端打开失败');
-      }catch(_){ toast('终端打开失败'); }
-      return;
-    }
-    // fallback (no ttyd / not enabled): open a zellij pane running claude --resume
+  function openPane(sid){
     const loc=LOCATIONS[sid]||{};
     fetch(ORIGIN+'/newpane',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,cwd:loc.cwd||''})})
-      .then(r=>r.json()).then(j=>toast(j.ok?'已在 zellij 新窗格打开':(j.error==='zellij not installed'?'未启用浏览器终端,且未装 zellij':'打开失败:'+(j.error||''))))
+      .then(r=>r.json()).then(j=>toast(j.ok?'已在 zellij 新窗格打开 claude --resume':(j.error==='zellij not installed'?'未装 zellij':'打开失败:'+(j.error||''))))
       .catch(()=>toast('打开失败'));
   }
   async function archiveInit(e,id,name){ e.stopPropagation(); if(!id)return;
@@ -549,16 +536,7 @@
     inp.disabled=false; inp.focus();
   }
   // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
-  function openTermModal(url, mode, sid){
-    let m=document.getElementById('termModal');
-    if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
-    m.innerHTML=`<div class="termbox"><div class="termhead"><span>${mode==='attach'?'⟲ 实时镜像 zellij 会话':'▸ 终端 · claude --resume'}</span><div style="display:flex;gap:8px"><a class="btn" href="${esc(url)}" target="_blank">↗ 新标签</a><button class="btn" onclick="closeTerm('${esc(sid)}')">关闭</button></div></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
-    m.onclick=ev=>{if(ev.target===m)closeTerm(sid);};
-  }
-  function closeTerm(sid){
-    const m=document.getElementById('termModal'); if(m)m.remove();
-    fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
-  }
+  // (browser-terminal modal removed in DD-018 — the host model will re-add it)
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){
     e.stopPropagation();
@@ -603,7 +581,6 @@
   (function(){const b=document.getElementById('themetog');if(b)b.addEventListener('click',()=>setTheme(document.documentElement.dataset.theme==='light'?'dark':'light'));
     let it='dark';try{it=localStorage.getItem('cockpit-theme')||'dark'}catch(e){}
     if(location.hash.indexOf('light')>=0)it='light'; setTheme(it);})();
-  fetch(ORIGIN+'/ping').then(r=>r.json()).then(j=>{CAP=j||{};}).catch(()=>{});
   loadData(); setInterval(loadData, 8000); startLive();
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
