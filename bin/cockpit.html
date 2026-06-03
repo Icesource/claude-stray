@@ -249,7 +249,13 @@
   .termhead .tdot{width:7px;height:7px;border-radius:50%;background:var(--run);box-shadow:0 0 0 3px var(--run-bg);flex:none}
   .termhead code{color:var(--ink);font-size:11.5px}
   .termhead .tsp{flex:1}
-  .termframe{flex:1;border:0;width:100%;background:#000}
+  .termtabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .ttab{font-size:11px;font-family:var(--mono);background:var(--bg-row);border:1px solid var(--hair);border-radius:6px;padding:3px 7px;cursor:pointer;color:var(--ink-dim);display:inline-flex;gap:6px;align-items:center}
+  .ttab.on{border-color:var(--run);color:var(--ink)}
+  .ttab b{color:var(--ink-faint);font-weight:600;cursor:pointer;font-size:12px;line-height:1}
+  .ttab b:hover{color:var(--needs)}
+  .termstack{flex:1;min-height:0;display:flex}
+  .termframe{flex:1;border:0;width:100%;height:100%;background:#000}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   /* 归档周视图 */
   .aw-week{margin:14px 0;border:1px solid var(--hair-soft);border-radius:10px;padding:14px 16px;background:var(--bg-row)}
@@ -632,40 +638,60 @@
   // (no new OS window). The single-driver gate lives server-side in
   // /api/terminal: it refuses to resume a session that's running elsewhere
   // (would fork the jsonl), and asks for confirm when one might be parked.
+  // Multiple INDEPENDENT terminals: one persistent <iframe> per session, kept
+  // alive in a shared stack. Switching cards just toggles which iframe is
+  // visible — siblings keep their WebSocket (so claude keeps running, never
+  // re-resumes, never gets killed by opening another). ttyd kills its child the
+  // moment the WS drops, so we must NEVER remove a sibling iframe on switch.
+  function cssEsc(s){ return (window.CSS&&CSS.escape)?CSS.escape(String(s)):String(s); }
+  function getTermModal(){
+    let m=document.getElementById('termModal');
+    if(!m){ m=document.createElement('div'); m.id='termModal'; m.className='termmask';
+      m.innerHTML=`<div class="termbox"><div class="termhead"><span class="termtabs"></span><span class="tsp"></span><a class="btn ttnew" target="_blank" rel="noopener" title="若终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留所有终端运行,随时点卡片「终端」秒回">关闭</button></div><div class="termstack"></div></div>`;
+      document.body.appendChild(m); m.onclick=ev=>{ if(ev.target===m) hideTerm(); }; }
+    return m;
+  }
   async function openTerminal(e,sid,force){ if(e&&e.stopPropagation)e.stopPropagation();
     if(!sid){toast('该工作没有关联会话');return;}
-    // INSTANT REATTACH: ttyd kills its child the moment the WebSocket
-    // disconnects, so "closing" must NOT tear down the iframe (that would
-    // re-resume on reopen). If we already hold a live iframe for this sid,
-    // just un-hide it — same WS, same claude, scroll preserved, zero re-resume.
-    const m=document.getElementById('termModal');
-    if(m && m.dataset.sid===sid && m.querySelector('iframe')){ m.style.display='flex'; return; }
-    // Switching to a different session: end the previous one first (one
-    // embedded terminal at a time; frees its single-driver slot + ttyd).
-    if(m && m.dataset.sid && m.dataset.sid!==sid){ endTerm(); }
+    const m=getTermModal();
+    // already have a live terminal for this sid → just reveal it (instant,
+    // same WS, scroll preserved, zero re-resume).
+    if(m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`)){ m.style.display='flex'; setActiveTerm(sid); return; }
     try{
       const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,force:!!force})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok&&j.url){ showTerm(sid,j.url); return; }
+      if(r.ok&&j.url){ addTerm(sid,j.url); m.style.display='flex'; setActiveTerm(sid); return; }
       if(j.error==='maybe_live'&&j.need_force){ if(confirm(j.hint||'该会话可能还开着,确定在驾驶舱新开一个副本?')) openTerminal(null,sid,true); return; }
       if(j.error==='live_running'){ toast(j.hint||'会话正在运行,改用「跳转 pane」或「查看对话」里的发送'); return; }
       if(String(j.error||'').indexOf('ttyd')>=0){ toast('未装 ttyd:brew install ttyd'); return; }
       toast(j.hint||j.error||'打开终端失败');
     }catch(_){ toast('打开终端失败'); }
   }
-  function showTerm(sid,url){
-    let m=document.getElementById('termModal');
-    if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
-    m.dataset.sid=sid; m.style.display='flex';
-    m.innerHTML=`<div class="termbox"><div class="termhead"><span class="tdot"></span><span>会话终端 · <code>${esc(sid.slice(0,8))}</code> · claude --resume</span><span class="tsp"></span><a class="btn" href="${esc(url)}" target="_blank" rel="noopener" title="若下方终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留运行,随时点卡片「终端」秒回">关闭</button><button class="btn danger" onclick="endTerm()" title="结束这个 claude 进程">结束进程</button></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
-    m.onclick=ev=>{if(ev.target===m)hideTerm();};
+  function addTerm(sid,url){
+    const stack=getTermModal().querySelector('.termstack');
+    const f=document.createElement('iframe'); f.className='termframe'; f.dataset.sid=sid; f.src=url;
+    f.setAttribute('allow','clipboard-read; clipboard-write'); stack.appendChild(f);
   }
-  // 关闭:只隐藏面板,iframe + WebSocket 保持连接 → claude 继续跑,重开秒回(不 re-resume)。
+  function setActiveTerm(sid){
+    const m=getTermModal(); m.dataset.sid=sid;
+    const frames=[...m.querySelectorAll('.termstack iframe')];
+    frames.forEach(f=>{ f.style.display=(f.dataset.sid===sid)?'block':'none'; });
+    m.querySelector('.termtabs').innerHTML=frames.map(f=>{ const s=f.dataset.sid;
+      return `<span class="ttab${s===sid?' on':''}" onclick="setActiveTerm('${esc(s)}')" title="${esc(s)}">${esc(s.slice(0,8))}<b onclick="endTermOne(event,'${esc(s)}')" title="结束此终端进程">×</b></span>`;
+    }).join('');
+    const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
+    if(nt&&act) nt.href=act.src;
+  }
+  // 关闭:只隐藏面板,所有 iframe + WebSocket 保持连接 → 各自的 claude 继续跑,秒回。
   function hideTerm(){ const m=document.getElementById('termModal'); if(m)m.style.display='none'; }
-  // 结束进程:断开(ttyd 随之 SIGHUP 杀掉 claude)+ 关掉 ttyd,释放 single-driver 槽。
-  function endTerm(){ const m=document.getElementById('termModal'); if(!m)return; const sid=m.dataset.sid;
+  // 结束某个终端:断开(ttyd 随之 SIGHUP 杀 claude)+ 关 ttyd;只影响这一个,其余不动。
+  function endTermOne(e,sid){ if(e)e.stopPropagation();
     if(sid) fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
-    m.remove();
+    const m=document.getElementById('termModal'); if(!m)return;
+    const f=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`); if(f)f.remove();
+    const rest=[...m.querySelectorAll('.termstack iframe')];
+    if(!rest.length){ m.remove(); return; }
+    setActiveTerm((m.dataset.sid===sid)?rest[0].dataset.sid:m.dataset.sid);
   }
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){
