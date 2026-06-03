@@ -199,6 +199,8 @@
   .row[data-band="running"].open + .detail{border-left-color:var(--run)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
   .detail .fresh-tag{font-size:10.5px;color:var(--run);font-family:var(--mono);letter-spacing:.04em;margin-bottom:7px}
+  .detail .await-line{font-size:12.5px;color:var(--needs);background:var(--needs-bg);border:1px solid var(--needs-edge);border-radius:7px;padding:7px 10px;margin:2px 0 8px;line-height:1.5}
+  .detail .next-line{font-size:12.5px;color:var(--ink-dim);border-left:2px solid var(--run);padding:2px 0 2px 9px;margin:2px 0 9px;line-height:1.5}
   .detail .sealed-note{font-size:11.5px;color:var(--ink-faint);background:var(--proj-open);border:1px solid var(--hair-soft);border-radius:7px;padding:7px 9px;margin-bottom:10px;line-height:1.5}
   .detail .sealed-note code{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim)}
   .name .ws .lv.sealed{color:var(--ink-faint);border-color:var(--hair-soft)}
@@ -324,8 +326,12 @@
     // running / waiting-on-you / freshly-finished / still-open(idle) is NOT
     // "done & filed away" — so it must not collapse into 已完成 just because
     // classify marked status==='done' from the last turn's status_guess.
-    if(need) return {band:'needs_you', reason:reason||'等你确认下一步', since};
+    if(need) return {band:'needs_you', reason:reason||init.awaiting_user||'等你确认下一步', since};
     if(run) return {band:'running', activity:'AI 进行中', since};
+    // DD-020: awaiting_user is the strongest non-live signal — the last turn
+    // ended blocked on you. It outranks done_unread ("待查看") and the old
+    // blocker-text regex.
+    if(init.awaiting_user) return {band:'needs_you', reason:init.awaiting_user, since};
     if(dun) return {band:'done_unread', reason:'AI 已完成,待你查看', since};
     // Only let 'done'/'paused' collapse the card when the session ISN'T still open.
     if(!idle){
@@ -353,6 +359,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
+        next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
     rows.sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
@@ -380,7 +387,7 @@
   // Signature of what's actually rendered (excludes the volatile idle timer),
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
-  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh]))+JSON.stringify(DATA.counts||{}); }
+  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user]))+JSON.stringify(DATA.counts||{}); }
   function refreshUI(force){ const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent(); }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
@@ -452,6 +459,8 @@
     if(r.summary)h+=`<div class="summary">${esc(r.summary)}</div>`;
     if(r.fresh)h+=`<div class="fresh-tag" title="本轮会话总结的最新状态,AI 跨会话归并仍在进行">● 实时 · 本轮进展</div>`;
     if(r.progress)h+=progSteps(r.progress);
+    if(r.awaiting_user)h+=`<div class="await-line" title="这件事卡在你这里">⏳ 等你:${esc(r.awaiting_user)}</div>`;
+    if(r.next_step)h+=`<div class="next-line" title="AI 判断的下一步动作">▸ 下一步:${esc(r.next_step)}</div>`;
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
     if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;

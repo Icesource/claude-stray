@@ -179,20 +179,27 @@ def _freshen_progress_from_summaries(mindmap: dict) -> int:
                 except Exception:
                     continue
                 fm, _, body = txt.partition("\n---")
-                # fm is everything before the closing '---'; pull last_activity
-                la = ""
+                # fm is everything before the closing '---'; pull the scalars.
+                la = nxt = await_u = ""
                 for fl in fm.splitlines():
                     if fl.startswith("last_activity_at:"):
                         la = fl.split(":", 1)[1].strip()
-                        break
+                    elif fl.startswith("next_step:"):
+                        nxt = fl.split(":", 1)[1].strip()
+                    elif fl.startswith("awaiting_user:"):
+                        await_u = fl.split(":", 1)[1].strip()
                 cur = _summary_section(body, "当前状态", "Current state",
                                        "Current Status")
                 if best is None or st.st_mtime > best[0]:
-                    best = (st.st_mtime, la, cur)
+                    best = (st.st_mtime, la, cur, nxt, await_u)
             if best and best[2]:
                 init["progress"] = best[2]
                 if best[1]:
                     init["last_activity_at"] = best[1]
+                # DD-020: overlay the attention fields too, so 需要你 / 下一步
+                # are real-time, not stale until the next classify.
+                init["next_step"] = best[3] or None
+                init["awaiting_user"] = best[4] or None
                 init["_fresh"] = True  # cockpit shows a subtle 实时 marker
                 n += 1
     return n
