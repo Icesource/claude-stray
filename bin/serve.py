@@ -54,6 +54,7 @@ RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
 DERIVED_DIR = CACHE_DIR / "derived"
+SUMMARIES_DIR = CACHE_DIR / "summaries"  # Layer-1 per-session summaries
 
 PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
@@ -92,6 +93,79 @@ def live_snapshot() -> dict:
             rec = {**rec, "status": "idle"}  # stale unread -> you've moved on
         out[sid] = rec
     return out
+
+
+def _summary_section(body: str, *titles: str) -> str | None:
+    """Extract one H1 section body (e.g. '当前状态') from a Layer-1 summary.
+    Returns the trimmed text up to the next '# ' header, or None."""
+    lines = body.splitlines()
+    want = {t.strip() for t in titles}
+    grab, buf = False, []
+    for ln in lines:
+        if ln.startswith("# "):
+            if grab:
+                break
+            grab = ln[2:].strip() in want
+            continue
+        if grab:
+            buf.append(ln)
+    text = "\n".join(buf).strip()
+    return text or None
+
+
+def _freshen_progress_from_summaries(mindmap: dict) -> int:
+    """Real-time overlay: when a card's bound session has a Layer-1 summary
+    written AFTER the dashboard was generated, overlay that summary's
+    '当前状态' onto the card's progress (and bump last_activity_at) so the
+    cockpit reflects your latest turn within summarize latency (~30s) instead
+    of waiting for the full classify pass.
+
+    Display-only — mutates the in-memory dict we're about to serve, never
+    writes dashboard.json, so it cannot race classify. Gated on file mtime so
+    in steady state (no summary newer than the dashboard) it does zero reads
+    of summary bodies. Sealed cards (DD-019, frozen) are skipped."""
+    if not mindmap:
+        return 0
+    try:
+        dash_mtime = DASHBOARD_JSON.stat().st_mtime
+    except Exception:
+        return 0
+    n = 0
+    for ws in mindmap.get("workspaces") or []:
+        for init in ws.get("initiatives") or []:
+            if init.get("sealed"):
+                continue
+            best = None  # (mtime, last_activity, cur_state)
+            for sid in (init.get("sessions") or []):
+                sp = SUMMARIES_DIR / f"{sid}.md"
+                try:
+                    st = sp.stat()
+                except Exception:
+                    continue
+                if st.st_mtime <= dash_mtime:
+                    continue  # classify already current for this session
+                try:
+                    txt = sp.read_text(encoding="utf-8")
+                except Exception:
+                    continue
+                fm, _, body = txt.partition("\n---")
+                # fm is everything before the closing '---'; pull last_activity
+                la = ""
+                for fl in fm.splitlines():
+                    if fl.startswith("last_activity_at:"):
+                        la = fl.split(":", 1)[1].strip()
+                        break
+                cur = _summary_section(body, "当前状态", "Current state",
+                                       "Current Status")
+                if best is None or st.st_mtime > best[0]:
+                    best = (st.st_mtime, la, cur)
+            if best and best[2]:
+                init["progress"] = best[2]
+                if best[1]:
+                    init["last_activity_at"] = best[1]
+                init["_fresh"] = True  # cockpit shows a subtle 实时 marker
+                n += 1
+    return n
 
 
 def has_zellij() -> bool:
@@ -582,6 +656,13 @@ class Handler(BaseHTTPRequestHandler):
                     sys.path.insert(0, str(REPO_ROOT / "bin"))
                     import classify
                     classify.dedup_by_session(data["mindmap"])
+            except Exception:
+                pass
+            # Real-time: overlay the freshest Layer-1 当前状态 onto cards whose
+            # session was re-summarized after the dashboard was written, so the
+            # active card reflects your latest turn without waiting for classify.
+            try:
+                _freshen_progress_from_summaries(data.get("mindmap"))
             except Exception:
                 pass
             try: data["locations"] = json.load(open(LOCATIONS_JSON))
