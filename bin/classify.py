@@ -380,6 +380,105 @@ def _absorb_artifact_field(cur: dict, s: str) -> None:
         cur[field] = val
 
 
+def parse_sealed_segments_from_fm(raw_fm: str) -> list[dict]:
+    """DD-019 — extract the `sealed_segments:` block from raw frontmatter.
+
+    Shape (per prompts/summarize-session.md Rule 13):
+
+        sealed_segments:
+          - seg_id: linkify-error-message-url
+            title: 错误消息 URL linkify
+            status: done
+            summary: ...
+            sealed_at: 2026-06-03T02:50:08Z
+            artifacts:
+              - type: mr
+                ref_id: "27752189"
+                status: merged
+            tasks:
+              - title: ...
+                status: done
+                evidence: ...
+
+    Returns [{seg_id,title,status,summary,sealed_at,artifacts[],tasks[]}].
+    Each segment is dedented to column 0 and its nested artifacts/tasks are
+    parsed by the existing parse_artifacts_from_fm / parse_tasks_from_fm
+    (which key on a column-0 `artifacts:` / `tasks:`). Empty list if the key
+    is absent or malformed.
+    """
+    if not raw_fm or "sealed_segments:" not in raw_fm:
+        return []
+    lines = raw_fm.splitlines()
+    block: list[str] = []
+    in_block = False
+    for line in lines:
+        if line.strip() and not line[0].isspace():
+            if in_block:
+                break  # next top-level key ends the block
+            if line.strip().startswith("sealed_segments:"):
+                in_block = True
+            continue
+        if in_block:
+            block.append(line)
+    if not block:
+        return []
+    # Segment items start with a dash at the block's minimal indent.
+    seg_indent = None
+    for ln in block:
+        st = ln.lstrip()
+        if st.startswith("- "):
+            seg_indent = len(ln) - len(st)
+            break
+    if seg_indent is None:
+        return []
+    groups: list[list[str]] = []
+    cur: list[str] | None = None
+    for ln in block:
+        st = ln.lstrip()
+        indent = len(ln) - len(st)
+        if st.startswith("- ") and indent == seg_indent:
+            if cur is not None:
+                groups.append(cur)
+            cur = [ln]
+        elif cur is not None:
+            cur.append(ln)
+    if cur is not None:
+        groups.append(cur)
+    base = seg_indent + 2  # "- " is two chars
+    out: list[dict] = []
+    for g in groups:
+        dedented = [g[0].lstrip()[2:]]  # drop "<indent>- "
+        for ln in g[1:]:
+            dedented.append(ln[base:] if len(ln) >= base else ln.lstrip())
+        seg = _parse_sealed_one("\n".join(dedented))
+        if seg:
+            out.append(seg)
+    return out
+
+
+def _parse_sealed_one(text: str) -> dict | None:
+    """Parse one dedented sealed-segment block. Scalars at column 0;
+    nested artifacts/tasks handled by the shared parsers. Requires a
+    title to be a valid segment."""
+    seg: dict = {
+        "artifacts": parse_artifacts_from_fm(text),
+        "tasks": parse_tasks_from_fm(text),
+    }
+    for line in text.splitlines():
+        if not line or line[0].isspace() or ":" not in line:
+            continue
+        k, _, v = line.partition(":")
+        k = k.strip()
+        if k in ("seg_id", "title", "status", "summary", "sealed_at"):
+            val = _yaml_scalar(v.strip())
+            if val:
+                seg[k] = val
+    if not seg.get("title"):
+        return None
+    seg.setdefault("status", "done")
+    return seg
+
+
 def collect_summaries() -> list[tuple[str, dict, str, str]]:
     """Return [(sid, flat_fm, body, raw_fm_text)] for all summary files."""
     if not SUMMARIES_DIR.is_dir():
@@ -553,6 +652,130 @@ def apply_initiative_links(mindmap: dict) -> int:
             cinit["name"] = g["name"]
     mindmap["workspaces"] = [w for w in (mindmap.get("workspaces") or []) if (w.get("initiatives") or [])]
     return merged
+
+
+# ---------- DD-019: intra-session segmentation (seal the past) ---------------
+# A long session can finish one sub-effort then pivot to another. Layer 1 marks
+# the terminal earlier sub-effort via `sealed_segments` (Rule 13). We mint each
+# as a FROZEN historical card with `sessions: []` — which makes it automatically
+# invisible to every session-keyed pass (dedup_by_session, the cockpit live
+# OR-loop, focus/send, links, status derivation) — plus an `origin_session`
+# soft-pointer for resume/transcript. Identity anchors on the segment's
+# strongest artifact_key so the id is stable across reruns.
+
+def _strip_sealed_from_live(new_mm: dict, sid: str, sealed_id: str,
+                            seg: dict) -> None:
+    """Remove the sealed segment's artifacts/tasks from the LIVE card(s)
+    still bound to `sid`, so the achievement isn't double-listed on both the
+    sealed card and the current-focus card."""
+    art_keys = {artifact_key(a) for a in (seg.get("artifacts") or [])}
+    art_keys.discard(None)
+    task_ids = {slugify_task_title(t.get("title", ""))
+                for t in (seg.get("tasks") or [])}
+    task_ids.discard("")
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if init.get("sealed") or init.get("id") == sealed_id:
+                continue
+            if sid not in (init.get("sessions") or []):
+                continue
+            if art_keys and init.get("artifacts"):
+                init["artifacts"] = [a for a in init["artifacts"]
+                                     if artifact_key(a) not in art_keys]
+            if task_ids and init.get("tasks"):
+                init["tasks"] = [
+                    t for t in init["tasks"]
+                    if (t.get("id") or slugify_task_title(t.get("title", "")))
+                    not in task_ids]
+
+
+def mint_sealed_initiatives(new_mm: dict, all_summaries: list,
+                            deleted_ids: list[str]) -> int:
+    """Mint/refresh sealed historical cards from Layer 1 sealed_segments.
+    Runs AFTER artifact aggregation and BEFORE dedup_by_session so the empty
+    sessions[] keeps these cards out of every merge pass. Idempotent: a sealed
+    card already carried forward (by id) is left frozen."""
+    deleted_set = set(deleted_ids or [])
+    archived = archived_ids_on_disk()
+    existing_ids: set[str] = set()
+    ws_by_name = {w.get("name"): w for w in (new_mm.get("workspaces") or [])}
+    ws_of_sid: dict[str, dict] = {}
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if init.get("id"):
+                existing_ids.add(init["id"])
+            for s in (init.get("sessions") or []):
+                ws_of_sid.setdefault(s, ws)
+    cwd_by_sid = {sid: (fm.get("cwd") or "")
+                  for sid, fm, _b, _r in all_summaries}
+
+    minted = 0
+    for sid, fm, _body, raw_fm in all_summaries:
+        for seg in parse_sealed_segments_from_fm(raw_fm):
+            anchor_key = None
+            for a in (seg.get("artifacts") or []):
+                k = artifact_key(a)
+                if k:
+                    anchor_key = k
+                    break
+            if anchor_key:
+                sealed_id = "sealed::" + anchor_key
+            elif seg.get("seg_id"):
+                sealed_id = "sealed::seg::" + seg["seg_id"]
+            else:
+                continue  # nothing stable to anchor on
+            if (sealed_id in deleted_set or sealed_id in archived
+                    or sealed_id in existing_ids):
+                continue
+            seg_status = (seg.get("status") or "done").lower()
+            status = "archived" if seg_status == "abandoned" else "done"
+            la = (seg.get("sealed_at") or fm.get("last_activity_at")
+                  or now_utc_iso())
+            tasks: list[dict] = []
+            for t in (seg.get("tasks") or []):
+                tid = slugify_task_title(t.get("title", ""))
+                if not tid:
+                    continue
+                tst = t.get("status") if t.get("status") in TASK_STATUSES else "done"
+                rec = {"id": tid, "title": t["title"], "status": tst}
+                if t.get("evidence"):
+                    rec["evidence"] = str(t["evidence"])[:80]
+                if tst in TASK_TERMINAL:
+                    rec["terminal_at"] = la
+                tasks.append(rec)
+            init = {
+                "id": sealed_id,
+                "name": seg.get("title") or "(sealed)",
+                "status": status,
+                "level": "card",
+                "parent_thread_id": None,
+                "summary": seg.get("summary") or "",
+                "progress": seg.get("summary") or "",
+                "tasks": tasks,
+                "sessions": [],
+                "linked_cwds": [],
+                "last_activity_at": la,
+                "artifacts": seg.get("artifacts") or [],
+                "sealed": True,
+                "origin_session": sid,
+                "seg_id": seg.get("seg_id") or "",
+                "sealed_at": seg.get("sealed_at") or la,
+            }
+            ws = ws_of_sid.get(sid)
+            if ws is None:
+                cwd = cwd_by_sid.get(sid, "")
+                name = os.path.basename(cwd.rstrip("/")) or "misc"
+                ws = ws_by_name.get(name)
+                if ws is None:
+                    ws = {"name": name, "cwd": cwd,
+                          "last_activity_at": la, "initiatives": []}
+                    (new_mm.setdefault("workspaces", [])).append(ws)
+                    ws_by_name[name] = ws
+            ws.setdefault("initiatives", []).append(init)
+            existing_ids.add(sealed_id)
+            _strip_sealed_from_live(new_mm, sid, sealed_id, seg)
+            minted += 1
+    return minted
 
 
 def load_overrides() -> dict | None:
@@ -775,6 +998,10 @@ def slim_prior(prior: dict | None) -> dict | None:
                             if i.get("blockers") else {}),
                     }
                     for i in (w.get("initiatives") or [])
+                    # DD-019: sealed cards are mechanically owned (minted +
+                    # frozen post-AI). The AI must never see, rename, re-slug
+                    # or re-cluster them, so omit from its PRIOR view.
+                    if not i.get("sealed")
                 ],
             }
             for w in (prior.get("workspaces") or [])
@@ -1158,6 +1385,11 @@ def assign_level_deterministic(init: dict) -> str:
     grouping decision, and the user explicitly cares more about
     "looks the same as yesterday" than "AI's nuanced judgment."
     """
+    # DD-019: sealed historical cards have `sessions: []`; they'd otherwise
+    # fall to `chip`. They are deliberate, self-contained achievements — keep
+    # them as full cards.
+    if init.get("sealed"):
+        return "card"
     sessions_n = len(init.get("sessions") or [])
     tasks_n = len(init.get("tasks") or [])
     has_arts = bool(init.get("artifacts"))
@@ -1880,6 +2112,13 @@ def main() -> int:
                                           hidden_by_init)
     if artifact_inits:
         print(f"[classify] artifacts: rebuilt for {artifact_inits} initiative(s)")
+
+    # DD-019: intra-session segmentation. Mint frozen historical cards for any
+    # sealed_segments Layer 1 emitted. Runs BEFORE dedup/links: sealed cards
+    # have empty sessions[], so every session-keyed pass below skips them.
+    sealed_n = mint_sealed_initiatives(new_mm, all_summaries, deleted_ids)
+    if sealed_n:
+        print(f"[classify] DD-019: minted {sealed_n} sealed historical card(s)")
 
     # DD-016: auto-merge duplicate cards that share a session (AI minted two
     # slugs for one work unit), then fold user-declared merges. Both run last
