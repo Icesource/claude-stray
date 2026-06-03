@@ -244,6 +244,15 @@
   .histfoot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
   .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
   .histin:focus{outline:none;border-color:var(--ink-faint)}
+  /* AI 建议下一句 (DD-020 B) */
+  .suggbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:640px;width:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .sugghead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--ink-dim);font-family:var(--mono)}
+  .sugghead code{color:var(--ink)}
+  .suggbody{padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+  .sugg-hint{font-size:11px;color:var(--ink-faint);margin-bottom:2px}
+  .sugg-load{font-size:12.5px;color:var(--ink-faint);padding:14px;text-align:center}
+  .sugg-opt{text-align:left;font-size:13px;line-height:1.5;color:var(--ink);background:var(--bg-row);border:1px solid var(--hair);border-radius:9px;padding:10px 12px;cursor:pointer;font-family:var(--sans)}
+  .sugg-opt:hover{border-color:var(--run);background:var(--bg-row-hover)}
   /* embedded ttyd terminal panel (DD-018 §B) — resume a session IN the cockpit */
   .termmask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:70;display:flex;align-items:center;justify-content:center;padding:26px}
   .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1120px,95vw);height:min(80vh,880px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5)}
@@ -470,7 +479,7 @@
     // DD-019: sealed cards have no live session — "进入会话" resumes the
     // origin session; the merge action is meaningless (empty sessions[]).
     const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="suggestReplies(event,'${sid0}')" title="AI 建议接下来发给这条会话的下一句(全局视角,多选)">建议下一句 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:'';
@@ -647,6 +656,36 @@
   // (no new OS window). The single-driver gate lives server-side in
   // /api/terminal: it refuses to resume a session that's running elsewhere
   // (would fork the jsonl), and asks for confirm when one might be parked.
+  // B (DD-020): AI 建议下一句 — 全局视角、多选;点一条即注入(/api/send)或复制。
+  async function suggestReplies(e,sid){ if(e&&e.stopPropagation)e.stopPropagation();
+    if(!sid){toast('该工作没有关联会话');return;}
+    let m=document.getElementById('suggModal');
+    if(!m){m=document.createElement('div');m.id='suggModal';m.className='histmask';document.body.appendChild(m);}
+    m.dataset.sid=sid;
+    m.innerHTML=`<div class="suggbox"><div class="sugghead"><span>AI 建议的下一句 · <code>${esc(sid.slice(0,8))}</code></span><button class="btn" onclick="closeSugg()">关闭</button></div><div class="suggbody"><div class="sugg-load">生成中…(全局视角,几秒)</div></div></div>`;
+    m.onclick=ev=>{if(ev.target===m)closeSugg();};
+    try{
+      const r=await fetch(ORIGIN+'/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})});
+      const j=await r.json().catch(()=>({}));
+      const body=m.querySelector('.suggbody'); if(!body||m.dataset.sid!==sid)return;
+      if(r.ok&&(j.suggestions||[]).length){
+        body.innerHTML=`<div class="sugg-hint">点一条 → 注入到这条会话(无活跃 pane 则复制)</div>`+
+          j.suggestions.map(s=>`<button class="sugg-opt" onclick='sendSuggestion("${esc(sid)}",this.dataset.t)' data-t="${esc(s)}">${esc(s)}</button>`).join('');
+      } else { body.innerHTML=`<div class="sugg-load">${esc((j&&(j.hint||j.error))||'没拿到建议')}</div>`; }
+    }catch(_){ const body=m.querySelector('.suggbody'); if(body)body.innerHTML='<div class="sugg-load">请求失败</div>'; }
+  }
+  async function sendSuggestion(sid,text){
+    try{
+      const r=await fetch(ORIGIN+'/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,text})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok){ toast('已发送到会话'); closeSugg(); return; }
+      // no live pane → copy to clipboard so you can paste into the terminal
+      await copyText(text); toast('无活跃 pane,已复制到剪贴板'); closeSugg();
+    }catch(_){ await copyText(text); toast('已复制到剪贴板'); closeSugg(); }
+  }
+  async function copyText(t){ try{ await navigator.clipboard.writeText(t); }
+    catch(_){ const ta=document.createElement('textarea');ta.value=t;ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy')}catch(e){}ta.remove(); } }
+  function closeSugg(){ const m=document.getElementById('suggModal'); if(m)m.remove(); }
   // Multiple INDEPENDENT terminals: one persistent <iframe> per session, kept
   // alive in a shared stack. Switching cards just toggles which iframe is
   // visible — siblings keep their WebSocket (so claude keeps running, never

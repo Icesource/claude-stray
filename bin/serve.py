@@ -205,6 +205,146 @@ def _freshen_progress_from_summaries(mindmap: dict) -> int:
     return n
 
 
+def _recent_turns(sid: str, n: int = 8) -> list[dict]:
+    """Last n user/assistant turns (text only) for a session, newest-last."""
+    sf = None
+    meta = CACHE_DIR / "sessions" / f"{sid}.json"
+    try:
+        sf = json.loads(meta.read_text()).get("source_file")
+    except Exception:
+        sf = None
+    if not sf or not os.path.exists(sf):
+        try:
+            hits = list((Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"))
+            sf = str(hits[0]) if hits else None
+        except Exception:
+            sf = None
+    if not sf or not os.path.exists(sf):
+        return []
+    out: list[dict] = []
+    try:
+        with open(sf, encoding="utf-8") as f:
+            for ln in f:
+                try:
+                    o = json.loads(ln)
+                except Exception:
+                    continue
+                t = o.get("type")
+                if t not in ("user", "assistant"):
+                    continue
+                content = (o.get("message") or {}).get("content")
+                if isinstance(content, str):
+                    txt = content
+                elif isinstance(content, list):
+                    txt = "\n".join(c.get("text", "") for c in content
+                                    if isinstance(c, dict) and c.get("type") == "text")
+                else:
+                    txt = ""
+                txt = txt.strip()
+                if txt:
+                    out.append({"role": t, "text": txt})
+    except Exception:
+        return []
+    return out[-n:]
+
+
+def _suggest_prompt(sid: str) -> str | None:
+    """Build the prompt for /api/suggest: this session's近况 + a GLOBAL snapshot
+    of other active cards (the cross-session perspective the built-in single
+    suggestion lacks) → ask for 2-3 distinct ready-to-send next messages."""
+    card, others = None, []
+    try:
+        mm = json.loads(DASHBOARD_JSON.read_text())
+    except Exception:
+        mm = {}
+    for ws in mm.get("workspaces") or []:
+        for it in ws.get("initiatives") or []:
+            if it.get("sealed"):
+                continue
+            if sid in (it.get("sessions") or []):
+                card = it
+            elif it.get("awaiting_user") or it.get("status") == "active":
+                others.append((ws.get("name"), it))
+    turns = _recent_turns(sid, 8)
+    if not turns and not card:
+        return None
+    L = ["你是一个「注意力驾驶舱」的助手。用户在并行推进多件 Claude Code 编码工作。",
+         "请基于【全局其它工作】+【这条会话近况】,推荐用户**接下来可以发给这条会话的 2-3 条不同的下一句话**。",
+         "要求:每条都可直接发送、具体(用户口吻、祈使句、中文);彼此角度不同(如 继续推进 / 先验证 / 换方向或追问);贴合这条会话当前状态与下一步;不要寒暄、不要解释。",
+         '只输出一个 JSON 数组,形如 ["…","…","…"],不要任何额外文字。']
+    if others:
+        L.append("\n<全局其它工作>")
+        for nm, it in others[:8]:
+            aw = it.get("awaiting_user")
+            L.append(f"- [{nm}] {it.get('name')}: {(it.get('progress') or '')[:80]}"
+                     + (f" [等你:{aw}]" if aw else ""))
+        L.append("</全局其它工作>")
+    if card:
+        L.append("\n<这条会话>")
+        L.append(f"名称: {card.get('name')}")
+        if card.get("progress"):
+            L.append(f"当前进展: {str(card['progress'])[:220]}")
+        if card.get("next_step"):
+            L.append(f"已判断的下一步: {card['next_step']}")
+        if card.get("awaiting_user"):
+            L.append(f"在等你: {card['awaiting_user']}")
+        bl = card.get("blockers") or []
+        if bl:
+            L.append("卡点: " + "; ".join(bl[:3]))
+        L.append("</这条会话>")
+    if turns:
+        L.append("\n<最近对话>")
+        for t in turns:
+            who = "我" if t["role"] == "user" else "Claude"
+            L.append(f"### {who}\n{t['text'][:600]}")
+        L.append("</最近对话>")
+    return "\n".join(L)
+
+
+def _parse_suggestions(txt: str) -> list[str]:
+    txt = (txt or "").strip()
+    if txt.startswith("```"):
+        txt = "\n".join(l for l in txt.splitlines() if not l.strip().startswith("```"))
+    m = re.search(r"\[.*\]", txt, re.S)
+    if m:
+        try:
+            arr = json.loads(m.group(0))
+            out = [str(x).strip() for x in arr if str(x).strip()]
+            if out:
+                return out[:3]
+        except Exception:
+            pass
+    out = []
+    for l in txt.splitlines():
+        l = re.sub(r"^[-*\d.)\s]+", "", l.strip()).strip().strip('"').strip()
+        if len(l) >= 4:
+            out.append(l)
+    return out[:3]
+
+
+def _claude_suggest(prompt: str, timeout: int = 70) -> list[str]:
+    """One headless claude call for next-message suggestions. --no-session-
+    persistence so it leaves no jsonl (no re-ingestion / recursion); no tools."""
+    model = os.environ.get("CLAUDE_WORKTREE_MODEL", "claude-haiku-4-5-20251001")
+    argv = ["perl", "-e", "alarm shift @ARGV; exec @ARGV", str(timeout),
+            "claude", "--no-session-persistence", "-p",
+            "--model", model, "--output-format", "json",
+            "--max-budget-usd", "0.30",
+            "--disallowedTools", "Bash Edit Write Read Glob Grep"]
+    try:
+        res = subprocess.run(argv, input=prompt, capture_output=True,
+                             text=True, timeout=timeout + 10)
+    except Exception:
+        return []
+    if res.returncode != 0:
+        return []
+    try:
+        env = json.loads(res.stdout)
+    except Exception:
+        return []
+    return _parse_suggestions(env.get("result", "") or "")
+
+
 def has_zellij() -> bool:
     return shutil.which("zellij") is not None
 
@@ -822,6 +962,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/terminal": return self._handle_terminal(body)
         if path == "/api/terminal-close": return self._handle_terminal_close(body)
         if path == "/api/send": return self._handle_send(body)
+        if path == "/api/suggest": return self._handle_suggest(body)
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_send(self, body: dict):
@@ -863,6 +1004,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"error": err.strip() or "write-chars failed"})
         run_cmd(base + ["write", "13"])  # Enter (CR) to submit the prompt
         return self._reply(200, {"ok": True})
+
+    def _handle_suggest(self, body: dict):
+        """B (DD-020): AI-recommended next messages for a session, with a GLOBAL
+        cross-session view. Returns 2-3 ready-to-send candidates; the cockpit
+        lets you click one to inject (/api/send) or copy."""
+        sid = (body.get("sid") or "").strip()
+        if not sid:
+            return self._reply(400, {"error": "sid required"})
+        if not shutil.which("claude"):
+            return self._reply(503, {"error": "claude CLI not found"})
+        prompt = _suggest_prompt(sid)
+        if not prompt:
+            return self._reply(404, {"error": "no context",
+                                     "hint": "这条会话还没有可用的上下文"})
+        sugg = _claude_suggest(prompt)
+        if not sugg:
+            return self._reply(502, {"error": "suggest failed",
+                                     "hint": "AI 没给出建议,稍后再试"})
+        return self._reply(200, {"suggestions": sugg})
 
     def _handle_terminal_close(self, body: dict):
         """Kill the ttyd spawned for a session (called when the cockpit closes
