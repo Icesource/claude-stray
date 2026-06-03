@@ -260,6 +260,81 @@ def load_prior_tasks_for_sid(sid: str) -> list[dict]:
     return list(seen.values())[:30]
 
 
+def load_prior_sealed_segments_for_sid(sid: str) -> list[dict]:
+    """Return the sealed_segments already minted FROM this session
+    (DD-019 intra-session segmentation). A sealed initiative is a frozen
+    historical card with `sessions: []` and `origin_session == sid`, born
+    when Layer 1 detected that an earlier sub-effort of this session
+    reached a terminal state and the session then pivoted.
+
+    Feeding these back lets Layer 1 re-emit each sealed segment
+    byte-for-byte (Rule 13), so the card doesn't flicker or duplicate
+    across reruns. Returns [] before there's a dashboard or when this
+    session has sealed nothing yet.
+    """
+    if not DASHBOARD_FILE.exists():
+        return []
+    try:
+        d = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    out: list[dict] = []
+    for ws in (d.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if not init.get("sealed"):
+                continue
+            if init.get("origin_session") != sid:
+                continue
+            out.append({
+                "seg_id": init.get("seg_id") or init.get("id") or "",
+                "title": init.get("name") or "",
+                "status": "abandoned" if (init.get("status") == "archived")
+                          else "done",
+                "summary": init.get("summary") or "",
+                "sealed_at": init.get("sealed_at")
+                             or init.get("last_activity_at") or "",
+                "artifacts": init.get("artifacts") or [],
+            })
+    return out
+
+
+def _yq(s) -> str:
+    """Quote a scalar for the hand-rolled YAML dump below. Always quote so
+    colons / leading digits / unicode in titles never break the parser the
+    model is asked to mirror."""
+    return '"' + str(s).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def yaml_dump_sealed(segs: list[dict]) -> str:
+    """Render sealed segments as a YAML list mirroring the Rule 13 schema,
+    so Layer 1 can copy it verbatim. Hand-rolled (no yaml dep)."""
+    lines: list[str] = []
+    for seg in segs:
+        lines.append(f"  - seg_id: {_yq(seg.get('seg_id', ''))}")
+        lines.append(f"    title: {_yq(seg.get('title', ''))}")
+        lines.append(f"    status: {seg.get('status', 'done')}")
+        lines.append(f"    summary: {_yq(seg.get('summary', ''))}")
+        if seg.get("sealed_at"):
+            lines.append(f"    sealed_at: {seg['sealed_at']}")
+        arts = seg.get("artifacts") or []
+        if arts:
+            lines.append("    artifacts:")
+            for a in arts:
+                first = True
+                for k in ("type", "ref_id", "url", "status", "title",
+                          "last_mentioned_at"):
+                    v = a.get(k)
+                    if v in (None, ""):
+                        continue
+                    val = _yq(v) if k in ("ref_id", "title", "url") else v
+                    prefix = "      - " if first else "        "
+                    lines.append(f"{prefix}{k}: {val}")
+                    first = False
+                if first:  # artifact had no renderable fields
+                    lines.append("      - type: other")
+    return "\n".join(lines)
+
+
 def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
     """Concatenate prompts/summarize-session.md + XML context blocks."""
     instructions = PROMPT_FILE.read_text(encoding="utf-8")
@@ -302,6 +377,24 @@ def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
             safe_title = t["title"].replace('"', '\\"')
             parts.append(f"    title: \"{safe_title}\"")
         parts.append("</prior_tasks>")
+        parts.append("")
+
+    # DD-019: surface sealed segments already minted from this session, so
+    # Layer 1 re-emits them byte-for-byte in its `sealed_segments:`
+    # frontmatter (Rule 13) instead of dropping or re-slugging them on
+    # rerun (which would flicker/duplicate the frozen historical card).
+    prior_sealed = load_prior_sealed_segments_for_sid(sid)
+    if prior_sealed:
+        parts.append(f"<prior_sealed_segments count=\"{len(prior_sealed)}\">")
+        parts.append("  <!--")
+        parts.append("    Each entry below is a segment you SEALED on a prior")
+        parts.append("    run. Re-emit every one VERBATIM in your")
+        parts.append("    sealed_segments: frontmatter (seg_id, title, status,")
+        parts.append("    summary, sealed_at, artifacts) — do not retranslate,")
+        parts.append("    re-slug, reorder, or drop. See Rule 13.")
+        parts.append("  -->")
+        parts.append(yaml_dump_sealed(prior_sealed))
+        parts.append("</prior_sealed_segments>")
         parts.append("")
 
     parts.extend([

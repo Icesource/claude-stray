@@ -52,6 +52,20 @@ tasks:                                    # see Rule 12. omit key if none.
     evidence: 已上传至 /tmp/eagleeye-sample/ # required when status != pending
   - title: 提交 Aone ISSUE
     status: pending
+sealed_segments:                          # see Rule 13. OMIT entirely unless an earlier sub-effort sealed off. RARE.
+  - seg_id: linkify-error-message-url     # stable English kebab slug for this segment
+    title: 错误消息 URL linkify             # output_lang, ≤ 60 chars
+    status: done                          # done | abandoned — terminal only
+    summary: 把后端错误消息里的申请权限 URL 渲染成可点击链接，已合并上线  # ≤ 200 chars
+    sealed_at: 2026-06-03T02:50:08Z       # ISO; when the segment reached terminal
+    artifacts:                            # same shape as top-level artifacts (Rule 10)
+      - type: mr
+        ref_id: "27752189"
+        status: merged
+    tasks:                                # optional; the done/cancelled tasks belonging to this segment
+      - title: 将旧分支蓝色链接样式吸收进 Linkify 组件
+        status: done
+        evidence: commit ef2219c，MR 27752189 已合并
 ---
 
 # 目标
@@ -291,3 +305,41 @@ weight that risks drift.)
 
     If the session has no clearly task-shaped contribution, omit the
     `tasks:` key entirely. (Don't write `tasks: []`.)
+
+13. **sealed_segments: split off an EARLIER, FINISHED sub-effort (rare).**
+    A long session can pivot topic over time — finish one thing, then
+    move on to something else. By default a session maps to ONE piece of
+    work, so **OMIT the `sealed_segments` key entirely**. Emit it ONLY
+    when ALL THREE of these hold:
+
+    1. An earlier, clearly-distinct sub-effort reached a **terminal**
+       state — shipped/merged/abandoned — evidenced by a **concrete
+       artifact** (an MR/PR/CR that merged, a commit pushed AND its
+       branch merged, or an explicit abandonment "算了 / 不做了"). A
+       vague "seems done" is NOT enough.
+    2. The session then **pivoted to a distinctly different current
+       focus** — different goal, different files/subsystem — NOT a
+       continuation or follow-up of the sealed work.
+    3. The pivot is unambiguous in `<turns>`, not a momentary digression.
+
+    When you seal:
+    - The **top-level** frontmatter (`status_guess`, `artifacts`,
+      `tasks`) and all six body sections describe ONLY the **current**
+      (later) focus.
+    - Each terminal earlier sub-effort goes under `sealed_segments` with
+      its own `seg_id` (stable English kebab slug), `title`, `status`
+      (`done`|`abandoned` only), `summary`, `sealed_at`, and the
+      `artifacts`/`tasks` that anchor it. **Move** those artifacts/tasks
+      OUT of the top-level lists into the segment — do NOT list them in
+      both places.
+    - **Conservatism bar:** when in doubt, do NOT seal. Under-sealing is
+      harmless (old behavior); a wrongly-sealed segment mints a phantom
+      "done" card the user has to delete.
+
+    **Re-emit sealed segments verbatim (carry-forward).** When the input
+    has a `<prior_sealed_segments>` block, every entry there is a segment
+    you sealed on a prior run. You MUST re-emit each one **byte-for-byte**
+    (`seg_id`, `title`, `status`, `summary`, `sealed_at`, `artifacts`) —
+    do not re-translate, re-slug, restyle, reorder, or drop it. A segment,
+    once sealed, is immutable. Only ADD a new `sealed_segments` entry when
+    a *further* pivot has sealed *another* distinct effort since.
