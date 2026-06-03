@@ -307,21 +307,30 @@
     // DD-019: sealed historical cards are frozen achievements (no live
     // session); they live in the collapsible done/archive band.
     if(init.sealed) return {band:'done'};
-    const sids=init.sessions||[]; let run=false,need=false,dun=false,since=null,reason=null;
+    const sids=init.sessions||[]; let run=false,need=false,dun=false,idle=false,since=null,reason=null;
     for(const s of sids){ const r=LIVE[s]; if(!r)continue;
       if(r.status==='needs_you'){need=true; reason=r.reason; since=r.status_since||since;}
       else if(r.status==='running'){run=true; since=r.status_since||since;}
-      else if(r.status==='done_unread'){dun=true; if(!since)since=r.status_since;} }
+      else if(r.status==='done_unread'){dun=true; if(!since)since=r.status_since;}
+      else if(r.status==='idle'){ // a still-open session, only "live" if recent
+        const u=Date.parse(r.status_since||''); if(!isNaN(u)&&(Date.now()-u)<24*3600000){idle=true; if(!since)since=r.status_since;} } }
+    // Live telemetry WINS over a stale classify status. A session that is
+    // running / waiting-on-you / freshly-finished / still-open(idle) is NOT
+    // "done & filed away" — so it must not collapse into 已完成 just because
+    // classify marked status==='done' from the last turn's status_guess.
     if(need) return {band:'needs_you', reason:reason||'等你确认下一步', since};
-    if(init.status==='done') return {band:'done'};
-    if(init.status==='paused'){
-      // recently-touched parked work still shows (as idle); only long-dormant
-      // paused collapses — so "近期的" cards aren't hidden.
-      const iso=init.last_activity_at; const days=iso?(Date.now()-Date.parse(iso))/86400000:999;
-      return days<=4 ? {band:'idle'} : {band:'paused'};
-    }
     if(run) return {band:'running', activity:'AI 进行中', since};
     if(dun) return {band:'done_unread', reason:'AI 已完成,待你查看', since};
+    // Only let 'done'/'paused' collapse the card when the session ISN'T still open.
+    if(!idle){
+      if(init.status==='done') return {band:'done'};
+      if(init.status==='paused'){
+        // recently-touched parked work still shows (as idle); only long-dormant
+        // paused collapses — so "近期的" cards aren't hidden.
+        const iso=init.last_activity_at; const days=iso?(Date.now()-Date.parse(iso))/86400000:999;
+        return days<=4 ? {band:'idle'} : {band:'paused'};
+      }
+    }
     const blk=(init.blockers||[]).find(b=>NEEDS_RE.test(b));
     if(blk) return {band:'needs_you', reason:blk};
     return {band:'idle'};
