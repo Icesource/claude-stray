@@ -95,6 +95,36 @@ def live_snapshot() -> dict:
     return out
 
 
+def _resume_cwd_for(sid: str) -> str:
+    """The cwd `claude --resume <sid>` MUST run from. claude resolves a session
+    by the project dir derived from the *current* cwd, and a session's jsonl is
+    stored under the project dir of its START cwd. session_locations.json records
+    the *latest* cwd — if the user cd'd into a subdir mid-session, that subdir
+    resolves to a different project and `--resume` fails with "No conversation
+    found". So read the authoritative cwd from the session's own jsonl (its
+    first `cwd` entry == its project dir); fall back to session_locations."""
+    try:
+        for f in (Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"):
+            try:
+                with f.open(encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            c = json.loads(line).get("cwd")
+                        except Exception:
+                            continue
+                        if c:
+                            return c
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        return (json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {})
+                .get(sid) or {}).get("cwd") or ""
+    except Exception:
+        return ""
+
+
 def _summary_section(body: str, *titles: str) -> str | None:
     """Extract one H1 section body (e.g. '当前状态') from a Layer-1 summary.
     Returns the trimmed text up to the next '# ' header, or None."""
@@ -870,11 +900,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(409, {"error": "maybe_live", "state": lst,
                 "need_force": True,
                 "hint": "该会话可能还在某个终端里开着。在驾驶舱 resume 会新开一个独立副本,历史会分叉。确认要新开吗?"})
-        cwd = ""
-        try:
-            cwd = (json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}).get("cwd") or ""
-        except Exception:
-            pass
+        # Use the session's project cwd (from its jsonl), NOT the latest cwd in
+        # session_locations — otherwise `claude --resume` fails "No conversation
+        # found" when the user cd'd into a subdir during the session.
+        cwd = _resume_cwd_for(sid)
         # DD-018: resume-only. This browser terminal is the SEED for the future
         # host model (server-owned sessions); it is intentionally NOT wired into
         # the converged local path (observe/inject/jump). We never `zellij
@@ -984,11 +1013,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_newpane(self, body: dict):
         sid = (body.get("sid") or "").strip()
-        cwd = body.get("cwd") or ""
         if not sid:
             return self._reply(400, {"error": "sid required"})
         if not has_zellij():
             return self._reply(503, {"error": "zellij not installed"})
+        # Resolve the session's project cwd so `claude --resume` finds it (the
+        # latest cwd from session_locations may be a subdir → "No conversation
+        # found"). Fall back to whatever the client passed.
+        cwd = _resume_cwd_for(sid) or (body.get("cwd") or "")
         if cwd.startswith("~"):
             cwd = os.path.expanduser(cwd)
         inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
