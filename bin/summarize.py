@@ -405,6 +405,40 @@ def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
     return "\n".join(parts)
 
 
+_NEXT_SENTINELS = {"(无明确)", "(nonestated)", "(none)", "(无)", "(待定)"}
+
+
+def _guard_done_status(out: str, sid: str) -> str:
+    """DD-013 mechanical guard: a session is NOT `done` while a concrete next
+    step remains. Layer 1 sometimes marks an investigation `done` the moment it
+    'locates a root cause', even though `下一步` lists open follow-ups (observed:
+    HSF 地址发现诊断 — confirmed interface-level but not *why*, 4 next-steps, yet
+    status_guess=done). If status_guess==done but the `下一步` section has real
+    content (not the empty sentinel), downgrade to `active`. Mechanical, so it
+    holds regardless of whether the model obeys the prompt."""
+    import re as _re
+    m = _re.search(r'(?m)^status_guess:\s*(\w+)\s*$', out)
+    if not m or m.group(1).strip().lower() != "done":
+        return out
+    # Pull the `下一步` / `Next` H1 section body.
+    nxt, grab = "", False
+    for ln in out.splitlines():
+        if ln.startswith("# "):
+            if grab:
+                break
+            h = ln[2:].strip()
+            grab = h.startswith("下一步") or h.lower().startswith("next")
+            continue
+        if grab:
+            nxt += ln.strip()
+    nxt_norm = nxt.replace(" ", "")
+    if nxt_norm and nxt_norm not in _NEXT_SENTINELS:
+        out = _re.sub(r'(?m)^(status_guess:\s*)done\s*$', r'\1active', out, count=1)
+        print(f"[summarize] guard: {sid} status_guess done→active "
+              f"(下一步 still has open items)", file=sys.stderr)
+    return out
+
+
 # ---------- AI call ---------------------------------------------------------
 
 
@@ -585,6 +619,7 @@ def summarize_one(sid: str, *, force: bool = False, dry_run: bool = False) -> in
             print(f"[summarize] WARN: output for {sid} doesn't start with "
                   f"YAML frontmatter; saving anyway", file=sys.stderr)
 
+        out = _guard_done_status(out, sid)
         atomic_write(summary_path, out + "\n")
         log_cost("summarize", envelope, duration, sid, ok=True)
         cost_str = f"${envelope.get('total_cost_usd', 0):.4f}" if envelope else "?"

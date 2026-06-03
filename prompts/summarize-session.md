@@ -114,13 +114,23 @@ weight that risks drift.)
    work, describe THAT direction. The first user prompt and any old
    recap text may be stale; don't perpetuate them.
 
-2. **status_guess heuristic:**
-   - `active`: latest turn shows ongoing work, fresh decisions, or
-     active editing.
+2. **status_guess heuristic** (default to `active` when unsure; `done`
+   must clear a HIGH bar):
+   - `active`: latest turn shows ongoing work, fresh decisions, active
+     editing — OR an investigation still narrowing (evidence gathered,
+     multiple hypotheses, but the question not yet conclusively answered).
    - `paused`: latest turn is mid-thought with no clear next action,
      OR `last_activity_at` is ≥ 3 days before `now`.
-   - `done`: user explicitly closed it — "ship it", "merged", "完成了",
-     "搞定", or AI says "this fix is complete and tested".
+   - `done`: the session's GOAL is actually achieved — a change shipped
+     **and** verified, or a question **conclusively answered** — and
+     nothing concrete remains. Evidence: the user closed it ("ship it",
+     "merged", "完成了", "搞定"), or the work is unambiguously complete.
+     ⚠️ A diagnosis that merely **located a root cause / found strong
+     evidence / narrowed to a few hypotheses is NOT done** — confirming
+     *that* something happens ≠ confirming *why*. If the `下一步` section
+     would list any concrete follow-up action, or `待解决` is non-empty,
+     the status is `active` (or `paused`), **never `done`**. These three
+     — `status_guess`, `下一步`, `待解决` — must be consistent.
    - `abandoned`: latest turn shows frustration or refusal — "算了",
      "this isn't working, let me try something else", followed by no
      follow-up.
