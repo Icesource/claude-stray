@@ -1060,13 +1060,17 @@ class Handler(BaseHTTPRequestHandler):
         #                           require explicit ?force after a UI confirm.
         #   ended / no record    -> safe: this resume is the sole driver.
         lst = (live_snapshot().get(sid) or {}).get("status")
-        if lst == "running":
-            return self._reply(409, {"error": "live_running", "state": lst,
-                "hint": "该会话正在运行中(在你的终端里)。去那个终端,或用『查看对话』里的发送注入——别在驾驶舱再 resume 一个副本,会话历史会分叉。"})
-        if lst in ("idle", "done_unread", "needs_you") and not body.get("force"):
+        if lst in ("running", "idle", "done_unread", "needs_you") and not body.get("force"):
+            # WARN, don't block: the session looks live elsewhere (e.g. open in
+            # ghostty). Opening it here resumes a SECOND copy, and two
+            # `claude --resume` writing one jsonl can conflict. But it's the
+            # user's call — confirm and proceed.
+            run = lst == "running"
             return self._reply(409, {"error": "maybe_live", "state": lst,
                 "need_force": True,
-                "hint": "该会话可能还在某个终端里开着。在驾驶舱 resume 会新开一个独立副本,历史会分叉。确认要新开吗?"})
+                "hint": ("这条会话正在另一个终端里运行(比如 ghostty)。" if run
+                         else "这条会话可能还在某个终端里开着。")
+                        + "在驾驶舱打开会 resume 一个独立副本,两边同时写同一条会话历史可能冲突。确认仍要打开吗?"})
         # Use the session's project cwd (from its jsonl), NOT the latest cwd in
         # session_locations — otherwise `claude --resume` fails "No conversation
         # found" when the user cd'd into a subdir during the session.

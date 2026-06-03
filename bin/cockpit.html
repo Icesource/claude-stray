@@ -709,8 +709,7 @@
       const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,force:!!force})});
       const j=await r.json().catch(()=>({}));
       if(r.ok&&j.url){ addTerm(sid,j.url); m.style.display='flex'; setActiveTerm(sid); return; }
-      if(j.error==='maybe_live'&&j.need_force){ if(confirm(j.hint||'该会话可能还开着,确定在驾驶舱新开一个副本?')) openTerminal(null,sid,true); return; }
-      if(j.error==='live_running'){ toast(j.hint||'会话正在运行,改用「跳转 pane」或「查看对话」里的发送'); return; }
+      if(j.error==='maybe_live'&&j.need_force){ if(confirm(j.hint||'该会话可能还在别处开着,确定在驾驶舱新开一个副本?')) openTerminal(null,sid,true); return; }
       if(String(j.error||'').indexOf('ttyd')>=0){ toast('未装 ttyd:brew install ttyd'); return; }
       toast(j.hint||j.error||'打开终端失败');
     }catch(_){ toast('打开终端失败'); }
