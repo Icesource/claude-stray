@@ -198,6 +198,10 @@
   .row[data-band="needs_you"].open + .detail{border-left-color:var(--needs-edge)}
   .row[data-band="running"].open + .detail{border-left-color:var(--run)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
+  .detail .sealed-note{font-size:11.5px;color:var(--ink-faint);background:var(--proj-open);border:1px solid var(--hair-soft);border-radius:7px;padding:7px 9px;margin-bottom:10px;line-height:1.5}
+  .detail .sealed-note code{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim)}
+  .name .ws .lv.sealed{color:var(--ink-faint);border-color:var(--hair-soft)}
+  .row.is-sealed .name .t{color:var(--ink-dim)}
   .detail .progress{font-size:13px;color:var(--ink);margin-bottom:12px;line-height:1.5}
   .detail .prog-steps{list-style:none;margin:2px 0 12px;padding:0;display:flex;flex-direction:column;gap:5px}
   .detail .prog-steps li{font-size:12.5px;color:var(--ink);padding-left:17px;position:relative;line-height:1.5}
@@ -292,6 +296,9 @@
   function idleSecs(iso){ const u=Date.parse(iso); return isNaN(u)?0:Math.max(0,(Date.now()-u)/1000); }
   // band = real status + live telemetry + blocker text (DD-015)
   function bandFor(init){
+    // DD-019: sealed historical cards are frozen achievements (no live
+    // session); they live in the collapsible done/archive band.
+    if(init.sealed) return {band:'done'};
     const sids=init.sessions||[]; let run=false,need=false,dun=false,since=null,reason=null;
     for(const s of sids){ const r=LIVE[s]; if(!r)continue;
       if(r.status==='needs_you'){need=true; reason=r.reason; since=r.status_since||since;}
@@ -320,7 +327,9 @@
         idle:humanIdle(iso), idle_secs:idleSecs(iso),
         artifacts:init.artifacts||[], blockers:init.blockers||[],
         tasks_total:tasks.length, tasks_pending:tasks.filter(x=>(x.status||(x.done?'done':'pending'))==='pending').length,
-        sessions:init.sessions||[], n_sessions:(init.sessions||[]).length, session:(init.sessions||[])[0]||null,
+        sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
+        session:(init.sessions||[])[0]||init.origin_session||null,
+        sealed:!!init.sealed, origin_session:init.origin_session||null,
         progress:init.progress, summary:init.summary });
     }}
     rows.sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
@@ -422,13 +431,18 @@
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
     if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
-    h+=`<div class="meta"><span>会话 ${r.n_sessions||0} 个</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
+    if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
+    h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
-    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">进入会话 →</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    // DD-019: sealed cards have no live session — "进入会话" resumes the
+    // origin session; the merge action is meaningless (empty sessions[]).
+    const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话 →':'进入会话 →'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
-    return `<div class="row" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
-      `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}</div></div>`+
+    const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:'';
+    return `<div class="row${r.sealed?' is-sealed':''}" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
+      `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}</div></div>`+
       midCell(r)+`<div class="chips">${chipsRow(r.artifacts)}</div><div class="timer">${esc(r.idle)}</div><div class="go">→</div></div>`+detail(r);}
   function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
     if(!rows.length)return '';
