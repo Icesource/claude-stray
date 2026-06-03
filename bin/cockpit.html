@@ -634,6 +634,15 @@
   // (would fork the jsonl), and asks for confirm when one might be parked.
   async function openTerminal(e,sid,force){ if(e&&e.stopPropagation)e.stopPropagation();
     if(!sid){toast('该工作没有关联会话');return;}
+    // INSTANT REATTACH: ttyd kills its child the moment the WebSocket
+    // disconnects, so "closing" must NOT tear down the iframe (that would
+    // re-resume on reopen). If we already hold a live iframe for this sid,
+    // just un-hide it — same WS, same claude, scroll preserved, zero re-resume.
+    const m=document.getElementById('termModal');
+    if(m && m.dataset.sid===sid && m.querySelector('iframe')){ m.style.display='flex'; return; }
+    // Switching to a different session: end the previous one first (one
+    // embedded terminal at a time; frees its single-driver slot + ttyd).
+    if(m && m.dataset.sid && m.dataset.sid!==sid){ endTerm(); }
     try{
       const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,force:!!force})});
       const j=await r.json().catch(()=>({}));
@@ -647,15 +656,15 @@
   function showTerm(sid,url){
     let m=document.getElementById('termModal');
     if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
-    m.dataset.sid=sid;
-    m.innerHTML=`<div class="termbox"><div class="termhead"><span class="tdot"></span><span>会话终端 · <code>${esc(sid.slice(0,8))}</code> · claude --resume</span><span class="tsp"></span><a class="btn" href="${esc(url)}" target="_blank" rel="noopener" title="若下方终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="closeTerm(false)">关闭(保留运行)</button><button class="btn danger" onclick="closeTerm(true)">结束进程</button></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
-    m.onclick=ev=>{if(ev.target===m)closeTerm(false);};
+    m.dataset.sid=sid; m.style.display='flex';
+    m.innerHTML=`<div class="termbox"><div class="termhead"><span class="tdot"></span><span>会话终端 · <code>${esc(sid.slice(0,8))}</code> · claude --resume</span><span class="tsp"></span><a class="btn" href="${esc(url)}" target="_blank" rel="noopener" title="若下方终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留运行,随时点卡片「终端」秒回">关闭</button><button class="btn danger" onclick="endTerm()" title="结束这个 claude 进程">结束进程</button></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
+    m.onclick=ev=>{if(ev.target===m)hideTerm();};
   }
-  // close: hide-only keeps the resumed claude alive (it's now a live session you
-  // can reopen — reuse path returns the same ttyd); kill=true ends the process
-  // and frees the single-driver slot.
-  function closeTerm(kill){ const m=document.getElementById('termModal'); if(!m)return; const sid=m.dataset.sid;
-    if(kill) fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
+  // 关闭:只隐藏面板,iframe + WebSocket 保持连接 → claude 继续跑,重开秒回(不 re-resume)。
+  function hideTerm(){ const m=document.getElementById('termModal'); if(m)m.style.display='none'; }
+  // 结束进程:断开(ttyd 随之 SIGHUP 杀掉 claude)+ 关掉 ttyd,释放 single-driver 槽。
+  function endTerm(){ const m=document.getElementById('termModal'); if(!m)return; const sid=m.dataset.sid;
+    if(sid) fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
     m.remove();
   }
   // DD-016: merge this card into another (durable; survives re-classify)
