@@ -812,7 +812,15 @@ class Handler(BaseHTTPRequestHandler):
         if not alive:
             return self._reply(409, {"error": "zellij session not alive"})
         base = ["zellij", "--session", zsess, "action"]
-        run_cmd(base + ["focus-pane-id", str(zpane)])
+        # SAFETY: session_locations.json is never pruned, so a long-dead session
+        # still "remembers" its old pane id. If focus-pane-id fails (pane gone),
+        # the follow-up write-chars would type into whatever pane is CURRENTLY
+        # focused — your message + Enter land in the WRONG window. So check the
+        # focus rc and refuse to write when the target pane no longer exists.
+        rcf, _, _ = run_cmd(base + ["focus-pane-id", str(zpane)])
+        if rcf != 0:
+            return self._reply(409, {"error": "pane_gone",
+                "hint": "原窗格已关闭。用卡片上的『终端』resume 这个会话,而不是注入。"})
         rc, _, err = run_cmd(base + ["write-chars", text])
         if rc != 0:
             return self._reply(500, {"error": err.strip() or "write-chars failed"})
@@ -845,6 +853,23 @@ class Handler(BaseHTTPRequestHandler):
         ex = _TERMINALS.get(sid)
         if ex and ex[1].poll() is None:  # reuse a live ttyd for this session
             return self._reply(200, {"url": f"http://127.0.0.1:{ex[0]}/", "reused": True})
+        # Single-driver gate (DD-018): never `claude --resume <sid>` a session
+        # that already has a live process elsewhere. Two resumes fork the
+        # session jsonl (uuid/parentUuid chain): the two agents diverge, can't
+        # see each other, race the same repo, and the next resume orphans one
+        # branch. So gate on live status:
+        #   running              -> hard refuse (it's actively working).
+        #   idle/done_unread/... -> a process may still be parked in a pane;
+        #                           require explicit ?force after a UI confirm.
+        #   ended / no record    -> safe: this resume is the sole driver.
+        lst = (live_snapshot().get(sid) or {}).get("status")
+        if lst == "running":
+            return self._reply(409, {"error": "live_running", "state": lst,
+                "hint": "该会话正在运行中(在你的终端里)。去那个终端,或用『查看对话』里的发送注入——别在驾驶舱再 resume 一个副本,会话历史会分叉。"})
+        if lst in ("idle", "done_unread", "needs_you") and not body.get("force"):
+            return self._reply(409, {"error": "maybe_live", "state": lst,
+                "need_force": True,
+                "hint": "该会话可能还在某个终端里开着。在驾驶舱 resume 会新开一个独立副本,历史会分叉。确认要新开吗?"})
         cwd = ""
         try:
             cwd = (json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}).get("cwd") or ""

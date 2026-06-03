@@ -242,7 +242,14 @@
   .histfoot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
   .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
   .histin:focus{outline:none;border-color:var(--ink-faint)}
-  /* web terminal modal (DD-015 Stage 3b) */
+  /* embedded ttyd terminal panel (DD-018 §B) — resume a session IN the cockpit */
+  .termmask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:70;display:flex;align-items:center;justify-content:center;padding:26px}
+  .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1120px,95vw);height:min(80vh,880px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .termhead{display:flex;align-items:center;gap:9px;padding:10px 15px;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--ink-dim);font-family:var(--mono)}
+  .termhead .tdot{width:7px;height:7px;border-radius:50%;background:var(--run);box-shadow:0 0 0 3px var(--run-bg);flex:none}
+  .termhead code{color:var(--ink);font-size:11.5px}
+  .termhead .tsp{flex:1}
+  .termframe{flex:1;border:0;width:100%;background:#000}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   /* 归档周视图 */
   .aw-week{margin:14px 0;border:1px solid var(--hair-soft);border-radius:10px;padding:14px 16px;background:var(--bg-row)}
@@ -439,7 +446,7 @@
     // DD-019: sealed cards have no live session — "进入会话" resumes the
     // origin session; the merge action is meaningless (empty sessions[]).
     const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话 →':'进入会话 →'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:'';
@@ -612,8 +619,36 @@
     }catch(_){ toast('发送失败'); }
     inp.disabled=false; inp.focus();
   }
-  // DD-015 Stage 3b: embed the ttyd terminal in a modal (not a new tab)
-  // (browser-terminal modal removed in DD-018 — the host model will re-add it)
+  // DD-018 §B: embedded ttyd terminal — resume the session IN the cockpit
+  // (no new OS window). The single-driver gate lives server-side in
+  // /api/terminal: it refuses to resume a session that's running elsewhere
+  // (would fork the jsonl), and asks for confirm when one might be parked.
+  async function openTerminal(e,sid,force){ if(e&&e.stopPropagation)e.stopPropagation();
+    if(!sid){toast('该工作没有关联会话');return;}
+    try{
+      const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,force:!!force})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.url){ showTerm(sid,j.url); return; }
+      if(j.error==='maybe_live'&&j.need_force){ if(confirm(j.hint||'该会话可能还开着,确定在驾驶舱新开一个副本?')) openTerminal(null,sid,true); return; }
+      if(j.error==='live_running'){ toast(j.hint||'会话正在运行,改用「跳转 pane」或「查看对话」里的发送'); return; }
+      if(String(j.error||'').indexOf('ttyd')>=0){ toast('未装 ttyd:brew install ttyd'); return; }
+      toast(j.hint||j.error||'打开终端失败');
+    }catch(_){ toast('打开终端失败'); }
+  }
+  function showTerm(sid,url){
+    let m=document.getElementById('termModal');
+    if(!m){m=document.createElement('div');m.id='termModal';m.className='termmask';document.body.appendChild(m);}
+    m.dataset.sid=sid;
+    m.innerHTML=`<div class="termbox"><div class="termhead"><span class="tdot"></span><span>会话终端 · <code>${esc(sid.slice(0,8))}</code> · claude --resume</span><span class="tsp"></span><a class="btn" href="${esc(url)}" target="_blank" rel="noopener" title="若下方终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="closeTerm(false)">关闭(保留运行)</button><button class="btn danger" onclick="closeTerm(true)">结束进程</button></div><iframe class="termframe" src="${esc(url)}" allow="clipboard-read; clipboard-write"></iframe></div>`;
+    m.onclick=ev=>{if(ev.target===m)closeTerm(false);};
+  }
+  // close: hide-only keeps the resumed claude alive (it's now a live session you
+  // can reopen — reuse path returns the same ttyd); kill=true ends the process
+  // and frees the single-driver slot.
+  function closeTerm(kill){ const m=document.getElementById('termModal'); if(!m)return; const sid=m.dataset.sid;
+    if(kill) fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
+    m.remove();
+  }
   // DD-016: merge this card into another (durable; survives re-classify)
   function mergeStart(e,id){
     e.stopPropagation();
