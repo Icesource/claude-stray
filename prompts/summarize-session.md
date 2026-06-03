@@ -36,6 +36,8 @@ last_activity_at: <copy verbatim>
 user_turns: <copy verbatim>
 updated_at: <copy from context.now>
 status_guess: active | paused | done | abandoned
+next_step: 跑 daily 验证 tri 路由到 12222   # see Rule 14. one concrete next action, ≤ 80 chars. omit if none.
+awaiting_user: 确认是否接受仅兼容 3 个 _ALL ACL   # see Rule 14. ONLY when blocked on the human. omit otherwise.
 artifacts:                                # see Rule 10. omit key if none.
   - type: cr                              # cr|mr|pr|issue|branch|commit|tag|deployment|doc|other
     title: HSF EagleEye 链路追踪修复       # ≤ 60 chars, omit if none
@@ -353,3 +355,21 @@ weight that risks drift.)
     do not re-translate, re-slug, restyle, reorder, or drop it. A segment,
     once sealed, is immutable. Only ADD a new `sealed_segments` entry when
     a *further* pivot has sealed *another* distinct effort since.
+
+14. **next_step & awaiting_user — the cockpit's two attention signals.**
+    These feed an attention dashboard whose whole job is "what needs me, and
+    how do I jump back in". Keep them crisp and honest.
+    - **`next_step`**: ONE concrete next action for this work — what should
+      happen next (≤ 80 chars, imperative). Prefer something actionable, e.g.
+      "跑 daily 验证 tri 路由到 12222" / "等 MR 27752189 评审" / "查旧 7 个 ACL
+      的持有人数". This is the short structured form of `# 下一步`; keep them
+      consistent. Omit the key only when the work is truly finished with
+      nothing next.
+    - **`awaiting_user`**: emit ONLY when the work is **blocked on the human** —
+      the session genuinely cannot proceed until the user decides/answers/
+      approves something. Give the **specific** thing in one line, e.g.
+      "确认是否接受仅兼容 3 个 _ALL ACL" / "选 A 方案还是 B 方案". This is the
+      strongest signal in the cockpit (it drives the 需要你 band), so do NOT
+      emit it for "I could ask but don't need to", routine FYIs, or work the
+      AI can continue on its own. When in doubt, omit. If you emit
+      `awaiting_user`, `status_guess` must be `active` (not `done`).

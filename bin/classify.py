@@ -1274,6 +1274,65 @@ def enforce_cold_and_terminal_monotone(new_mm: dict, prior: dict,
     return repairs
 
 
+def _body_section(body: str, *titles: str) -> str:
+    """Extract one H1 section body (e.g. '当前状态') from a Layer-1 summary."""
+    want = {t.strip() for t in titles}
+    out, grab = [], False
+    for ln in (body or "").splitlines():
+        if ln.startswith("# "):
+            if grab:
+                break
+            grab = ln[2:].strip() in want
+            continue
+        if grab:
+            out.append(ln)
+    return "\n".join(out).strip()
+
+
+def enforce_attention_fields(new_mm: dict, hot_summaries: list) -> int:
+    """DD-020 — mechanically set each HOT initiative's cockpit attention fields
+    from its most-recent contributing session (same most-recent-wins logic as
+    status):
+      - progress      := that session's `当前状态` body (kills the AI
+                         re-narration drift that lagged behind the summary).
+      - next_step     := its `next_step` frontmatter (the one concrete next
+                         action; cockpit shows it + ranks on it).
+      - awaiting_user := its `awaiting_user` frontmatter (drives the 需要你
+                         band; absent ⇒ cleared).
+    Cold initiatives (no hot session) keep their prior values (frozen)."""
+    by_sid: dict[str, tuple] = {}
+    for sid, fm, body, _raw in hot_summaries:
+        by_sid[sid] = (
+            fm.get("last_activity_at") or "",
+            (fm.get("next_step") or "").strip(),
+            (fm.get("awaiting_user") or "").strip(),
+            _body_section(body, "当前状态", "Current state", "Current Status"),
+        )
+    n = 0
+    for ws in new_mm.get("workspaces") or []:
+        for init in (ws.get("initiatives") or []):
+            if init.get("sealed"):
+                continue
+            contrib = [(s, by_sid[s]) for s in (init.get("sessions") or [])
+                       if s in by_sid]
+            if not contrib:
+                continue
+            contrib.sort(key=lambda kv: kv[1][0] or "", reverse=True)
+            _la, nxt, await_u, cur = contrib[0][1]
+            if cur:
+                init["progress"] = cur
+            if nxt:
+                init["next_step"] = nxt
+            else:
+                init.pop("next_step", None)
+            if await_u:
+                init["awaiting_user"] = await_u
+            else:
+                init.pop("awaiting_user", None)
+            n += 1
+    return n
+
+
 def enforce_hot_initiative_status(new_mm: dict,
                                    hot_summaries: list) -> int:
     """DD-013 — initiative.status for HOT initiatives is mechanically
@@ -2079,6 +2138,12 @@ def main() -> int:
     status_repairs = enforce_hot_initiative_status(new_mm, hot)
     if status_repairs:
         print(f"[classify] enforced hot-initiative status: {status_repairs} repairs")
+
+    # DD-020: mechanically set cockpit attention fields (progress=当前状态,
+    # next_step, awaiting_user) from the most-recent hot session.
+    attn = enforce_attention_fields(new_mm, hot)
+    if attn:
+        print(f"[classify] set attention fields for {attn} hot initiative(s)")
 
     # DD-014: level is deterministic from raw signals. AI's emit is
     # ignored — first real-data run showed AI was wildly unreliable
