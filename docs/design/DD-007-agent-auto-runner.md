@@ -87,7 +87,7 @@ needs to be made visible in every artifact:
 A run takes minutes to hours. If the user kills the agent mid-run,
 or the laptop sleeps, what happens?
 - Soft pause: leave state in `cache/agent-runs/<run-id>/state.json`,
-  resumable via `mindmap --agent-resume <run-id>`
+  resumable via `stray --agent-resume <run-id>`
 - Hard kill: agent dies, transcript preserved, partial work commits
   remain. User cleans up manually.
 

@@ -24,7 +24,7 @@ For full design docs see [design/](design/).
 
 | Writer | Files |
 |---|---|
-| `refresh.sh` apply-overrides phase | `mindmap.json`, `user_overrides.json` (read + clear) |
+| `refresh.sh` apply-overrides phase | `dashboard.json`, `user_overrides.json` (read + clear) |
 | `serve.py /api/save` | `user_overrides.json`, `deleted_ids.json`, `cache/archive/<ws>/*.json` |
 | `record-location.py` | `session_locations.json` |
 | (future) CLI `mindmap card/task ...` | same as `/api/save` |
@@ -69,7 +69,7 @@ running AI call.
 - [ ] `serve.py /api/save` wraps writes in `cache_lock("overrides")`
 - [ ] `refresh.sh` apply-overrides Python block uses the same lock name
 - [ ] CLI commands (P11.1) use the same lock name
-- [ ] `mindmap.json` final write uses atomic `tmp + rename` so concurrent
+- [ ] `dashboard.json` final write uses atomic `tmp + rename` so concurrent
       readers never see a half-written file
 
 ### Out of scope
@@ -104,7 +104,7 @@ All write commands take `cache_lock("overrides")` from P11.0.
 
 Use the **overrides-with-placeholder** strategy:
 - `mindmap card add` writes a stub initiative directly into
-  `mindmap.json` (status=`active`, no sessions, user-supplied
+  `dashboard.json` (status=`active`, no sessions, user-supplied
   summary/progress/tasks)
 - Also adds a marker to `user_overrides.json` so refresh-time merge
   knows to keep the human-created node intact across AI runs
@@ -149,7 +149,7 @@ hand-explain commands each session.
      cases ("user asks 'what am I working on' → `mindmap ls`")
    - **How it works** — three-stage pipeline (extract → aggregate → AI
      classify), continuity model, where overrides live
-   - **Troubleshooting** — decision tree mirroring `mindmap --diagnose`
+   - **Troubleshooting** — decision tree mirroring `stray --diagnose`
      output so the Agent can walk the user through cooldown / extract
      / classification issues without running the diagnostic
    - **Examples** — sample user prompts and what the Agent should do

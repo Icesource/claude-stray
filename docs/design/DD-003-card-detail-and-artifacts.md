@@ -175,7 +175,7 @@ blockers:
 - `artifacts[].inferred`: AI guesses → `true`; user-confirmed sets `false`
 - `blockers[]`: free-text strings (not over-structured)
 
-### 4.2 mindmap.json `initiative.artifacts[]` aggregation
+### 4.2 dashboard.json `initiative.artifacts[]` aggregation
 
 Layer 2 unions all artifacts across the initiative's sessions
 (dedupe by `url` or `(type, ref_id)`) into:
@@ -315,7 +315,7 @@ Behavior:
 - `dismiss` → write `{dismissed: true}`; artifact hidden in UI
 
 Next classify.py run applies overrides, sets `user_confirmed: true`
-in mindmap.json. AI is now barred from changing this artifact's
+in dashboard.json. AI is now barred from changing this artifact's
 status, even if it sees contradicting signals later.
 
 ### 6.3 Conflict resolution
@@ -564,11 +564,11 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 
 - Modify `prompts/classify-cross-session.md`: add §9 instructions
 - Modify `bin/classify.py`: serialize artifacts/blockers into
-  mindmap.json; enforce cold immutability for new fields
-- HTML unchanged (mindmap.json grows two fields; old render-html.py
+  dashboard.json; enforce cold immutability for new fields
+- HTML unchanged (dashboard.json grows two fields; old render-html.py
   ignores them)
 
-**Ship condition**: EagleEye initiative in mindmap.json shows
+**Ship condition**: EagleEye initiative in dashboard.json shows
 artifacts array.
 
 ### Phase 3 — HTML Modal (read-only)
@@ -607,7 +607,7 @@ persisted, AI can't overwrite.
 | AI misses URL | Regex post-process backstop catches everything |
 | AI status wrong | Always `inferred:true`; user can override; UI distinguishes |
 | Too many artifacts (>20) | Modal groups by status, collapses; pending first |
-| Data bloat (mindmap.json grows) | ~3-5 artifacts × 200 bytes × 200 inits ~ 200 KB. Acceptable |
+| Data bloat (dashboard.json grows) | ~3-5 artifacts × 200 bytes × 200 inits ~ 200 KB. Acceptable |
 | Cross-session duplicates | (type, ref_id) dedup; source_sessions records origin |
 | User toggle then AI overrides it | Enforce step protects user_confirmed |
 | URL pattern coverage gaps | First version covers aone + GitHub + GitLab; rest fall to `type=other` |
@@ -634,10 +634,10 @@ persisted, AI can't overwrite.
 ## 13. Relationship to other DDs
 
 - **DD-002 §12.3 contract**: this design **extends trunk data schema**
-  (mindmap.json + summaries gain fields), so per the contract this
+  (dashboard.json + summaries gain fields), so per the contract this
   requires a DD-N. This is it.
 - **DD-002 §12.5 anti-patterns**: we **observe** single-writer principle
-  — mindmap.json still written only by classify.py; summaries only by
+  — dashboard.json still written only by classify.py; summaries only by
   summarize.py; artifact_states writes to user_overrides.json (existing
   writer: serve.py /api/save).
 - **Optional future extensions** (e.g., GitHub status sync API) follow

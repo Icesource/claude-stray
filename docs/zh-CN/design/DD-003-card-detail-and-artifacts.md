@@ -171,7 +171,7 @@ blockers:
 - `artifacts[].inferred`: AI 猜的标 `true`；用户后续 confirm 时改 `false`
 - `blockers[]`: 自由文本字符串列表（不强结构化）
 
-### 4.2 mindmap.json `initiative.artifacts[]` 聚合
+### 4.2 dashboard.json `initiative.artifacts[]` 聚合
 
 Layer 2 把 initiative 关联所有 sessions 的 artifacts **去重合并**（按
 `url` 或 `(type, ref_id)`），写入：
@@ -305,7 +305,7 @@ CR #27369464  pending  [view↗]  [✓ mark merged] [✗ dismiss]
   `{status: "merged"}`
 - `dismiss` → 写 `{dismissed: true}`，artifact 在 UI 上隐藏
 
-下次 classify.py 跑时 apply override，写入 mindmap.json 的
+下次 classify.py 跑时 apply override，写入 dashboard.json 的
 `user_confirmed: true`。AI 之后即使看到反向证据也不能改。
 
 ### 6.3 优先级冲突解决
@@ -548,11 +548,11 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 ### Phase 2 — Layer 2 聚合
 
 - 改 `prompts/classify-cross-session.md`：加 §9 指令
-- 改 `bin/classify.py`：序列化 artifacts/blockers 到 mindmap.json；enforce
+- 改 `bin/classify.py`：序列化 artifacts/blockers 到 dashboard.json；enforce
   cold immutability 包含新字段
-- HTML 无变化（mindmap.json 多两个字段，旧 render-html.py 忽略）
+- HTML 无变化（dashboard.json 多两个字段，旧 render-html.py 忽略）
 
-**Ship 条件**：mindmap.json 里的 EagleEye initiative 出现 artifacts
+**Ship 条件**：dashboard.json 里的 EagleEye initiative 出现 artifacts
 数组。
 
 ### Phase 3 — HTML Modal (read-only)
@@ -588,7 +588,7 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 | AI 提取 URL 漏掉 | 正则后处理兜底，保证 URL 全收 |
 | AI status 误判 | 总是标 `inferred:true`，用户可 override；UI 区分两种 |
 | artifacts 太多（>20）| Modal 内部按 status 分组+折叠，pending 在最前 |
-| 数据膨胀（mindmap.json 增大）| 每 initiative 平均 3-5 个 artifact × 200 字节 = 1KB，可接受 |
+| 数据膨胀（dashboard.json 增大）| 每 initiative 平均 3-5 个 artifact × 200 字节 = 1KB，可接受 |
 | 跨 session 重复 artifact | (type, ref_id) 去重；保留 source_sessions 体现引用关系 |
 | 用户 toggle 后 AI 倒回 | enforce 步骤强制 user_confirmed 不被覆盖 |
 | URL pattern 不全 | 第一版只支持 aone + GitHub + GitLab；其它走 `type=other` |
@@ -613,9 +613,9 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 
 ## 13. 与其它 DD 的关系
 
-- **DD-002 §12.3 契约**：本设计**扩展 trunk 数据 schema**（mindmap.json
+- **DD-002 §12.3 契约**：本设计**扩展 trunk 数据 schema**（dashboard.json
   + summaries 加字段），按契约这应该是一次 DD-N。本文就是。
-- **DD-002 §12.5 反模式**：本设计**遵守**单写者原则——mindmap.json 仍
+- **DD-002 §12.5 反模式**：本设计**遵守**单写者原则——dashboard.json 仍
   然只由 classify.py 写；summaries 仍然只由 summarize.py 写；
   artifact_states 写入 user_overrides.json（已有写者：serve.py
   /api/save）。

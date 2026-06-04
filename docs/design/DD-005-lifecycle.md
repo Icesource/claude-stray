@@ -28,7 +28,7 @@ incident) is currently the only stop button, but:
 
 ### 1.1 — The architectural tension
 
-The user proposes: "only run while `mindmap --serve` is up". This
+The user proposes: "only run while `stray --serve` is up". This
 conflicts with the incremental design — the pipeline needs to keep
 ingesting Stop hooks to keep `cache/sessions/` current. If you skip
 hooks while the server is down, you either (a) miss data permanently
@@ -72,9 +72,9 @@ Non-goals:
 ```
 Always-on:        Layer 0 (extract.py) — runs every hook fire
 Paused by default: Layer 1 + Layer 2
-Active during:    mindmap --serve is up
+Active during:    stray --serve is up
                   + a grace window (5 min) after server closes
-                  + manual mindmap --refresh always works
+                  + manual stray --refresh always works
 ```
 
 Mechanism:
@@ -101,14 +101,14 @@ Mechanism:
 
 ```
 Always-on:        everything (current behavior)
-User control:     mindmap --pause / mindmap --resume
+User control:     stray --pause / stray --resume
                   Dashboard button: pause/resume
 Status indicator: dashboard banner + mindmap CLI exit messages
 ```
 
 Mechanism:
-- `mindmap --pause` writes `cache/.refresh-disabled` with reason
-- `mindmap --resume` removes it (also via `POST /api/lifecycle`)
+- `stray --pause` writes `cache/.refresh-disabled` with reason
+- `stray --resume` removes it (also via `POST /api/lifecycle`)
 - Dashboard shows pause state in the top bar with a toggle
 - `mindmap` CLI prints `[paused since YYYY-MM-DD HH:MM]` near the
   top of output when paused
@@ -156,7 +156,7 @@ Most realistic answer. Each option solves a different ask:
 - **C** (budget guard) = answers "I never want a surprise bill"
 
 A default install can ship with C enabled (DD-004's daily cap, say
-$1.00/day) and offer A as an opt-in (`mindmap --mode serve-only`).
+$1.00/day) and offer A as an opt-in (`stray --mode serve-only`).
 Option B's pause/resume is the manual override layer over both.
 
 ## 4 — Recommended path
@@ -165,7 +165,7 @@ A two-phase rollout:
 
 **Phase 1 — Option B + DD-004 (small, foundational)**
 
-1. Wire `mindmap --pause` / `mindmap --resume` commands. Pause writes
+1. Wire `stray --pause` / `stray --resume` commands. Pause writes
    the kill switch + reason file. Resume removes both. (DD-004 already
    describes the kill switch enhancement.)
 2. Add dashboard banner: red bar when paused, with a "Resume now"
@@ -179,12 +179,12 @@ A two-phase rollout:
 
 1. Add a "lifecycle mode" to `cache/config.json`:
    - `auto` — always on (current behavior)
-   - `serve-only` — Layer 1/2 only run while `mindmap --serve` is up,
+   - `serve-only` — Layer 1/2 only run while `stray --serve` is up,
      plus 5min grace
    - `manual` — Layer 0 always; Layer 1/2 only on explicit `--refresh`
 2. `bin/install.sh` asks during first install which mode to enable
    (default `auto` with budget cap from Phase 1).
-3. `mindmap --mode <name>` switches at any time.
+3. `stray --mode <name>` switches at any time.
 4. Dashboard shows the active mode in the top bar.
 
 This gives users a smooth glide from "least surprise" (auto + budget
@@ -205,7 +205,7 @@ cap) to "minimum cost" (manual) without forcing a single trade-off.
    LaunchAgent's 2h sweep becomes a no-op. Do we uninstall it? Leave
    it as a safety net?
 5. **Single-instance vs multi-instance dashboard**: if two browser
-   tabs are open on different `mindmap --serve` runs (different ports)
+   tabs are open on different `stray --serve` runs (different ports)
    how do we decide "AI is active"? Probably just `any pid file with
    a live process`.
 
@@ -222,7 +222,7 @@ cap) to "minimum cost" (manual) without forcing a single trade-off.
 
 | Phase | Item | Estimate |
 |-------|------|----------|
-| 1.1   | `mindmap --pause` / `--resume` + `cache/.refresh-disabled.reason` sidecar | tiny |
+| 1.1   | `stray --pause` / `--resume` + `cache/.refresh-disabled.reason` sidecar | tiny |
 | 1.2   | Dashboard pause banner + resume button | small |
 | 1.3   | `mindmap` CLI status line | tiny |
 | 1.4   | DD-004 budget cap (depends on DD-004 phases 0-1) | small |

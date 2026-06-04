@@ -97,7 +97,7 @@ flowchart LR
     D -->|"cold"| F["only present in PRIOR"]
     E --> G["Layer 2<br/>cross-session AI"]
     F --> G
-    G --> H["cache/mindmap.json"]
+    G --> H["cache/dashboard.json"]
     H --> I["render-html.py / etc"]
     H -.->|"next round's PRIOR"| G
 
@@ -117,8 +117,8 @@ flowchart LR
 cache/                                    # All gitignored
 │
 ├── config.json                           # {lang: zh-CN}
-├── mindmap.json                          # Main output (schema v2)
-├── mindmap.html                          # Render artifact
+├── dashboard.json                          # Main output (schema v2)
+├── dashboard.html                          # Render artifact
 ├── mindmap-tree.html                     # Render artifact
 │
 ├── sessions/                             # Stage 0: extract output
@@ -167,7 +167,7 @@ graph LR
 
     L2T -.->|coalesce<br/>flock+pending| L2["classify.py ⭐ NEW"]
     L2 -.read.-> SUMM
-    L2 -.read.-> MJ["cache/mindmap.json<br/>(as PRIOR)"]
+    L2 -.read.-> MJ["cache/dashboard.json<br/>(as PRIOR)"]
     L2 -.read.-> DEL["cache/deleted_ids.json"]
     L2 -.write.-> MJ
 
@@ -184,7 +184,7 @@ New scripts:
 |---|---|
 | `bin/summarize.py` | Layer 1: read one session's jsonl tail, call Haiku, write `summaries/<sid>.md` |
 | `bin/layer2-trigger.sh` | Layer 2 trigger: flock + pending file for coalesce |
-| `bin/classify.py` | Layer 2: read summaries + PRIOR, call Haiku, write `mindmap.json` |
+| `bin/classify.py` | Layer 2: read summaries + PRIOR, call Haiku, write `dashboard.json` |
 
 Deprecated:
 
@@ -206,7 +206,7 @@ flowchart TD
         SU["summarize.py<br/>Haiku call for one session<br/>reads jsonl tail ~30KB"]
     end
     subgraph L2["Layer 2: Cross-session classify (AI groups sessions)"]
-        CL["classify.py<br/>reads summaries + PRIOR<br/>Haiku writes mindmap.json"]
+        CL["classify.py<br/>reads summaries + PRIOR<br/>Haiku writes dashboard.json"]
     end
 
     H["Stop / SessionStart hook"] --> EX
@@ -331,14 +331,14 @@ Rules:
 
 ### 4.4 Layer 2: Cross-session classify
 
-**Role**: all hot summaries + PRIOR → mindmap.json.
+**Role**: all hot summaries + PRIOR → dashboard.json.
 
 **Input**:
 - `cache/summaries/<sid>.md` for all **hot** sessions (see §6)
-- `cache/mindmap.json` as PRIOR_MINDMAP (slim)
+- `cache/dashboard.json` as PRIOR_MINDMAP (slim)
 - `cache/deleted_ids.json` as DELETED_IDS
 
-**Output**: `cache/mindmap.json` (schema v2 unchanged)
+**Output**: `cache/dashboard.json` (schema v2 unchanged)
 
 **Prompt sketch** (`prompts/classify-cross-session.md`):
 
@@ -351,7 +351,7 @@ Input:
   - PRIOR_MINDMAP: previous round's classification
   - DELETED_IDS: user-deleted initiative ids (tombstones)
 
-Output: strict JSON, mindmap.json (schema v2)
+Output: strict JSON, dashboard.json (schema v2)
 
 Hard rules:
   1. For initiatives in PRIOR with no session in HOT_SUMMARIES (cold):
@@ -366,7 +366,7 @@ New initiative only when HOT_SUMMARIES provides new evidence not
 belonging to any existing initiative.
 ```
 
-**Trigger**: summaries newer than mindmap.json → trigger Layer 2 (§7 coalesce)
+**Trigger**: summaries newer than dashboard.json → trigger Layer 2 (§7 coalesce)
 
 **Cost**: ~$0.05 / call (Haiku, ~40KB prompt, ~10KB output, ~30s)
 
@@ -382,7 +382,7 @@ Use file mtime as implicit dirty bit — no separate marker files.
 flowchart LR
     JL["jsonl<br/>mtime: T0"] -->|extract| SJ["sessions/sid.json<br/>mtime: T1"]
     SJ -->|"Layer 1<br/>summarize.py"| SM["summaries/sid.md<br/>mtime: T2"]
-    SM -->|"Layer 2<br/>classify.py"| MM["mindmap.json<br/>mtime: T3"]
+    SM -->|"Layer 2<br/>classify.py"| MM["dashboard.json<br/>mtime: T3"]
 
     classDef mtime fill:#fff,stroke:#000,color:#000
     class JL,SJ,SM,MM mtime
@@ -419,7 +419,7 @@ def maybe_layer1(sid):
 # layer2-trigger.sh
 def trigger_layer2():
     summaries_max = max(mtime(p) for p in glob("cache/summaries/*.md"))
-    if summaries_max > mtime("cache/mindmap.json"):
+    if summaries_max > mtime("cache/dashboard.json"):
         run_layer2_with_coalesce()
 ```
 
@@ -444,7 +444,7 @@ def trigger_layer2():
 | In Layer 2 prompt SESSIONS section? | **Yes** (summary fed) | **No** (token savings) |
 | In Layer 2 prompt PRIOR section? | Yes (baseline) | **Yes** (continuity) |
 | AI may modify initiative fields | name, summary, progress, tasks, status | **Only status** (decay rule) |
-| In mindmap.json? | **Yes** | **Yes** (not removed) |
+| In dashboard.json? | **Yes** | **Yes** (not removed) |
 | In HTML cards? | **Yes** | **Yes** (status may show paused) |
 
 ### 6.3 Hard constraint: AI behavior on cold initiatives
@@ -585,7 +585,7 @@ See §4.3. Structured markdown + YAML frontmatter.
 
 Size: ~1-2KB / session (denser, full narrative).
 
-### 8.3 `cache/mindmap.json` (Layer 2 output, schema v2 unchanged)
+### 8.3 `cache/dashboard.json` (Layer 2 output, schema v2 unchanged)
 
 No change.
 
@@ -620,7 +620,7 @@ content of prompts/classify-cross-session.md
 </context>
 
 <prior_mindmap>
-{ slimmed mindmap.json }
+{ slimmed dashboard.json }
 </prior_mindmap>
 
 <deleted_ids>
@@ -679,10 +679,10 @@ sequenceDiagram
     TR->>FS: rm -f layer2.pending
     TR->>L2: invoke
     L2->>FS: read all hot summaries
-    L2->>FS: read mindmap.json as PRIOR
+    L2->>FS: read dashboard.json as PRIOR
     L2->>AI: prompt (~40KB)
-    AI-->>L2: mindmap.json
-    L2->>FS: write mindmap.json
+    AI-->>L2: dashboard.json
+    L2->>FS: write dashboard.json
     TR->>FS: check layer2.pending (absent)
     TR->>FS: release flock
 ```
@@ -695,9 +695,9 @@ longer inline in refresh.sh; **applied at the start of Layer 2**:
 ```
 classify.py at top:
   1. Read user_overrides.json
-  2. Apply task done flips to mindmap.json
+  2. Apply task done flips to dashboard.json
   3. Clear user_overrides.json
-  4. Read the post-apply mindmap.json as PRIOR
+  4. Read the post-apply dashboard.json as PRIOR
   5. Call AI
 ```
 
@@ -714,8 +714,8 @@ sequenceDiagram
     participant L2 as classify.py
     participant AI as Haiku
 
-    Note over U: Day 0: actively working<br/>session X in mindmap.json
-    Note over U: Day 1: not working<br/>X has no hook trigger<br/>X's summary.md mtime unchanged<br/>mindmap.json mtime unchanged
+    Note over U: Day 0: actively working<br/>session X in dashboard.json
+    Note over U: Day 1: not working<br/>X has no hook trigger<br/>X's summary.md mtime unchanged<br/>dashboard.json mtime unchanged
     Note over U: Day 2 AM: periodic trigger<br/>(or hook on login)
     
     TR->>FS: check summaries newer than mindmap
@@ -724,8 +724,8 @@ sequenceDiagram
     L2->>FS: read PRIOR + DELETED
     L2->>FS: don't read summaries (no hot)
     L2->>AI: prompt: "no new evidence, status decay only"
-    AI-->>L2: mindmap.json (only status fields change)
-    L2->>FS: write mindmap.json
+    AI-->>L2: dashboard.json (only status fields change)
+    L2->>FS: write dashboard.json
 
     Note over U: Day 2 PM: user resumes X
     U->>FS: jsonl has new bytes (extract + Layer 1)
@@ -766,7 +766,7 @@ First switch to Layer 1 needs to backfill summaries for existing ~200 sessions:
 
 - 200 × $0.01 = **$2 one-time**
 - Add `--migrate-summaries` flag to install.sh; user triggers manually
-- During backfill, mindmap.json untouched; UI shows old data
+- During backfill, dashboard.json untouched; UI shows old data
 - After backfill, Layer 2 uses new summaries for first classify
 
 ### 10.3 Prompt replacement
@@ -794,7 +794,7 @@ kept for two weeks as fallback / comparison. New prompts:
 Each Phase rolls back via git revert; cache schema is forward-compatible:
 
 - summaries/ dir stays, doesn't affect legacy path
-- mindmap.json schema unchanged, render works
+- dashboard.json schema unchanged, render works
 - User-visible: rollback returns to old card quality, no data loss
 
 ---
@@ -825,7 +825,7 @@ Each cache file has **exactly one writer script**. Any number of
 readers, but only one writer.
 
 ```
-cache/mindmap.json      ← classify.py (unique)
+cache/dashboard.json      ← classify.py (unique)
 cache/summaries/X.md    ← summarize.py (unique, per-sid)
 cache/suggestions.json  ← suggest.py (unique, future)
 ```
@@ -843,7 +843,7 @@ separate dirty-flag files**.
 T0: jsonl mtime
 T1: cache/sessions/<sid>.json mtime
 T2: cache/summaries/<sid>.md mtime
-T3: cache/mindmap.json mtime
+T3: cache/dashboard.json mtime
 ```
 
 New features should follow: use their own output file's mtime to decide
@@ -858,7 +858,7 @@ Missing data product = **feature unavailable, never crash**.
 
 | Scenario | Expected behavior |
 |---|---|
-| cache/mindmap.json missing | render-html shows "no data yet", suggests running refresh |
+| cache/dashboard.json missing | render-html shows "no data yet", suggests running refresh |
 | cache/summaries/X.md missing | Layer 2 treats X as cold, no error |
 | cache/suggestions.json missing | HTML doesn't render the suggestion badge, main UI works |
 | New feature not installed | render-html doesn't even know about it, works normally |
@@ -912,7 +912,7 @@ flowchart TD
         H1["Stop hook"]
         H2["SessionStart hook"]
         H3["launchd 2h"]
-        H4["mindmap --refresh"]
+        H4["stray --refresh"]
     end
 
     subgraph Core["Canonical 3 layers"]
@@ -925,7 +925,7 @@ flowchart TD
     subgraph Products["Data products (read-only contract)"]
         D0["cache/sessions/"]
         D1["cache/summaries/"]
-        D2["cache/mindmap.json"]
+        D2["cache/dashboard.json"]
     end
 
     subgraph Render["Render"]
@@ -945,7 +945,7 @@ flowchart TD
 **Trunk invariants** (reaffirmed; cross-ref
 [§12 Key invariants](../ARCHITECTURE.md#12-key-invariants)):
 
-1. mindmap.json schema_version == 2
+1. dashboard.json schema_version == 2
 2. session_id is full UUID
 3. Task done is monotone
 4. Archived initiatives don't enter PRIOR
@@ -959,7 +959,7 @@ must:
 
 | # | Contract | Concrete form |
 |---|---|---|
-| 1 | **Read-only on trunk products** | Read `cache/sessions/`, `cache/summaries/`, `cache/mindmap.json`; never write, never change their schema |
+| 1 | **Read-only on trunk products** | Read `cache/sessions/`, `cache/summaries/`, `cache/dashboard.json`; never write, never change their schema |
 | 2 | **Own data product** | Write to `cache/<feature>/` or `cache/<feature>.json`; manage your own dir |
 | 3 | **Own prompt file** | `prompts/<feature>.md`; never reuse or modify trunk prompts like `classify-cross-session.md` |
 | 4 | **Same concurrency model** | Use DD-002's mtime dirty + flock + coalesce; don't invent new mechanisms |
@@ -977,7 +977,7 @@ flowchart LR
     subgraph CanonicalProducts["Trunk products (read-only)"]
         D0["sessions/"]
         D1["summaries/"]
-        D2["mindmap.json"]
+        D2["dashboard.json"]
     end
 
     subgraph FA["Future A: work suggestions"]
@@ -1016,8 +1016,8 @@ Three concrete sketches (not in DD-002 scope, just illustrative):
 
 ```
 bin/suggest.py:
-  trigger: cron hourly / mindmap --suggest
-  reads:   cache/summaries/*.md (hot), cache/mindmap.json
+  trigger: cron hourly / stray --suggest
+  reads:   cache/summaries/*.md (hot), cache/dashboard.json
   prompt:  prompts/suggest.md
            "Given these initiatives, suggest 5 next-step actions"
   writes:  cache/suggestions.json
@@ -1031,7 +1031,7 @@ bin/suggest.py:
 ```
 bin/prompt-suggest.py:
   trigger: SessionStart hook
-  reads:   cache/summaries/<related-sids>.md, cache/mindmap.json
+  reads:   cache/summaries/<related-sids>.md, cache/dashboard.json
   prompt:  prompts/prompt-suggest.md
            "Based on similar past sessions, recommend 3 prompt starters"
   writes:  cache/prompt-hints/<new-sid>.md
@@ -1044,7 +1044,7 @@ bin/prompt-suggest.py:
 ```
 bin/health.py:
   trigger: launchd daily
-  reads:   cache/mindmap.json
+  reads:   cache/dashboard.json
   prompt:  prompts/health.md
            "Score each initiative's health: blocked / slow / healthy"
   writes:  cache/health.json
@@ -1059,14 +1059,14 @@ don't depend on each other.
 
 | Anti-pattern | Consequence | What to do instead |
 |---|---|---|
-| Add new field to mindmap.json (e.g. `suggestions: [...]`) | Multi-writer race; schema bloat; parsing confusion in other readers | Write to `cache/<feature>.json`, merge at render time |
+| Add new field to dashboard.json (e.g. `suggestions: [...]`) | Multi-writer race; schema bloat; parsing confusion in other readers | Write to `cache/<feature>.json`, merge at render time |
 | Modify `cache/summaries/<sid>.md` to add new section | Layer 2 sees polluted data; other consumers confused | Write to `cache/<feature>/<sid>.md` |
 | Reuse Layer 2 prompt + add own instructions | Prompt sprawl; Haiku output quality degrades | Independent prompt file, independent AI call |
 | Directly import extract.py internals | Refactor coupling across callers | Consume via file contract |
 | Add a new global lock for the new feature | Multiple concurrency models that fight | Use DD-002's flock + coalesce |
 | Block synchronously in the Stop hook | Slow hook response, user-perceived latency | fork-and-detach, let mtime trigger downstream |
 | Add own launchd plist | Multiple independent schedules, hard to manage | Route through refresh-bg.sh |
-| Touch mindmap.json mtime | Falsely triggers Layer 2 rerun | Only touch your own product's mtime |
+| Touch dashboard.json mtime | Falsely triggers Layer 2 rerun | Only touch your own product's mtime |
 
 ### 12.6 Global risks and mitigations
 
@@ -1107,7 +1107,7 @@ Each contract revision goes through a new DD-N flow and updates this
 | Decision | Choice |
 |---|---|
 | Dirty tracking | **mtime compare**, no separate flags |
-| Cold session in mindmap.json | **Kept**, just not in Layer 2 SESSIONS block |
+| Cold session in dashboard.json | **Kept**, just not in Layer 2 SESSIONS block |
 | What AI can do to cold | **Only status decay**; name/summary/tasks must stay |
 | Layer 1 concurrency | **Fully concurrent**, per-sid flock |
 | Layer 2 concurrency | **Single-process + coalesce** |
@@ -1155,7 +1155,7 @@ Step 5  Implement bin/classify.py (full Layer 2) + layer2-trigger.sh
         (Cost: half day)
 
 Step 6  Side-by-side run for one week
-        Both old refresh.sh and new pipeline, compare mindmap.json DIFFs
+        Both old refresh.sh and new pipeline, compare dashboard.json DIFFs
         (Cost: ~$5/day × 7 = ~$35, acceptable)
 
 Step 7  Switch hooks to new pipeline, disable old

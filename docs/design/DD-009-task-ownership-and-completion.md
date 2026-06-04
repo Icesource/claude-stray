@@ -196,7 +196,7 @@ optional.
 
 ### 3.4 Schema additions
 
-`cache/mindmap.json` initiative.tasks[]:
+`cache/dashboard.json` initiative.tasks[]:
 ```json
 {
   "id": "stable-slug-or-prior-id",
@@ -211,7 +211,7 @@ optional.
 {
   ...,
   "evicted_at": "<ISO timestamp>",     // when this task left
-                                       // visible mindmap.json
+                                       // visible dashboard.json
   "eviction_reason": "no_session_evidence"
                                        // why
 }
@@ -262,7 +262,7 @@ def aggregate_and_archive_tasks(new_mm, prior, hot_summaries):
 DD-009 implementation includes a one-time migration script
 `bin/_migrate_dd009_tasks.py`:
 
-1. For every initiative in `cache/mindmap.json`:
+1. For every initiative in `cache/dashboard.json`:
    - Determine canonical sessions and their summaries' tasks
    - Identify PRIOR tasks with no canonical-round support → move to
      `task_archive` with `evicted_at = generated_at`,
@@ -351,6 +351,6 @@ Estimated migration cost: 1 classify run (~$0.15) + script time.
 
 Risk: phase 5 is partly AI-driven (classify call with new prompt).
 Output should be inspected by the user before committing the new
-mindmap.json. Recommend running with a `--dry-run` flag that emits
-the proposed mindmap.json + diff vs current, so the user can
+dashboard.json. Recommend running with a `--dry-run` flag that emits
+the proposed dashboard.json + diff vs current, so the user can
 approve.

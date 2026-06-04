@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>claude-stray — 给你的 Claude Code 工作做个仪表盘</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {
+    max-width: 720px; margin: 40px auto; padding: 0 24px 80px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                 sans-serif;
+    line-height: 1.75; color: #1d2024;
+    font-size: 16px;
+  }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h1 + .subtitle { color: #666; margin: 0 0 32px; font-size: 14px; }
+  h2 { font-size: 19px; margin: 36px 0 12px; }
+  p { margin: 12px 0; }
+  img { max-width: 100%; height: auto; border-radius: 8px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin: 8px 0; }
+  code { background: #f5f5f7; padding: 1px 6px; border-radius: 4px;
+         font-size: 13px; font-family: "JetBrains Mono", Menlo, monospace; }
+  pre { background: #1d2024; color: #e8e8e8; padding: 14px 18px;
+        border-radius: 8px; overflow-x: auto; font-size: 13px;
+        line-height: 1.6; }
+  pre code { background: none; color: inherit; padding: 0; font-size: 13px; }
+  a { color: #2c5de8; text-decoration: none; border-bottom: 1px solid #c3d3f8; }
+  a:hover { border-bottom-color: #2c5de8; }
+  blockquote {
+    border-left: 3px solid #e0e0e5; padding: 0 16px;
+    margin: 18px 0; color: #555; font-style: italic;
+  }
+  ul { padding-left: 24px; }
+  ul li { margin: 4px 0; }
+  .small { font-size: 13px; color: #888; }
+  .caption { font-size: 13px; color: #888; text-align: center;
+             margin: -2px 0 24px; }
+  hr { border: 0; border-top: 1px solid #eee; margin: 36px 0; }
+  .repo-cta {
+    background: #f5f5f7; border-radius: 10px; padding: 16px 20px;
+    margin: 28px 0;
+  }
+  .repo-cta p { margin: 4px 0; }
+</style>
+</head>
+<body>
+
+<h1>claude-stray — 给你的 Claude Code 工作做个仪表盘</h1>
+<p class="subtitle">写给"我有 200 个 session jsonl,记不起来上周在搞什么"的人</p>
+
+<p>
+我有 832 个 <code>~/.claude/projects/*.jsonl</code>。其中可能 30 个是
+"我在认真做的事",剩下都是 9 个月前问过一次然后忘了的。
+<code>claude --resume</code> 弹出来的列表按时间倒序排,纯 UUID,翻三屏
+都看不到我上周追到一半的那个 HSF 卡点排到哪儿了。
+</p>
+
+<p>
+做了个东西叫 <strong>claude-stray</strong>。它把所有 session 用 Haiku
+4.5 自动聚类成 "initiative"(可以理解成"小项目"),每个 initiative
+一张卡片,卡片上有摘要、进度、任务清单、卡点、相关的 CR/MR 链接、
+能直接点 🆕 在新 pane 里 resume 的 session 列表。打开
+<code>http://127.0.0.1:9876/</code> 就一目了然。
+</p>
+
+<img src="https://raw.githubusercontent.com/Icesource/claude-stray/main/docs/assets/screenshots/zh-CN/01-overview.png" alt="claude-stray dashboard 总览">
+<p class="caption">主视图。左 sidebar 是工作区分组,中间是卡片,右上一只走来走去的像素小猫念诗。</p>
+
+<h2>关键的一句话</h2>
+<p>
+<strong>这是一个给人看的仪表盘,不是一个让 AI 来查询的接口。</strong>
+AI 只负责把 session 聚类成卡片;每张卡片的"读"还是你自己来。
+我试过让 AI 直接回答"我最近在做什么",结果它要么瞎编要么照抄 mindmap.json
+内容,都不如你自己扫一眼卡片来得快。
+</p>
+
+<h2>它会自动做什么</h2>
+<ul>
+  <li>每次 Claude Code 结束一轮对话(Stop hook),触发后台跑 Layer 1 总结当前 session</li>
+  <li>触发 Layer 2 把所有 hot session 跨会话归类(coalesced,15 分钟冷却,Haiku ~$0.17/次)</li>
+  <li>每 2h 生成 20 条 tips(每条带可点击的 source URL,wisdom 类用真实诗句,curiosity 类引维基/etymonline 等可核验来源 — 防 AI 瞎编)</li>
+  <li>每周五中午自动出周报</li>
+  <li>无人看 dashboard 时全部 idle,没有后台轮询烧钱</li>
+</ul>
+
+<img src="https://raw.githubusercontent.com/Icesource/claude-stray/main/docs/assets/screenshots/zh-CN/02-card-detail.png" alt="单卡详情">
+<p class="caption">单卡放大。三态任务(待办 / 已完成 / 已取消)、卡点提示、artifact 直接点开 CR。</p>
+
+<h2>它不会自动做什么</h2>
+<ul>
+  <li>不会替你写代码、不会替你做技术决定</li>
+  <li>不会"知道你最近在 Claude 整体花了多少钱"(<code>stray --cost</code> 只统计本插件自己的 AI 调用开销,不是你 Claude Code 的整体用量)</li>
+  <li>不会"暂停 Claude"。它能暂停的只是本插件自己的后台 pipeline (<code>stray --pause "demo 备战"</code>),Claude Code 本体照常工作</li>
+  <li>不收集任何会话内容到外部 — 唯一的网络出口是调用 Anthropic API 做分类,数据本身留在你机器</li>
+</ul>
+
+<h2>那只猫</h2>
+<p>
+本来只是想把右上角的 tips 文字做得不那么严肃,加了一个 emoji 头像。
+后来觉得 emoji 太轻,换成了 CC0 的像素猫 sprite(感谢 OpenGameArt 的
+<a href="https://opengameart.org/content/cat-sprites">nicolae-berbece</a>),
+6 帧 walk cycle 一直走。你可以拖它到屏幕任意位置,位置会存在 localStorage。
+点它就换一条 tip。
+</p>
+
+<img src="https://raw.githubusercontent.com/Icesource/claude-stray/main/docs/assets/screenshots/zh-CN/03-tips-bubble.png" alt="像素猫 + tips 气泡" style="max-width: 360px; display: block; margin: 8px auto;">
+
+<h2>Tips 不让 AI 瞎编</h2>
+<p>
+诗句类(wisdom)偏写景闲适,不要励志说教。<em>采菊东篱下,悠然见南山</em>
+比 <em>莫等闲白了少年头</em> 让人放松。每条都必须配 source URL(我让它
+指向 Wikipedia / Wikiquote 这类可核验的页面),AI 找不到可信链接就直接
+drop 那条,不许编。
+</p>
+<p>
+小知识类(curiosity)同理,必须配 Etymonline / Wikipedia / MDN /
+官方文档之类的源。Markdown 是 2004 年 John Gruber 创立的 — 链接到
+<a href="https://daringfireball.net/projects/markdown/">daringfireball.net</a>。
+Git commit hash 是 SHA-1 — 链接到 Wikipedia git 页面。
+</p>
+
+<h2>装它</h2>
+
+<div class="repo-cta">
+<p><strong>一行装(macOS / Linux):</strong></p>
+<pre><code>curl -fsSL https://raw.githubusercontent.com/Icesource/claude-stray/main/bin/quick-install.sh | bash</code></pre>
+<p class="small">
+脚本会做依赖检查(python3 ≥ 3.9、git、登录过的 claude CLI),
+clone 到 <code>~/.claude-stray/</code>(像 <code>~/.fzf</code> /
+<code>~/.nvm</code> 一样,工具自己的家目录),装完 Claude Code 的
+Stop / SessionStart hook,顺手装 SKILL(让你后续问 "帮我打开仪表盘" /
+"刷新一下" / "这插件本月花了多少钱" 时主 agent 知道怎么调)。
+</p>
+</div>
+
+<p>不想 pipe shell 的话:</p>
+<pre><code>git clone https://github.com/Icesource/claude-stray.git ~/.claude-stray
+cd ~/.claude-stray
+bash bin/install.sh</code></pre>
+
+<p>装完打开 Claude Code 跑一次 <code>/stray-refresh</code> 出初始数据,
+然后 <code>stray --serve</code> 看仪表盘。</p>
+
+<h2>开销</h2>
+
+<p>大致这样(Haiku 4.5,你自己的 Claude Code 订阅就行,不需要单独 API key):</p>
+
+<ul>
+  <li>Layer 1 总结:每个新 session 约 $0.04,Stop hook 触发</li>
+  <li>Layer 2 分类:约 $0.17/次,合并触发(15 分钟冷却 + dirty tracking),活跃使用约 5 次/天</li>
+  <li>Tips:每 2 小时 ~$0.08,只在 dashboard 跑着的时候</li>
+  <li>周报:周五一次,$0.10-$0.50,看那周内容多少</li>
+</ul>
+
+<p>都有 <code>--max-budget-usd</code> 硬上限,跑出预算会失败而不是悄悄烧钱。<code>stray --cost month</code> 看本插件这个月花了多少。</p>
+
+<h2>不打算做的事</h2>
+<p>
+有些功能我刻意没做:
+</p>
+<ul>
+  <li>session 全文搜索 — 那是 <code>grep</code> 的活</li>
+  <li>聊天 UI / 让你直接对话 dashboard — 你已经有 Claude Code 了</li>
+  <li>团队共享 / 多人协作 — 这是个人工具,session 数据本身就是私密的</li>
+  <li>"自动写代码替你解决卡点" — 太大胆,留给未来 P 系列做 agent 实验时再说</li>
+</ul>
+
+<hr>
+
+<p class="small">
+仓库:<a href="https://github.com/Icesource/claude-stray">github.com/Icesource/claude-stray</a> · MIT 协议 · macOS / Linux(Windows 走 WSL)<br>
+当前版本:v0.6.1 · 用过半年还在迭代,做这个工具本身有 11 个 DD 设计文档串起来 · 欢迎拍砖
+</p>
+
+</body>
+</html>

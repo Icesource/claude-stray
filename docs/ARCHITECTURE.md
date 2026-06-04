@@ -18,12 +18,17 @@ After reading this doc you should be able to:
 
 Reads `~/.claude/projects/*.jsonl` (Claude Code's own session log),
 runs a **two-step Haiku 4.5 pipeline** (per-session summarize →
-cross-session classify), persists the result as a structured mindmap,
-renders to ANSI tree / HTML cards / markmap. Triggered automatically
-by Claude Code Stop / SessionStart hooks. Derived AI features (tips,
-weekly report, next-step suggestions, wellness nudges) are scheduled
-by `mindmap --serve`'s in-process scheduler — they only run while
-the dashboard server is up, per DD-005's lazy-refresh principle.
+cross-session classify) and persists the result to `cache/dashboard.json`.
+The primary surface is the **attention cockpit** (`bin/cockpit.html`,
+served at `/`): a live web dashboard that bands the work by attention
+state — **needs-you → running → idle → done** — driven by real-time
+telemetry from Claude Code hooks, with a per-card **embedded ttyd
+terminal** to resume the session in place. (`/classic` keeps the older
+card grid; `stray` with no args prints an ANSI tree.) Triggered
+automatically by Claude Code Stop / SessionStart hooks. Derived AI
+features (tips, weekly report, next-step suggestions) are scheduled by
+`stray --serve`'s in-process scheduler — they only run while the
+dashboard server is up, per DD-005's lazy-refresh principle.
 
 ```mermaid
 flowchart LR
@@ -32,8 +37,8 @@ flowchart LR
     S --> L1["Layer 1:<br/>summarize.py<br/>(Haiku 4.5)"]
     L1 --> SM["cache/summaries/<br/>*.md per session"]
     SM --> L2["Layer 2:<br/>classify.py<br/>(Haiku 4.5)"]
-    P["cache/mindmap.json<br/>(prior round)"] -.->|PRIOR_MINDMAP| L2
-    L2 --> M["cache/mindmap.json<br/>(new round)"]
+    P["cache/dashboard.json<br/>(prior round)"] -.->|PRIOR_MINDMAP| L2
+    L2 --> M["cache/dashboard.json<br/>(new round)"]
     M --> R1["render.py — ANSI tree"]
     M --> R2["render-html.py — cards"]
     M --> R3["render-tree.py — markmap"]
@@ -91,18 +96,18 @@ claude-stray/
 │   │
 │   ├── extract.py                # Layer 0: jsonl → cache/sessions/<sid>.json (incremental)
 │   ├── summarize.py              # Layer 1: cache/sessions/<sid>.json → cache/summaries/<sid>.md
-│   ├── classify.py               # Layer 2: cache/summaries/*.md → cache/mindmap.json
+│   ├── classify.py               # Layer 2: cache/summaries/*.md → cache/dashboard.json
 │   │
 │   ├── record-location.py        # hook stdin → cache/session_locations.json
 │   ├── _cost_log.py              # Shared cost-logger helper (appends to cost_log.jsonl)
-│   ├── cost.py                   # `mindmap --cost` reporter
+│   ├── cost.py                   # `stray --cost` reporter
 │   │
-│   ├── render.py                 # mindmap.json → ANSI tree (stdout)
-│   ├── render-html.py            # mindmap.json + archive/ + locations → mindmap.html
-│   ├── render-tree.py            # mindmap.json → mindmap-tree.html (markmap)
+│   ├── render.py                 # dashboard.json → ANSI tree (stdout)
+│   ├── render-html.py            # dashboard.json + archive/ + locations → dashboard.html
+│   ├── render-tree.py            # dashboard.json → mindmap-tree.html (markmap)
 │   │
 │   ├── serve.py                  # Local HTTP service (127.0.0.1:9876)
-│   └── diagnose.py               # `mindmap --diagnose`
+│   └── diagnose.py               # `stray --diagnose`
 │
 ├── prompts/
 │   ├── summarize-session.md      # Layer 1 prompt (per-session digest)
@@ -112,8 +117,8 @@ claude-stray/
 │
 ├── cache/                        # Runtime state, gitignored
 │   ├── config.json               # {lang: zh-CN}
-│   ├── mindmap.json              # Main output
-│   ├── mindmap.html              # Rendered artifact
+│   ├── dashboard.json              # Main output
+│   ├── dashboard.html              # Rendered artifact
 │   ├── mindmap-tree.html         # Rendered artifact
 │   ├── sessions/                 # Layer 0 output: <sid>.json per session
 │   ├── summaries/                # Layer 1 output: <sid>.md per session
@@ -178,7 +183,7 @@ graph TD
     sum -.->|reads| sess
     sum -.->|writes| sumdir["cache/summaries/"]
     cls -.->|reads| sumdir
-    cls -.->|writes| mj["cache/mindmap.json"]
+    cls -.->|writes| mj["cache/dashboard.json"]
     sum -.->|appends| cl["cache/cost_log.jsonl"]
     cls -.->|appends| cl
 
@@ -191,7 +196,7 @@ graph TD
 Two most important paths:
 
 1. **Data collection**: `jsonl → extract.py → cache/sessions/`
-2. **AI classification**: `cache/sessions/ → summarize.py → cache/summaries/ → classify.py → cache/mindmap.json`
+2. **AI classification**: `cache/sessions/ → summarize.py → cache/summaries/ → classify.py → cache/dashboard.json`
 
 ---
 
@@ -225,7 +230,7 @@ flowchart TD
     L2Lock -- yes --> L2["classify.py<br/>(load all summaries)"]
     L2 --> Filter2["hot vs cold (48h)<br/>filter user_turns&lt;2<br/>cap MAX_HOT=120"]
     Filter2 --> CC2["claude --no-session-persistence -p<br/>Haiku 4.5<br/>--max-budget-usd 2.50"]
-    CC2 --> ClsOut["write cache/mindmap.json<br/>append cost_log.jsonl<br/>regen mindmap.html"]
+    CC2 --> ClsOut["write cache/dashboard.json<br/>append cost_log.jsonl<br/>regen dashboard.html"]
     ClsOut --> Pend2{".layer2.pending<br/>exists?"}
     Pend2 -- yes --> L2
     Pend2 -- no --> ExitOK
@@ -267,13 +272,13 @@ lock prevents duplicate concurrent work on the same session.
 
 Reads ALL `cache/summaries/*.md`, stratifies into hot (last 48h) and
 cold, applies user overrides, sends a prompt containing prior
-mindmap.json + hot summaries to Haiku 4.5, writes the new mindmap.json.
+dashboard.json + hot summaries to Haiku 4.5, writes the new dashboard.json.
 
 `layer2-trigger.sh` coalesces fan-in: if a classify is already running,
 a new trigger just `touch`es `.layer2.pending`; the running classify
 checks for that marker after writing output and loops.
 
-Both layers append to `cache/cost_log.jsonl` for the `mindmap --cost`
+Both layers append to `cache/cost_log.jsonl` for the `stray --cost`
 report.
 
 ---
@@ -283,7 +288,7 @@ report.
 ```mermaid
 flowchart TD
     H["Stop / SessionStart hook"] --> RB["refresh-bg.sh"]
-    UR["mindmap --refresh"] --> Pipe["pipeline-run.sh --all-dirty --force-classify"]
+    UR["stray --refresh"] --> Pipe["pipeline-run.sh --all-dirty --force-classify"]
     API["POST /api/refresh"] --> Pipe
 
     RB --> KS{".refresh-disabled?"}
@@ -306,9 +311,9 @@ Core pipeline:
 | Source | When | Behavior |
 |---|---|---|
 | `Stop` / `SessionStart` hook | Each assistant turn end / session open | `refresh-bg.sh --sid <sid>` — fork+detach, hook returns instantly |
-| `mindmap --refresh` | User command | Forces a full sweep + classify, bypasses dirty gating on Layer 2 |
+| `stray --refresh` | User command | Forces a full sweep + classify, bypasses dirty gating on Layer 2 |
 | `POST /api/refresh` | UI 🔄 button | Same as above |
-| `cache/.refresh-disabled` | Manual touch / `mindmap --pause` | Kill switch — all hook fires exit immediately |
+| `cache/.refresh-disabled` | Manual touch / `stray --pause` | Kill switch — all hook fires exit immediately |
 
 Derived features (DD-006, scheduled by `serve.py` while dashboard is up):
 
@@ -316,7 +321,7 @@ Derived features (DD-006, scheduled by `serve.py` while dashboard is up):
 |---|---|---|
 | serve scheduler — startup + every 6h | Tips for the header ticker (4 categories, AI-generated) |
 | serve scheduler — piggyback on tips | Wellness signal check (zero cost when no signal fires) |
-| serve scheduler — when mindmap.json mtime advances | Next-steps suggestions (30m internal debounce) |
+| serve scheduler — when dashboard.json mtime advances | Next-steps suggestions (30m internal debounce) |
 | serve scheduler — Friday 12:00 local | Weekly report (once per ISO week) |
 
 Earlier versions had a 2-hour launchd backup; that was removed once
@@ -354,11 +359,11 @@ erDiagram
     JSONL { string path "~/.claude/projects/.../sid.jsonl" }
     SESSIONS { string path "cache/sessions/sid.json" }
     SUMMARIES { string path "cache/summaries/sid.md" }
-    PRIOR { string path "cache/mindmap.json (previous round)" }
+    PRIOR { string path "cache/dashboard.json (previous round)" }
     DEL { string path "cache/deleted_ids.json" }
     OVERRIDES { string path "cache/user_overrides.json" }
     ARCHIVE { string path "cache/archive/ws/sid.json" }
-    MINDMAP { string path "cache/mindmap.json" }
+    MINDMAP { string path "cache/dashboard.json" }
     COST { string path "cache/cost_log.jsonl" }
 ```
 
@@ -405,7 +410,7 @@ sequenceDiagram
     P->>T: fire layer2-trigger.sh
     T->>C: acquire mkdir lock, run classify.py
     C->>FS: load all summaries, classify
-    C->>FS: write mindmap.json, regen html
+    C->>FS: write dashboard.json, regen html
     Note over U: browser polling /api/data
     FS-->>U: new mindmap, new card visible (within 8s of classify finish)
 ```
@@ -418,12 +423,12 @@ Server merges overrides into the next classify run via
 `apply_user_overrides()` in `classify.py`. The classify prompt's
 done-monotone rule prevents AI from un-doing it.
 
-### Walkthrough 3: `mindmap --serve` lifecycle
+### Walkthrough 3: `stray --serve` lifecycle
 
 Functionally unchanged — see `bin/serve.py`. Key design points are
 still:
 - daemon_threads + worker-thread `shutdown()` to avoid SIGINT deadlock
-- regen-on-GET keeps mindmap.html in sync without manual restart
+- regen-on-GET keeps dashboard.html in sync without manual restart
 - 8s polling on `/api/data` for silent in-place re-render
 
 ---
@@ -432,13 +437,13 @@ still:
 
 ```mermaid
 flowchart LR
-    A["mindmap.json (round N)"] -->|slimmed| B["PRIOR_MINDMAP block"]
+    A["dashboard.json (round N)"] -->|slimmed| B["PRIOR_MINDMAP block"]
     C["summaries/*.md (hot)"] --> D["INPUT_SESSIONS block"]
     E["deleted_ids.json"] --> F["DELETED_IDS"]
     O["user_overrides"] --> Merge["apply_user_overrides"]
     Merge --> B
     B & D & F --> G["claude -p Haiku<br/>(Layer 2)"]
-    G --> H["mindmap.json (round N+1)"]
+    G --> H["dashboard.json (round N+1)"]
     H -.->|next round| A
 ```
 
@@ -478,8 +483,8 @@ stateDiagram-v2
 ```
 
 Two kinds of `archived`:
-- **AI-archived** (>14d idle) — still in mindmap.json with `status=archived`
-- **User-archived** — physically moved to `cache/archive/<ws>/<id>.json`; mindmap.json no longer contains it. The HTML still shows it because `render-html.py` reads the archive/ dir.
+- **AI-archived** (>14d idle) — still in dashboard.json with `status=archived`
+- **User-archived** — physically moved to `cache/archive/<ws>/<id>.json`; dashboard.json no longer contains it. The HTML still shows it because `render-html.py` reads the archive/ dir.
 
 ---
 
@@ -506,7 +511,7 @@ P14 ship bug, [feedback_macos_portability](../../.claude/projects/-Users-bby-Cod
 
 Enforced by code or prompt. Violations are bugs.
 
-1. `cache/mindmap.json` `schema_version == 2`
+1. `cache/dashboard.json` `schema_version == 2`
 2. Every initiative has non-empty `id` and `sessions[]`
 3. `sessions[]` entries are full UUIDs (classify.py post-process repairs truncation)
 4. Once `done: true`, a task stays so across refreshes (Continuity rule)
@@ -529,7 +534,7 @@ in practice; surfaced here in case scale changes.
 ### 13.2 No live budget / runaway alarm
 
 There's a kill switch (`cache/.refresh-disabled`) but no live alarm.
-You only notice anomaly when you manually run `mindmap --cost`. DD-004
+You only notice anomaly when you manually run `stray --cost`. DD-004
 plans the daily budget + rate watchdog + dashboard banner; not yet
 implemented.
 
@@ -549,8 +554,8 @@ Loopback-only is intentional. No remote access, no collaboration, no plans to su
 
 You've now seen the whole system. Suggested next steps:
 
-1. **See your state**: `mindmap --diagnose` walks every stage and shows kill-switch / cost / hook status
-2. **Trace a real session**: `mindmap --diagnose <sid>` to see exactly where a session is in the pipeline
+1. **See your state**: `stray --diagnose` walks every stage and shows kill-switch / cost / hook status
+2. **Trace a real session**: `stray --diagnose <sid>` to see exactly where a session is in the pipeline
 3. **Read a prompt**: `cat prompts/summarize-session.md` (Layer 1) and `cat prompts/classify-cross-session.md` (Layer 2)
 4. **Read a DD**:
    - [DD-002](design/DD-002-ai-pipeline-redesign.md) — why 3 layers

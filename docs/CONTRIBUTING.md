@@ -68,7 +68,7 @@ in a fixed priority order. Pattern:
 2. Update the help text in the `-h|--help` branch
 3. If the flag delegates to a Python script, dispatch via `exec
    python3 "$REPO_ROOT/bin/<script>.py"` after the parse loop
-4. Smoke test: `bash bin/mindmap --your-flag` and `bash bin/mindmap
+4. Smoke test: `bash bin/stray --your-flag` and `bash bin/mindmap
    --help`
 
 ## Adding a `serve.py` endpoint
@@ -94,7 +94,7 @@ classifier. Two failure modes to defend against:
   (belt + suspenders)
 
 After any prompt change, force a real refresh and inspect the DIFF
-output (`mindmap --refresh && tail Library/Logs/claude-stray.log`).
+output (`stray --refresh && tail Library/Logs/claude-stray.log`).
 If `DIFF vs prior` shows initiative `id`s being renamed or `done` flipping
 back to `false`, the prompt change broke continuity.
 
@@ -103,7 +103,7 @@ back to `false`, the prompt change broke continuity.
 The cache is gitignored — schema changes are silent. Migration is the
 contributor's problem:
 
-- Bumping `mindmap.json.schema_version` requires a fallback path in
+- Bumping `dashboard.json.schema_version` requires a fallback path in
   `render.py` and `render-html.py` for at least one release
 - New fields: prefer optional, defaulting to safe values in code rather
   than requiring full migration
@@ -115,10 +115,10 @@ contributor's problem:
 There's no unit test suite. The signal hierarchy for "is it broken":
 
 1. `python3 bin/render.py` runs without exception on current
-   `cache/mindmap.json`
+   `cache/dashboard.json`
 2. `bash bin/refresh.sh` exits cleanly (force or hash-skip both fine)
-3. `mindmap --diagnose` reports green for an active session
-4. `mindmap --serve` starts, serves `/`, accepts `/api/save`, exits
+3. `stray --diagnose` reports green for an active session
+4. `stray --serve` starts, serves `/`, accepts `/api/save`, exits
    cleanly on Ctrl-C
 5. Playwright smoke test against `http://127.0.0.1:9876/`
    (`/tmp/playwright-test-*.js`)

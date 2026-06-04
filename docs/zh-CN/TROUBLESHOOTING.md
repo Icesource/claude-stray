@@ -3,7 +3,7 @@
 我们实际遇到过的故障模式决策树。第一站永远是：
 
 ```bash
-mindmap --diagnose [session_id]    # 省略参数则自动挑最近活跃的
+stray --diagnose [session_id]    # 省略参数则自动挑最近活跃的
 ```
 
 它会逐阶段走 pipeline 告诉你哪一步丢了 session。本文档大部分内容
@@ -11,14 +11,26 @@ mindmap --diagnose [session_id]    # 省略参数则自动挑最近活跃的
 
 英文原版：[../TROUBLESHOOTING.md](../TROUBLESHOOTING.md)
 
-## "我新提交的任务/修复/决定没出现在脑图"
+## "面板空的" / "同步失败"(首次运行)
+
+驾驶舱现在会把原因直接写在页面上。常见的几种:
+
+- **`claude` 没登录** —— 后台分析跑不了。用 `claude -p hi` 验;失败就登录,
+  然后 `stray --refresh`。
+- **还在同步** —— 首次运行在后台分析你最近的会话(约 1–2 分钟),页面显示
+  "首次同步中…"。
+- **近 48 小时没有会话** —— 首次只同步最近的。要全量历史跑 `stray --backfill`。
+- **`claude` 没装 / 不在 PATH** —— 页面会写明;装好 Claude Code 后重开
+  `http://127.0.0.1:9876/`。
+
+## "我新提交的任务/修复/决定没出现在面板"
 
 ### Step 1: 找到你的 session id
 
 在你做工作的那个 Zellij pane 里：
 
 ```bash
-mindmap --diagnose
+stray --diagnose
 ```
 
 它会挑最近修改的 jsonl。确认 session id 和首条 prompt 看起来是你的。
@@ -35,14 +47,14 @@ ls -lt ~/.claude/projects/$(pwd | sed 's|/|-|g')/*.jsonl | head
 | Stage 1 (extract) `summary missing` | hook 没跑过、或 extract 没被调用 | `python3 bin/extract.py` |
 | Stage 2 (aggregate) 不在列表，`is_automation=true` | session 首条 prompt 是分类器 prompt 本身（罕见，自我引用） | 等下次 session，或手动删 `cache/sessions/<sid>.json` 重新 extract |
 | Stage 2 (aggregate) 不在列表，`user_message_count<1` | 纯工具调用 session，没用户消息 | 预期行为。脑图特意排除 |
-| Stage 3 (mindmap) `session_id NOT in any initiative` 且 last AI run < session 活跃时间 | session extract 之后 AI 还没跑过 | `mindmap --refresh` |
+| Stage 3 (mindmap) `session_id NOT in any initiative` 且 last AI run < session 活跃时间 | session extract 之后 AI 还没跑过 | `stray --refresh` |
 | Stage 3 说 session 已分类但卡片内容滞后 | extract 的压缩遮住了最新内容 | 见 ["卡片内容滞后实际工作"](#卡片内容滞后实际工作) |
-| Stage 5 `in cooldown` | 最近真实 AI 跑过；下一次 hook 触发被闸门拦住 | 等，或 `mindmap --refresh` 强制 |
+| Stage 5 `in cooldown` | 最近真实 AI 跑过；下一次 hook 触发被闸门拦住 | 等，或 `stray --refresh` 强制 |
 
 ### Step 3: 强制跑一次
 
 ```bash
-mindmap --refresh    # refresh.sh 内部置 CLAUDE_WORKTREE_FORCE=1
+stray --refresh    # refresh.sh 内部置 CLAUDE_WORKTREE_FORCE=1
 ```
 
 观察日志：
@@ -79,7 +91,7 @@ tail -f ~/.local/state/claude-stray/refresh.log       # Linux
   s.pop(key, None)
   json.dump(s, open('cache/state.json','w'), indent=2)"
   python3 bin/extract.py
-  mindmap --refresh
+  stray --refresh
   ```
 
 ### 结构性修复
@@ -90,12 +102,12 @@ tail -f ~/.local/state/claude-stray/refresh.log       # Linux
 ## "Hook 在触发但什么都没变"
 
 症状：`tail -f` 日志看到 `[hook] ... refresh-bg fired` 但
-mindmap.json 的 mtime/内容不动。
+dashboard.json 的 mtime/内容不动。
 
 ### 诊断
 
 ```bash
-mindmap --diagnose
+stray --diagnose
 # 看 [5] "Last real AI run" 和 [6] "Recent hook outcomes"
 ```
 
@@ -110,7 +122,7 @@ mindmap --diagnose
 
 ### 历史 bug：假性 cooldown
 
-commit `9f01447` 之前的 cooldown 用 `mindmap.json` mtime。
+commit `9f01447` 之前的 cooldown 用 `dashboard.json` mtime。
 apply-overrides 阶段会写这个文件，所以用户任何 UI 编辑都假性重置
 clock，让 AI 永远跑不起来。如果你看到这个症状但仓库没拉新代码，
 pull 后重装。
@@ -118,13 +130,13 @@ pull 后重装。
 ## "UI 上勾完成的 task 刷新后又回来了"
 
 不应该发生——apply-overrides 阶段在 AI 看 PRIOR_MINDMAP 之前就把翻
-转烤进 mindmap.json，且 prompt 有严格 done-monotone 规则。
+转烤进 dashboard.json，且 prompt 有严格 done-monotone 规则。
 
 如果真发生：
 
 1. 点击后立刻看 `cache/user_overrides.json` ——你的翻转应该在里面
 2. 等一次 hook 驱动 refresh，再看——文件应该清空（已消费），
-   `cache/mindmap.json` 应该显示 task 完成
+   `cache/dashboard.json` 应该显示 task 完成
 3. 如果 refresh 后 task 又回到未完成：
    - 要么 `apply-overrides` 没跑（日志看 `applied N task toggles`）
    - 要么 AI 不顾单调规则覆盖了（日志看 `DIFF vs prior`；如果有
@@ -132,19 +144,19 @@ pull 后重装。
 
 ## "归档的卡片刷新后又出现"
 
-通过 UI 归档的不应该出现这种情况——它们被物理移出 `mindmap.json`，
+通过 UI 归档的不应该出现这种情况——它们被物理移出 `dashboard.json`，
 数据存活在 `cache/archive/<ws>/<id>.json`。`render-html.py` 重读
 这个目录，所以归档区始终能看到。
 
 如果归档后又作为普通 initiative 出现：
 
 1. 检查 `cache/archive/<ws>/<id>.json` 存在
-2. 检查 `cache/mindmap.json` 在所有 workspace 下都**没有**这个 id
+2. 检查 `cache/dashboard.json` 在所有 workspace 下都**没有**这个 id
 3. 如果两点都对但 workspace 还显示该卡片，重启 server（HTML 可能被
-   浏览器缓存）。`mindmap --serve` 在 GET / 时检测 mindmap.json 比
-   mindmap.html 新就会自动重生成 HTML
+   浏览器缓存）。`stray --serve` 在 GET / 时检测 dashboard.json 比
+   dashboard.html 新就会自动重生成 HTML
 
-## "`mindmap --serve` Ctrl-C 关不掉"
+## "`stray --serve` Ctrl-C 关不掉"
 
 commit `9f01447` 已修。旧代码在 SIGINT handler 里同步调
 `httpd.shutdown()`，和主线程的 `serve_forever()` 死锁。新代码用
@@ -165,7 +177,7 @@ worker thread 调 shutdown + `daemon_threads=True`。还是老行为就 pull。
 ```bash
 rm -rf cache/sessions/ cache/state.json cache/last_input.sha256 \
        cache/last_ai_run.epoch
-mindmap --refresh
+stray --refresh
 ```
 
 保留用户编辑（`user_overrides.json`、archive 目录、deleted_ids、

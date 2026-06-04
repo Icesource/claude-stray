@@ -11,7 +11,7 @@ and [`feedback_verify_before_claim`](../../../.claude/projects/-Users-bby-Code-c
 
 The pipeline can run cost-unbounded:
 - Layer 1 fires per Stop hook; nothing caps daily / hourly spend.
-- Failure modes invisible to user until they run `mindmap --cost`.
+- Failure modes invisible to user until they run `stray --cost`.
 - 2026-05-14 root cause (self-recursive prompt marker miss) was
   fundamentally fixed in P15 (`--no-session-persistence` + matching
   marker list), but a future regression in any related layer can again
@@ -26,8 +26,8 @@ The pipeline can run cost-unbounded:
 2. **Rate watchdog**: catch *fast* anomalies (e.g. 30 summarize calls
    in 5 minutes) before they exhaust the daily budget.
 3. **Visibility**: the user must see "something is wrong" in the
-   dashboard and in the `mindmap --serve` console — not only by running
-   `mindmap --cost` after the fact.
+   dashboard and in the `stray --serve` console — not only by running
+   `stray --cost` after the fact.
 4. **No false positives**: a healthy day (~10–30 calls / $1) must show
    green, not yellow.
 
@@ -85,7 +85,7 @@ emits a banner at the top of `<body>` when warranted:
 
 | Condition                                 | Banner level | Text |
 |-------------------------------------------|--------------|------|
-| Kill switch engaged                       | red          | `🚨 Pipeline halted: <reason> · re-enable with mindmap --enable` |
+| Kill switch engaged                       | red          | `🚨 Pipeline halted: <reason> · re-enable with stray --enable` |
 | Today's spend ≥ warn but < budget         | yellow       | `⚠ Spend today: $X.XX / $Y.YY` |
 | Rate watchdog triggered without halt yet  | yellow       | `⚠ Burst: N calls in last Ms` |
 | All clear                                 | (none)       | — |
@@ -126,11 +126,11 @@ The page polls this every 30s and refreshes the banner in place.
 
 ### 3.7 — Re-enable flow
 
-A new `mindmap --enable` command:
+A new `stray --enable` command:
 1. Reads `.refresh-disabled.reason` and prints it
 2. Asks for confirmation (`Continue? [y/N]`)
 3. On `y`: removes both `.refresh-disabled` and the sidecar
-4. Optionally: runs `mindmap --refresh` to verify pipeline health
+4. Optionally: runs `stray --refresh` to verify pipeline health
 
 ## 4 — Plan
 
@@ -140,7 +140,7 @@ A new `mindmap --enable` command:
 | 1     | Wire into `summarize.py` and `classify.py` (call before `call_claude`) | small |
 | 2     | Add `GET /api/health` to `serve.py` + console output | small |
 | 3     | Add banner to `render-html.py` + sessionStorage dismiss logic | medium |
-| 4     | Add `mindmap --enable` subcommand to `bin/mindmap` | tiny |
+| 4     | Add `stray --enable` subcommand to `bin/mindmap` | tiny |
 | 5     | Telemetry: add a test mode that forces halt to verify all surfaces light up | tiny |
 
 ## 5 — Out of scope (deliberate)

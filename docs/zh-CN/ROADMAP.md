@@ -23,7 +23,7 @@
 
 | 写者 | 文件 |
 |---|---|
-| `refresh.sh` apply-overrides 阶段 | `mindmap.json`、`user_overrides.json`（读 + 清空） |
+| `refresh.sh` apply-overrides 阶段 | `dashboard.json`、`user_overrides.json`（读 + 清空） |
 | `serve.py /api/save` | `user_overrides.json`、`deleted_ids.json`、`cache/archive/<ws>/*.json` |
 | `record-location.py` | `session_locations.json` |
 | （未来）CLI `mindmap card/task ...` | 同 `/api/save` |
@@ -66,7 +66,7 @@ def cache_lock(name: str = "overrides"):
 - [ ] `serve.py /api/save` 包在 `cache_lock("overrides")` 里
 - [ ] `refresh.sh` apply-overrides Python 块用同名锁
 - [ ] CLI 命令（P11.1）用同名锁
-- [ ] `mindmap.json` 最终写入用原子 `tmp + rename`，并发 reader 永远
+- [ ] `dashboard.json` 最终写入用原子 `tmp + rename`，并发 reader 永远
       看不到半写状态
 
 ### 范围之外
@@ -100,7 +100,7 @@ mindmap task del <init-id> <title>
 ### "创建 initiative" 的语义
 
 用 **overrides 占位** 策略：
-- `mindmap card add` 直接往 `mindmap.json` 写一个 stub initiative
+- `mindmap card add` 直接往 `dashboard.json` 写一个 stub initiative
   （status=`active`、无 sessions、用户提供 summary/progress/tasks）
 - 同时给 `user_overrides.json` 加一个 marker，让 refresh 时的合并
   知道保留这个人造节点
@@ -142,7 +142,7 @@ mindmap 工具——不用每次 session 手动教它。
      （"用户问'我在做什么' → `mindmap ls`"）
    - **How it works** — 三阶段 pipeline（extract → aggregate →
      AI classify）、连续性模型、override 流向
-   - **Troubleshooting** — 镜像 `mindmap --diagnose` 输出的决策树，
+   - **Troubleshooting** — 镜像 `stray --diagnose` 输出的决策树，
      Agent 不跑 diagnose 也能给用户讲 cooldown / extract / 分类问题
    - **Examples** — 典型用户提问 + Agent 应该跑什么
 

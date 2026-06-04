@@ -169,7 +169,7 @@ The UI surface for cleanup is unchanged:
 - 🗑️ icon on each task card-side or in the archive expander
 - Clicking it adds `{init_id, task_title}` to `deleted_tasks`
   overrides; next classify drops it permanently from PRIOR
-- For bulk cleanup, a future `mindmap --clean-card <id>` CLI could
+- For bulk cleanup, a future `stray --clean-card <id>` CLI could
   enumerate + prompt — out of scope for v1.
 
 ## 4 — Regression test

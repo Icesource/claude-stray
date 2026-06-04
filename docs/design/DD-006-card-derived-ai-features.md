@@ -9,7 +9,7 @@ AI Tips, 还有一些 AI 定期生成推送的暖心的话语"
 
 ## 1 — Problem
 
-`cache/summaries/*.md` + `cache/mindmap.json` is a rich, structured
+`cache/summaries/*.md` + `cache/dashboard.json` is a rich, structured
 trace of the user's work week (sessions × initiatives × artifacts ×
 blockers × status × progress). Today it only feeds the dashboard.
 The same data could power downstream productivity features:
@@ -27,7 +27,7 @@ pipeline's source of truth.
 ## 2 — Goals
 
 1. **Read-only consumers** — these features never write to
-   `mindmap.json` or `summaries/`. They produce their own artifacts.
+   `dashboard.json` or `summaries/`. They produce their own artifacts.
 2. **Composable** — each feature is one module that takes the same
    inputs and produces its own output. New features are additive.
 3. **Cost-aware** — each feature must declare expected cost, integrate
@@ -53,7 +53,7 @@ script in `bin/derived/` that reads from cache and writes to
 
 ```mermaid
 flowchart TD
-    L2["Layer 2: classify.py<br/>cache/mindmap.json"] --> Bus["Derived Layer"]
+    L2["Layer 2: classify.py<br/>cache/dashboard.json"] --> Bus["Derived Layer"]
     SUM["cache/summaries/*.md"] --> Bus
     Bus --> F1["weekly-report.py"]
     Bus --> F2["next-steps.py"]
@@ -63,7 +63,7 @@ flowchart TD
     F2 --> A2["cache/derived/suggestions/<br/>latest.json"]
     F3 --> A3["cache/derived/tips/<br/>latest.json"]
     F4 --> A4["cache/derived/wellness/<br/>latest.json"]
-    A1 & A2 & A3 & A4 --> Dash["mindmap.html<br/>(new sidebar / tab)"]
+    A1 & A2 & A3 & A4 --> Dash["dashboard.html<br/>(new sidebar / tab)"]
 
     style Bus fill:#fff3a0,color:#000
 ```
@@ -94,7 +94,7 @@ power the dashboard's core).
 ### 4.1 — Weekly summary report
 
 **Input**: all `cache/summaries/*.md` with `last_activity_at` in the
-last 7 days + `cache/mindmap.json` diff between week start and week
+last 7 days + `cache/dashboard.json` diff between week start and week
 end (cached via `cache/derived/reports/week-anchor.json`).
 
 **Prompt**: "Given these sessions and initiative changes for the week
@@ -106,13 +106,13 @@ week. Markdown, no preamble."
 
 **Surface**: dashboard sidebar shows a "📋 This week's report" link;
 clicking opens a modal with the markdown rendered. Also accessible
-via `mindmap --weekly` on the CLI.
+via `stray --weekly` on the CLI.
 
 **Cost**: ~$0.20 per week (Haiku, ~30 summaries × small prompt).
 
 ### 4.2 — "What's next" suggestions
 
-**Input**: `cache/mindmap.json` filtered to active/paused initiatives
+**Input**: `cache/dashboard.json` filtered to active/paused initiatives
 + each initiative's blockers + age-of-last-activity.
 
 **Prompt**: "Given these in-flight initiatives, identify 3 that the
@@ -130,7 +130,7 @@ debounced to once per 30 minutes max.
 
 ### 4.3 — AI tips
 
-**Input**: patterns derived from `cache/mindmap.json` and
+**Input**: patterns derived from `cache/dashboard.json` and
 `cache/summaries/*.md` — e.g., "5 initiatives in `paused` state with
 blockers older than 7 days", "3 initiatives all blocked on the same
 reviewer", "you average 4 sessions/day but only 2 initiatives close

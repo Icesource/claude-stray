@@ -10,12 +10,12 @@ archive them.
 
 ## 1 — Problem
 
-Comparing `mindmap.json:tasks[]` against `cache/summaries/<sid>.md` for
+Comparing `dashboard.json:tasks[]` against `cache/summaries/<sid>.md` for
 the claude-stray initiative on 2026-05-15:
 
 - Summary's `# 任务（建议）` section had 7 clean checkbox tasks for
   today's design-doc work.
-- `mindmap.json.tasks[]` had 43 entries, none of them from today.
+- `dashboard.json.tasks[]` had 43 entries, none of them from today.
 - 4+ pairs of obvious near-duplicates ("P14.2: 写 prompts/... + 调优"
   appearing twice with subtly different wording).
 
@@ -131,7 +131,7 @@ ALGORITHM:
 5. Cap visible to MAX_VISIBLE_TASKS=20:
    - All not-done tasks always kept (they're actionable).
    - Done tasks: keep most-recent up to remaining budget.
-   - Overflow → archive (does not appear in `mindmap.json.tasks[]`
+   - Overflow → archive (does not appear in `dashboard.json.tasks[]`
      but is preserved in `cache/task_archive/<init-id>.json`).
 6. Output a `tasks_archived_count` field on each initiative (int).
 ```
@@ -181,7 +181,7 @@ Properties:
   forever; `last_seen_at` and `done_at` may advance.
 
 Existing initiatives without an archive file: on first new classify
-run, all current `mindmap.json.tasks[]` entries are treated as
+run, all current `dashboard.json.tasks[]` entries are treated as
 "seen now", assigned generated ids, and seeded into the archive with
 `first_seen_at = mindmap.generated_at` (best-effort fallback).
 
@@ -255,7 +255,7 @@ Badge shows `+N archived`.
 **Existing tasks without `id`**: post-process generates ids from titles
 on first run. From then on, ids are stable.
 
-**Schema bump**: `mindmap.json.schema_version` stays at 2 — adding
+**Schema bump**: `dashboard.json.schema_version` stays at 2 — adding
 optional `tasks_archived_count` is backward-compatible. Tasks now
 carry an optional `id` field; old readers ignore it harmlessly.
 

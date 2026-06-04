@@ -17,9 +17,13 @@
 
 读 `~/.claude/projects/*.jsonl`（Claude Code 自己的会话日志），跑
 **两步 Haiku 4.5 pipeline**（单 session 总结 → 跨 session 分类），
-把结果落成结构化脑图，渲染成 ANSI 树 / HTML 卡片 / markmap。
-主流水线由 Claude Code 的 Stop / SessionStart hook 触发(实时)。
-派生 AI 功能(tips、周报、下一步建议、wellness)由 `mindmap --serve`
+把结果落成 `cache/dashboard.json`。主界面是**注意力驾驶舱**
+（`bin/cockpit.html`，根路径 `/` 提供）：实时网页面板,按注意力态分带
+——**需要你 → 跑着 → 闲置 → 完成**——由 Claude Code hooks 实时遥测驱动,
+每张卡可开**内嵌 ttyd 终端**原地 resume 会话。(`/classic` 是旧卡片版;
+`stray` 不带参数打印 ANSI 树。)主流水线由 Claude Code 的 Stop / SessionStart
+hook 触发(实时)。
+派生 AI 功能(tips、周报、下一步建议、wellness)由 `stray --serve`
 进程内调度器调度——只有 dashboard 开着时才跑,符合 DD-005 的懒刷新原则。
 
 ```mermaid
@@ -29,8 +33,8 @@ flowchart LR
     S --> L1["Layer 1:<br/>summarize.py<br/>(Haiku 4.5)"]
     L1 --> SM["cache/summaries/<br/>每 session 一份 .md"]
     SM --> L2["Layer 2:<br/>classify.py<br/>(Haiku 4.5)"]
-    P["cache/mindmap.json<br/>(上一轮结果)"] -.->|PRIOR_MINDMAP| L2
-    L2 --> M["cache/mindmap.json<br/>(新一轮结果)"]
+    P["cache/dashboard.json<br/>(上一轮结果)"] -.->|PRIOR_MINDMAP| L2
+    L2 --> M["cache/dashboard.json<br/>(新一轮结果)"]
     M --> R1["render.py — ANSI 树"]
     M --> R2["render-html.py — 卡片"]
     M --> R3["render-tree.py — 思维导图"]
@@ -87,18 +91,18 @@ claude-stray/
 │   │
 │   ├── extract.py                # Layer 0: jsonl → cache/sessions/<sid>.json（增量）
 │   ├── summarize.py              # Layer 1: cache/sessions/<sid>.json → cache/summaries/<sid>.md
-│   ├── classify.py               # Layer 2: cache/summaries/*.md → cache/mindmap.json
+│   ├── classify.py               # Layer 2: cache/summaries/*.md → cache/dashboard.json
 │   │
 │   ├── record-location.py        # hook stdin → cache/session_locations.json
 │   ├── _cost_log.py              # 共享 cost 记录助手（append cost_log.jsonl）
-│   ├── cost.py                   # `mindmap --cost` 报告工具
+│   ├── cost.py                   # `stray --cost` 报告工具
 │   │
-│   ├── render.py                 # mindmap.json → ANSI 树 (stdout)
-│   ├── render-html.py            # mindmap.json + archive/ + locations → mindmap.html
-│   ├── render-tree.py            # mindmap.json → mindmap-tree.html (markmap)
+│   ├── render.py                 # dashboard.json → ANSI 树 (stdout)
+│   ├── render-html.py            # dashboard.json + archive/ + locations → dashboard.html
+│   ├── render-tree.py            # dashboard.json → mindmap-tree.html (markmap)
 │   │
 │   ├── serve.py                  # 本地 HTTP 服务 (127.0.0.1:9876)
-│   └── diagnose.py               # 排障工具（mindmap --diagnose）
+│   └── diagnose.py               # 排障工具（stray --diagnose）
 │
 ├── prompts/
 │   ├── summarize-session.md      # Layer 1 prompt（单 session 总结）
@@ -108,8 +112,8 @@ claude-stray/
 │
 ├── cache/                        # 运行时状态，gitignore
 │   ├── config.json               # {lang: zh-CN}
-│   ├── mindmap.json              # 主输出
-│   ├── mindmap.html              # 渲染产物
+│   ├── dashboard.json              # 主输出
+│   ├── dashboard.html              # 渲染产物
 │   ├── mindmap-tree.html         # 渲染产物
 │   ├── sessions/                 # Layer 0 输出：<sid>.json
 │   ├── summaries/                # Layer 1 输出：<sid>.md
@@ -176,7 +180,7 @@ graph TD
     sum -.->|读| sess
     sum -.->|写| sumdir["cache/summaries/"]
     cls -.->|读| sumdir
-    cls -.->|写| mj["cache/mindmap.json"]
+    cls -.->|写| mj["cache/dashboard.json"]
     sum -.->|append| cl["cache/cost_log.jsonl"]
     cls -.->|append| cl
 
@@ -189,7 +193,7 @@ graph TD
 两条最重要的路径：
 
 1. **数据采集**：`jsonl → extract.py → cache/sessions/`
-2. **AI 分类**：`cache/sessions/ → summarize.py → cache/summaries/ → classify.py → cache/mindmap.json`
+2. **AI 分类**：`cache/sessions/ → summarize.py → cache/summaries/ → classify.py → cache/dashboard.json`
 
 ---
 
@@ -223,7 +227,7 @@ flowchart TD
     L2Lock -- 成功 --> L2["classify.py<br/>（加载所有 summary）"]
     L2 --> Filter2["热/冷分层（48h）<br/>过滤 user_turns&lt;2<br/>截到 MAX_HOT=120"]
     Filter2 --> CC2["claude --no-session-persistence -p<br/>Haiku 4.5<br/>--max-budget-usd 2.50"]
-    CC2 --> ClsOut["写 cache/mindmap.json<br/>append cost_log.jsonl<br/>重渲染 mindmap.html"]
+    CC2 --> ClsOut["写 cache/dashboard.json<br/>append cost_log.jsonl<br/>重渲染 dashboard.html"]
     ClsOut --> Pend2{".layer2.pending<br/>存在?"}
     Pend2 -- 是 --> L2
     Pend2 -- 否 --> ExitOK
@@ -262,14 +266,14 @@ blockers、artifacts）+ 一段叙述，保存到 `cache/summaries/<sid>.md`。
 ### Layer 2 — `classify.py`（经由 `layer2-trigger.sh`）
 
 读所有 `cache/summaries/*.md`，分热（最近 48h）/ 冷两层，应用
-user_overrides，把 prior mindmap.json + 热 summary 喂给 Haiku 4.5，
-写新的 mindmap.json。
+user_overrides，把 prior dashboard.json + 热 summary 喂给 Haiku 4.5，
+写新的 dashboard.json。
 
 `layer2-trigger.sh` 处理 fan-in 合并：如果已经在跑 classify，
 新的触发只 `touch` 一下 `.layer2.pending`；当前 classify 写完后
 检查这个标记并循环再跑。
 
-两层都 append `cache/cost_log.jsonl`，供 `mindmap --cost` 读取。
+两层都 append `cache/cost_log.jsonl`，供 `stray --cost` 读取。
 
 ---
 
@@ -278,7 +282,7 @@ user_overrides，把 prior mindmap.json + 热 summary 喂给 Haiku 4.5，
 ```mermaid
 flowchart TD
     H["Stop / SessionStart hook"] --> RB["refresh-bg.sh"]
-    UR["mindmap --refresh"] --> Pipe["pipeline-run.sh --all-dirty --force-classify"]
+    UR["stray --refresh"] --> Pipe["pipeline-run.sh --all-dirty --force-classify"]
     API["POST /api/refresh"] --> Pipe
 
     RB --> KS{".refresh-disabled?"}
@@ -301,17 +305,17 @@ flowchart TD
 | 来源 | 时机 | 行为 |
 |---|---|---|
 | `Stop` / `SessionStart` hook | 每次 assistant 回合结束 / 开/恢复 session | `refresh-bg.sh --sid <sid>`,fork+detach,hook 立即返回 |
-| `mindmap --refresh` | 用户命令 | 强制全扫 + 强制 classify,绕过 Layer 2 的 dirty 门控 |
+| `stray --refresh` | 用户命令 | 强制全扫 + 强制 classify,绕过 Layer 2 的 dirty 门控 |
 | `POST /api/refresh` | UI 🔄 按钮 | 同上 |
-| `cache/.refresh-disabled` | 手动 touch / `mindmap --pause` | Kill switch — 所有 hook 立即 exit |
+| `cache/.refresh-disabled` | 手动 touch / `stray --pause` | Kill switch — 所有 hook 立即 exit |
 
-派生功能(DD-006,只在 `mindmap --serve` 进程内调度):
+派生功能(DD-006,只在 `stray --serve` 进程内调度):
 
 | 来源 | 时机 | 行为 |
 |---|---|---|
 | serve scheduler — 启动 + 每 6h | tips(4 类内容,header ticker 显示) |
 | serve scheduler — tips 同步触发 | wellness 信号检测(无信号则零成本) |
-| serve scheduler — mindmap.json mtime 变化 | next-steps 重算(30m 内置去抖) |
+| serve scheduler — dashboard.json mtime 变化 | next-steps 重算(30m 内置去抖) |
 | serve scheduler — 周五 12:00 本地 | weekly_report(每 ISO 周一次) |
 
 早期版本有个 2 小时 launchd 兜底任务,在 hook 验证稳定 + DD-005 懒刷新
@@ -388,7 +392,7 @@ blockers:
 本次会话讨论了 ChangeFree 的核心数据流改造……
 ```
 
-### 样例：`cache/mindmap.json`
+### 样例：`cache/dashboard.json`
 
 ```json
 {
@@ -458,7 +462,7 @@ sequenceDiagram
     P->>T: 触发 layer2-trigger.sh
     T->>C: 拿到 mkdir 锁，跑 classify.py
     C->>FS: 加载全部 summary，分类
-    C->>FS: 写 mindmap.json，重渲染 html
+    C->>FS: 写 dashboard.json，重渲染 html
     Note over U: 浏览器轮询 /api/data
     FS-->>U: 新 mindmap，新卡片可见（classify 完成后 8 秒内）
 ```
@@ -470,11 +474,11 @@ sequenceDiagram
 classify 跑（`classify.py` 的 `apply_user_overrides()`）。
 classify prompt 的 done-monotone 规则阻止 AI 把它撤销回去。
 
-### 走查 3：`mindmap --serve` 启动到出页面
+### 走查 3：`stray --serve` 启动到出页面
 
 逻辑没变 — 见 `bin/serve.py`。关键设计：
 - daemon_threads + worker-thread `shutdown()` 防 SIGINT 死锁
-- GET 时 regen-on-the-fly，保持 mindmap.html 跟 mindmap.json 同步
+- GET 时 regen-on-the-fly，保持 dashboard.html 跟 dashboard.json 同步
 - `/api/data` 8 秒轮询，generated_at 变了就静默 in-place re-render
 
 ---
@@ -486,13 +490,13 @@ classify prompt 的 done-monotone 规则阻止 AI 把它撤销回去。
 
 ```mermaid
 flowchart LR
-    A["mindmap.json（第 N 轮）"] -->|slim 后| B["PRIOR_MINDMAP 块"]
+    A["dashboard.json（第 N 轮）"] -->|slim 后| B["PRIOR_MINDMAP 块"]
     C["summaries/*.md（热）"] --> D["INPUT_SESSIONS 块"]
     E["deleted_ids.json"] --> F["DELETED_IDS"]
     O["user_overrides"] --> Merge["apply_user_overrides"]
     Merge --> B
     B & D & F --> G["claude -p Haiku<br/>(Layer 2)"]
-    G --> H["mindmap.json（第 N+1 轮）"]
+    G --> H["dashboard.json（第 N+1 轮）"]
     H -.->|下一轮| A
 ```
 
@@ -533,9 +537,9 @@ stateDiagram-v2
 ```
 
 两种 archived：
-- **AI 标归档**（>14 天空闲）— 还在 mindmap.json 里，只是 `status=archived`
+- **AI 标归档**（>14 天空闲）— 还在 dashboard.json 里，只是 `status=archived`
 - **用户手动归档** — 物理移到 `cache/archive/<ws>/<id>.json`；
-  mindmap.json 不再含它。HTML 还能看到因为 `render-html.py` 读
+  dashboard.json 不再含它。HTML 还能看到因为 `render-html.py` 读
   archive/ 目录
 
 ---
@@ -563,7 +567,7 @@ util-linux 独占，stock macOS 没有（P14 上线踩过的雷，见
 
 代码或 prompt 强制保证，违反就是 bug。
 
-1. `cache/mindmap.json` `schema_version == 2`
+1. `cache/dashboard.json` `schema_version == 2`
 2. 每个 initiative 都有非空 `id` 和 `sessions[]`
 3. `sessions[]` 都是完整 UUID（classify.py post-process 修截断）
 4. `done: true` 在多轮 refresh 间不可逆（Continuity 规则）
@@ -589,7 +593,7 @@ util-linux 独占，stock macOS 没有（P14 上线踩过的雷，见
 ### 13.2 没有实时预算/告警
 
 有 kill switch（`cache/.refresh-disabled`）但没实时告警。今天你
-只有手动跑 `mindmap --cost` 才知道异常。DD-004 规划了日预算 +
+只有手动跑 `stray --cost` 才知道异常。DD-004 规划了日预算 +
 速率监控 + 仪表盘 banner，未实现。
 
 ### 13.3 没有生命周期控制面
@@ -607,8 +611,8 @@ util-linux 独占，stock macOS 没有（P14 上线踩过的雷，见
 
 到这里你已经看完整个系统了。建议下一步：
 
-1. **看自己的状态**：`mindmap --diagnose` 走一遍所有阶段，看 kill switch / cost / hook 状态
-2. **追一个真实 session**：`mindmap --diagnose <sid>` 看一个具体 session 卡在哪一阶段
+1. **看自己的状态**：`stray --diagnose` 走一遍所有阶段，看 kill switch / cost / hook 状态
+2. **追一个真实 session**：`stray --diagnose <sid>` 看一个具体 session 卡在哪一阶段
 3. **读 prompt**：`cat prompts/summarize-session.md`（Layer 1）和 `cat prompts/classify-cross-session.md`（Layer 2）
 4. **读 DD**：
    - [DD-002](design/DD-002-ai-pipeline-redesign.md) — 为什么是 3 层

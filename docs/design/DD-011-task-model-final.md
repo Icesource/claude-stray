@@ -13,7 +13,7 @@ the 2026-05-18 data-loss incident) reversed DD-009's eviction behavior
 and made tasks AI-additive-only. The end result *works* but carries a
 lot of dead weight:
 
-- Tasks live in two places — `mindmap.json` and `cache/task_archive/<id>.json`
+- Tasks live in two places — `dashboard.json` and `cache/task_archive/<id>.json`
   — and the merge logic between them is 200 lines.
 - Each task entry has 11 possible fields, only 3 of which are
   load-bearing (`id`, `title`, `done`). The rest (`first_seen_at`,
@@ -36,7 +36,7 @@ Quote from user, 2026-05-18: *"自动熔断不着急, 我们先做 task 模型�
 
 **Goals**
 
-- One storage location: `mindmap.json` only. Delete `cache/task_archive/`.
+- One storage location: `dashboard.json` only. Delete `cache/task_archive/`.
 - One state field with three values, instead of `done: bool + archived
   flag + evicted_reason + ...`: `status: "pending" | "done" | "cancelled"`.
 - AI gets the power to cancel (terminal, with evidence). User retains
@@ -133,7 +133,7 @@ treats Layer 1 task statuses the same way it treats AI continuations.
 
 ### Storage
 
-`cache/mindmap.json` is the only source of truth. There is no
+`cache/dashboard.json` is the only source of truth. There is no
 secondary file. Migration deletes `cache/task_archive/`.
 
 Per-initiative tasks list is unordered in storage (JSON array order
@@ -160,7 +160,7 @@ The current "+N archived tasks" expander is removed. Instead:
 
 `compute_weekly_signal()` in `bin/derived/_shared.py` currently scans
 `cache/task_archive/` for `done_at` falling in the week. After
-DD-011, it scans `mindmap.json` directly: walk every initiative's
+DD-011, it scans `dashboard.json` directly: walk every initiative's
 `tasks[]`, filter to `terminal_at in week`, split into
 `tasks_done_this_week` and `tasks_cancelled_this_week`.
 
@@ -178,10 +178,10 @@ this week".)
 | `prompts/summarize-session.md` | Rule 12: `status` instead of `done`. Optional `evidence` field on tasks. |
 | `bin/render-html.py` | Remove archive chip + expander. Add tri-state UI (pending checkbox, done strikethrough+✓, cancelled strikethrough+✕). Add "▶ N done · M cancelled" inline fold. Update task-toggle JS for status enum. |
 | `bin/serve.py` | Delete `/api/task-history` endpoint. Delete `TASK_ARCHIVE_DIR` import. Update `/api/save` to accept status toggles. Update ping message. |
-| `bin/derived/_shared.py` | `compute_weekly_signal` reads `mindmap.json` instead of `task_archive/`. Add `tasks_cancelled_this_week`. Remove `TASK_ARCHIVE_DIR` import. |
+| `bin/derived/_shared.py` | `compute_weekly_signal` reads `dashboard.json` instead of `task_archive/`. Add `tasks_cancelled_this_week`. Remove `TASK_ARCHIVE_DIR` import. |
 | `bin/derived/weekly_report.py` | Update prompt template to include cancelled tasks. |
 | `bin/_test_task_persistence.py` | Update for tri-state. Add scenarios: AI may cancel pending; user may revive cancelled; done is still terminal for AI. |
-| `bin/_migrate_dd011_tasks.py` | **New.** One-shot migration: walk `cache/task_archive/`, merge each task back into `mindmap.json`'s corresponding initiative under new schema, delete the archive directory. Idempotent. |
+| `bin/_migrate_dd011_tasks.py` | **New.** One-shot migration: walk `cache/task_archive/`, merge each task back into `dashboard.json`'s corresponding initiative under new schema, delete the archive directory. Idempotent. |
 | `docs/design/README.md` | Add DD-011 row. Mark DD-008/009/010 as Superseded by DD-011. |
 | `docs/zh-CN/design/README.md` | Same. |
 
@@ -189,7 +189,7 @@ this week".)
 
 `bin/_migrate_dd011_tasks.py`:
 
-1. Read `cache/mindmap.json`.
+1. Read `cache/dashboard.json`.
 2. For each `cache/task_archive/<id>.json`:
    - Find the matching initiative in mindmap (by `id`).
    - For each task in the archive:
@@ -204,7 +204,7 @@ this week".)
      - If absent (was evicted/overflow), insert it with the upgraded
        schema. No cap.
 3. Drop `tasks_archived_count` from every initiative.
-4. Write `mindmap.json` atomically.
+4. Write `dashboard.json` atomically.
 5. Delete `cache/task_archive/` (after a successful write — leave a
    `.bak` rename behind in case the user wants a rollback).
 6. Run `bin/_test_task_persistence.py` and refuse to delete the
@@ -229,7 +229,7 @@ second run sees a missing `task_archive/` and exits cleanly.
     AI sees the latest user-decided state and won't re-cancel without
     fresh evidence.
   - Migration script fails mid-run → atomic write protects
-    `mindmap.json`; `task_archive/.bak` is the rollback. Worst case:
+    `dashboard.json`; `task_archive/.bak` is the rollback. Worst case:
     user runs migration again after fixing the issue.
 - **AI overuse of cancellation**: if Haiku starts cancelling tasks
   too eagerly, the user can disable AI cancellation by tightening §7d

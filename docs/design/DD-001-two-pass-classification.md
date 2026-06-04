@@ -129,7 +129,7 @@ classify.py [REWRITTEN refresh.sh logic]
      reads ALL cache/summaries/*.md
      prompt: classify-cross-session.md (rewrite of current classify.md)
      model: Haiku, ~40KB prompt → ~5KB out, ~$0.05, 30s
-     writes cache/mindmap.json
+     writes cache/dashboard.json
 ```
 
 ### Pass 1: `bin/summarize.py` — one session in, one summary out
@@ -195,14 +195,14 @@ prefer recent over recap; if user says X, X is what's happening."
 **Input**:
 
 - `cache/summaries/*.md` for all live sessions
-- PRIOR_MINDMAP (mindmap.json)
+- PRIOR_MINDMAP (dashboard.json)
 - DELETED_IDS
 - OUTPUT_LANG
 
 **No more** `aggregate_input.json` — summaries replace it. Total prompt
 size drops from ~300 KB → ~40 KB.
 
-**Output**: same `cache/mindmap.json` schema as today.
+**Output**: same `cache/dashboard.json` schema as today.
 
 **Prompt** (`prompts/classify-cross-session.md`, rewrite of today's
 `classify.md`):
@@ -221,7 +221,7 @@ Per the user's confirmed choice (always-summarize, conditional-classify):
 | Stop hook | ALWAYS for the session that fired (~$0.01) | ONLY if pass-1 produced material change AND classify-cooldown clear |
 | SessionStart hook | ALWAYS | same condition |
 | LaunchAgent (2h) | for any session changed since last summarize | yes |
-| `mindmap --refresh` | for all sessions changed since last summarize | yes, force |
+| `stray --refresh` | for all sessions changed since last summarize | yes, force |
 | `POST /api/refresh` | same as --refresh | same |
 
 "Material change" detection (so we don't burn Haiku on every Stop):
@@ -292,8 +292,8 @@ is near zero (both passes hit cooldown).
 | Pass 1 produces wrong / hallucinated summary | The summary lives on disk and the user can review it (rendered in HTML behind a "📝" button). If wrong, `rm cache/summaries/<sid>.md` and re-run. AI run is bounded — one session per call |
 | Pass 2 prompt loses context that the old classifier had | Side-by-side run during migration: keep old pipeline running for one week, compare DIFFs |
 | Disk usage from `cache/summaries/` | Each summary ~2-5 KB; 200 sessions ~600 KB. Garbage-collect summaries whose session jsonl is gone |
-| `cache/summaries/<sid>.md` and `cache/mindmap.json` drift | Pass 2 always reads the LATEST summaries dir; drift window is at most one pass-1 cycle (60s) |
-| Two cooldowns more confusing than one | Document clearly; `mindmap --diagnose` reports both |
+| `cache/summaries/<sid>.md` and `cache/dashboard.json` drift | Pass 2 always reads the LATEST summaries dir; drift window is at most one pass-1 cycle (60s) |
+| Two cooldowns more confusing than one | Document clearly; `stray --diagnose` reports both |
 
 ## Alternatives considered
 
@@ -346,7 +346,7 @@ updates" requirement. **Rejected** as premature.
    chatty sessions might need fewer. Could start at 30 KB and adjust
    from empirical data.
 
-3. **Should pass 2 run BEFORE pass 1 in `mindmap --refresh`?** When the
+3. **Should pass 2 run BEFORE pass 1 in `stray --refresh`?** When the
    user explicitly asks for a full refresh, do we want to re-summarize
    everything (slow but thorough) or just re-classify on existing
    summaries (fast)? Probably: `--refresh` triggers both passes; add a
