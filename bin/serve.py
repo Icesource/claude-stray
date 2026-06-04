@@ -60,7 +60,40 @@ PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
 
 LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
-_TERMINALS = {}                 # sid -> (port, Popen) for spawned ttyd instances
+# sid -> {"port":int,"pid":int}. ttyd procs are spawned start_new_session so a
+# serve restart (Ctrl-C) does NOT kill them — the embedded terminals (and the
+# claude sessions in them) survive. The map is persisted so a restarted serve
+# reconnects to the still-alive ttyds instead of forking a second resume.
+_TERMINALS: dict = {}
+TERMINALS_JSON = CACHE_DIR / "terminals.json"
+
+
+def _pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except Exception:
+        return False
+
+
+def _save_terminals() -> None:
+    try:
+        TERMINALS_JSON.write_text(json.dumps(_TERMINALS))
+    except Exception:
+        pass
+
+
+def _load_terminals() -> None:
+    """On startup, recover ttyds that survived a previous serve (their pid is
+    still alive); drop the dead ones."""
+    global _TERMINALS
+    try:
+        d = json.loads(TERMINALS_JSON.read_text())
+        _TERMINALS = {sid: e for sid, e in d.items()
+                      if isinstance(e, dict) and _pid_alive(e.get("pid"))}
+    except Exception:
+        _TERMINALS = {}
+    _save_terminals()
 
 
 _JSONL_PATH_CACHE: dict = {}
@@ -1073,9 +1106,10 @@ class Handler(BaseHTTPRequestHandler):
         ent = _TERMINALS.pop(sid, None)
         if ent:
             try:
-                ent[1].terminate()
+                os.kill(int(ent["pid"]), signal.SIGTERM)
             except Exception:
                 pass
+            _save_terminals()
         return self._reply(200, {"ok": True})
 
     def _handle_terminal(self, body: dict):
@@ -1090,8 +1124,8 @@ class Handler(BaseHTTPRequestHandler):
         if not sid:
             return self._reply(400, {"error": "sid required"})
         ex = _TERMINALS.get(sid)
-        if ex and ex[1].poll() is None:  # reuse a live ttyd for this session
-            return self._reply(200, {"url": f"http://127.0.0.1:{ex[0]}/", "reused": True})
+        if ex and _pid_alive(ex.get("pid")):  # reuse a live ttyd (survives serve restart)
+            return self._reply(200, {"url": f"http://127.0.0.1:{ex['port']}/", "reused": True})
         # Single-driver gate (DD-018): never `claude --resume <sid>` a session
         # that already has a live process elsewhere. Two resumes fork the
         # session jsonl (uuid/parentUuid chain): the two agents diverge, can't
@@ -1136,10 +1170,12 @@ class Handler(BaseHTTPRequestHandler):
             proc = subprocess.Popen(
                 [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W", "-t", "titleFixed=" + sid[:8],
                  "bash", "-lc", inner],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env)
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env,
+                start_new_session=True)  # detach: serve Ctrl-C must NOT kill the terminal
         except Exception as e:
             return self._reply(500, {"error": str(e)})
-        _TERMINALS[sid] = (port, proc)
+        _TERMINALS[sid] = {"port": port, "pid": proc.pid}
+        _save_terminals()
         time.sleep(0.4)  # let ttyd bind before the browser connects
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "mode": mode})
 
@@ -1659,6 +1695,11 @@ def serve(open_browser: bool = True):
     # still empty, kick off one pipeline run so they see cards within a
     # minute or two instead of an empty dashboard.
     _maybe_kick_first_sync()
+    # Recover embedded terminals that survived a previous serve (start_new_session
+    # detaches them from our process group, so Ctrl-C restart doesn't kill them).
+    _load_terminals()
+    if _TERMINALS:
+        print(f"[serve] recovered {len(_TERMINALS)} live terminal(s) across restart")
     # If a new release is out and the user is running interactively,
     # offer to upgrade in place before binding the port.
     _check_updates_interactive()
