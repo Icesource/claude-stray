@@ -12,7 +12,10 @@
 #   4. Claude Code hooks    (Stop + SessionStart entries in
 #                            ~/.claude/settings.json — settings.json
 #                            backed up to .bak.<timestamp> first)
-#   5. Legacy launchd plist (com.claude-code-worktree.plist /
+#   5. Resource prompt      (the claude-stray marked block in
+#                            ~/.claude/CLAUDE.md added by install.sh;
+#                            the rest of that file is left untouched)
+#   6. Legacy launchd plist (com.claude-code-worktree.plist /
 #                            com.claude-stray.plist if either still
 #                            lying around)
 #
@@ -60,7 +63,7 @@ for cmd in stray stray-refresh mindmap mindmap-refresh; do
   link="$HOME_DIR/.claude/commands/$cmd.md"
   if [ -L "$link" ] || [ -f "$link" ]; then
     rm "$link"
-    echo "[1/5] removed slash command: /$cmd"
+    echo "[1/6] removed slash command: /$cmd"
   fi
 done
 
@@ -69,7 +72,7 @@ for cli in stray mindmap; do
   BIN_LINK="$HOME_DIR/.local/bin/$cli"
   if [ -L "$BIN_LINK" ] || [ -f "$BIN_LINK" ]; then
     rm "$BIN_LINK"
-    echo "[2/5] removed shell wrapper: $BIN_LINK"
+    echo "[2/6] removed shell wrapper: $BIN_LINK"
   fi
 done
 
@@ -77,13 +80,13 @@ done
 SKILL_DIR="$HOME_DIR/.claude/skills/stray"
 if [ -d "$SKILL_DIR" ]; then
   rm -rf "$SKILL_DIR"
-  echo "[3/5] removed SKILL: $SKILL_DIR"
+  echo "[3/6] removed SKILL: $SKILL_DIR"
 fi
 # Legacy SKILL name from before the rename — clean it up too.
 LEGACY_SKILL="$HOME_DIR/.claude/skills/mindmap"
 if [ -d "$LEGACY_SKILL" ]; then
   rm -rf "$LEGACY_SKILL"
-  echo "[3/5] removed legacy SKILL: $LEGACY_SKILL"
+  echo "[3/6] removed legacy SKILL: $LEGACY_SKILL"
 fi
 
 # 4. Claude Code hooks
@@ -112,13 +115,38 @@ for event in list(hooks.keys()):
 if not hooks:
     data.pop("hooks", None)
 json.dump(data, open(path, "w"), indent=2, ensure_ascii=False)
-print(f"[4/5] removed {removed} hook entries from {path}")
+print(f"[4/6] removed {removed} hook entries from {path}")
 PY
 else
-  echo "[4/5] no settings.json found, skipping"
+  echo "[4/6] no settings.json found, skipping"
 fi
 
-# 5. Legacy launchd plist cleanup
+# 5. Resource-collection global prompt (DD-021) — remove the marked block
+# from ~/.claude/CLAUDE.md that install.sh added. Leaves the rest of the
+# file (the user's own global memory) untouched.
+USER_CLAUDE_MD="$HOME_DIR/.claude/CLAUDE.md"
+if [ -f "$USER_CLAUDE_MD" ]; then
+  python3 - "$USER_CLAUDE_MD" <<'PY'
+import sys, os
+path = sys.argv[1]
+START = "<!-- claude-stray:resource-prompt START -->"
+END = "<!-- claude-stray:resource-prompt END -->"
+txt = open(path, encoding="utf-8").read()
+if START in txt and END in txt:
+    head = txt[:txt.index(START)]
+    tail = txt[txt.index(END) + len(END):]
+    new = (head.rstrip("\n") + "\n" + tail.lstrip("\n")).strip("\n")
+    new = (new + "\n") if new else ""
+    open(path, "w", encoding="utf-8").write(new)
+    print("[5/6] removed resource-collection prompt from ~/.claude/CLAUDE.md")
+else:
+    print("[5/6] no resource-collection prompt block found, skipping")
+PY
+else
+  echo "[5/6] no ~/.claude/CLAUDE.md found, skipping"
+fi
+
+# 6. Legacy launchd plist cleanup
 if [ "$OS" = "Darwin" ]; then
   REMOVED_PLIST=0
   for PLIST in \
@@ -127,13 +155,13 @@ if [ "$OS" = "Darwin" ]; then
     if [ -f "$PLIST" ]; then
       launchctl unload "$PLIST" 2>/dev/null || true
       rm "$PLIST"
-      echo "[5/5] removed obsolete launchd job: $(basename "$PLIST")"
+      echo "[6/6] removed obsolete launchd job: $(basename "$PLIST")"
       REMOVED_PLIST=1
     fi
   done
-  [ "$REMOVED_PLIST" -eq 0 ] && echo "[5/5] no obsolete launchd plists found"
+  [ "$REMOVED_PLIST" -eq 0 ] && echo "[6/6] no obsolete launchd plists found"
 else
-  echo "[5/5] (skipped — not macOS)"
+  echo "[6/6] (skipped — not macOS)"
 fi
 
 echo

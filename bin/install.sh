@@ -191,7 +191,40 @@ if ! command -v ttyd >/dev/null 2>&1; then
   echo "      without it, that action falls back to opening a zellij pane."
 fi
 
-# --- 4. Cleanup any pre-existing launchd timer ------------------------------
+# --- 4. Resource-collection global prompt (DD-021) --------------------------
+# Nudge Claude (globally) to print the FULL URL/path of any external resource it
+# creates (MR/PR/CR/ISSUE/deployment, or a doc), so claude-stray can collect them
+# and surface them next to the work. Written as a marked block in
+# ~/.claude/CLAUDE.md (user memory, loaded every session); removed on uninstall.
+# Skip with NO_RESOURCE_PROMPT=1.
+if [ "${NO_RESOURCE_PROMPT:-0}" != "1" ]; then
+  python3 - "$HOME_DIR/.claude/CLAUDE.md" <<'PY'
+import sys, os
+path = sys.argv[1]
+START = "<!-- claude-stray:resource-prompt START -->"
+END = "<!-- claude-stray:resource-prompt END -->"
+body = ("When you create or reference an external resource through a CLI/skill "
+        "(`gh`, `a1`/aone, etc.) — an MR/PR, CR, ISSUE, deployment, or release — "
+        "print its **full URL** in your reply. When you create or substantially "
+        "edit a document, print its **full path**. One short line is enough. "
+        "(This lets claude-stray collect the resources a session produced and "
+        "surface them next to the work — do not invent URLs you don't have.)")
+block = (START + "\n<!-- managed by claude-stray; removed on uninstall -->\n"
+         + body + "\n" + END + "\n")
+os.makedirs(os.path.dirname(path), exist_ok=True)
+txt = open(path, encoding="utf-8").read() if os.path.exists(path) else ""
+if START in txt and END in txt:
+    txt = txt[:txt.index(START)] + block.rstrip("\n") + txt[txt.index(END) + len(END):]
+else:
+    if txt and not txt.endswith("\n\n"):
+        txt = txt.rstrip("\n") + "\n\n"
+    txt += block
+open(path, "w", encoding="utf-8").write(txt)
+PY
+  echo "[4/4] added resource-collection prompt to ~/.claude/CLAUDE.md (skip: NO_RESOURCE_PROMPT=1)"
+fi
+
+# --- 5. Cleanup any pre-existing launchd timer ------------------------------
 # Earlier versions of this installer added a 2h launchd job as a "hook
 # missed" backup. We removed that — the hook is reliable, the
 # `stray --serve` scheduler now handles derived features (tips,
