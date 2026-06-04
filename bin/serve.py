@@ -1244,7 +1244,16 @@ class Handler(BaseHTTPRequestHandler):
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
         try:
             proc = subprocess.Popen(
-                [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W", "-t", "titleFixed=" + sid[:8],
+                # rendererType=dom → terminal is real selectable DOM text (the
+                #   canvas/webgl renderer is pixels, so the browser can't
+                #   select/copy it). This makes drag-select + ⌘C / right-click
+                #   Copy work natively.
+                # rightClickSelectsWord=true → right-click selects a word and
+                #   suppresses the page's default context menu in the terminal.
+                [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
+                 "-t", "titleFixed=" + sid[:8],
+                 "-t", "rendererType=dom",
+                 "-t", "rightClickSelectsWord=true",
                  "bash", "-lc", inner],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env,
                 start_new_session=True)  # detach: serve Ctrl-C must NOT kill the terminal
