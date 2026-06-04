@@ -222,6 +222,7 @@
   .btn.danger{color:#d9694e} .btn.danger:hover{border-color:#d9694e;background:rgba(217,105,78,.08)}
   .acts-sp{flex:1}
   .detail .chips-full{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+  .detail .res-noise{font-size:11px;color:var(--ink-faint);margin-top:6px}
 
   .disc{position:fixed;right:14px;bottom:12px;font-size:10.5px;color:var(--ink-faint);background:var(--disc-bg);backdrop-filter:blur(6px);border:1px dashed var(--hair);border-radius:5px;padding:5px 9px;max-width:300px;line-height:1.4;z-index:30}
   .iconbtn{font-size:14px;line-height:1;padding:5px 9px;border:1px solid var(--hair);border-radius:6px;background:transparent;color:var(--ink-dim);cursor:pointer}
@@ -474,7 +475,13 @@
   function chip(a){const t=(a.type||'').toLowerCase(),cls=t==='mr'?'mr':(t==='cr'?'cr':'cd');
     const inner=`<span class="k">${esc(t.toUpperCase()||'REF')}</span><span>!${esc(a.ref_id||'')}</span>`,tip=esc(a.title||'');
     return a.url?`<a class="chip ${cls} link" href="${esc(a.url)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
-  const chipsRow=arts=>!arts||!arts.length?'':arts.slice(0,3).map(chip).join('')+(arts.length>3?`<span class="chip more">+${arts.length-3}</span>`:'');
+  // DD-021: only the high-signal resources belong on the card (MR/PR/CR/ISSUE/
+  // deployment/doc). commit/branch/tag flood and drown the useful ones, so they
+  // are collapsed to a count.
+  const RES_SIGNAL=new Set(['mr','pr','cr','issue','deployment','doc']);
+  const sigArts=arts=>(arts||[]).filter(a=>RES_SIGNAL.has((a.type||'').toLowerCase()));
+  const noiseCount=arts=>(arts||[]).length-sigArts(arts).length;
+  const chipsRow=arts=>{const s=sigArts(arts);return !s.length?'':s.slice(0,3).map(chip).join('')+(s.length>3?`<span class="chip more">+${s.length-3}</span>`:'');};
   // 取 progress 首句,让搁置/空闲的卡在列表行也能瞥见最新进展(完整文本进 tooltip)
   function firstSent(s){s=(s||'').replace(/\s+/g,' ').trim();if(!s)return '';const i=s.search(/[。!?；]/);const out=i>0?s.slice(0,i+1):s;return out.length>80?out.slice(0,80)+'…':out;}
   function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
@@ -500,7 +507,9 @@
     if(r.next_step)h+=`<div class="next-line" title="AI 判断的下一步动作">▸ 下一步:${esc(r.next_step)}</div>`;
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
-    if(r.artifacts&&r.artifacts.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+r.artifacts.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
+    if(r.artifacts&&r.artifacts.length){const sa=sigArts(r.artifacts),nc=noiseCount(r.artifacts);
+      if(sa.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+sa.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
+      if(nc>0)h+=`<div class="res-noise">+ ${nc} 个 commit/分支(已折叠,避免淹没)</div>`;}
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
     h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
