@@ -175,31 +175,40 @@ _TMUX_CONF = CACHE_DIR / "tmux-stray.conf"
 
 def _terminal_holder() -> str | None:
     """The detach/reattach session holder to run claude inside, so the session
-    survives ttyd WS drops (page refresh). Optional — None means run directly."""
-    for h in ("abduco", "tmux"):
+    survives ttyd WS drops (page refresh). MUST replay the screen on reattach
+    (tmux/screen maintain a terminal buffer; abduco does NOT — it leaves a TUI
+    black on reattach, so it's deliberately excluded). Optional — None = run
+    directly (re-resumes on refresh)."""
+    for h in ("tmux", "screen"):
         if shutil.which(h):
             return h
     return None
 
 
 def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
-    """Wrap the resume command in a holder (abduco/tmux) so claude survives a
-    page refresh: the holder keeps the session; ttyd just attaches, and a refresh
-    re-attaches to the SAME claude. Returns (command, holder_session_name|None).
-    No holder installed → run `inner` directly (re-resumes on refresh; still
-    fully functional — the holder is a progressive enhancement, not required)."""
+    """Wrap the resume command in a screen-buffering holder so claude survives a
+    page refresh: the holder keeps the session AND repaints on reattach, so a
+    refresh re-attaches to the SAME claude with its UI intact. Returns
+    (command, holder_session_name|None). No holder installed → run `inner`
+    directly (re-resumes on refresh; still fully functional — progressive
+    enhancement, not required)."""
     h = _terminal_holder()
     name = "stray-" + sid[:8]
-    if h == "abduco":
-        return ("abduco -A " + shlex.quote(name) + " bash -lc " + shlex.quote(inner), name)
     if h == "tmux":
         try:
             if not _TMUX_CONF.exists():
-                _TMUX_CONF.write_text("set -g status off\nset -g mouse on\n")
+                _TMUX_CONF.write_text("set -g status off\nset -g mouse on\n"
+                                      "set -g escape-time 10\n")
         except Exception:
             pass
         return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))
                 + " new-session -A -s " + shlex.quote(name)
+                + " bash -lc " + shlex.quote(inner), name)
+    if h == "screen":
+        # -d -R: attach-or-create; -e ^Tt remaps the command key off Ctrl-a
+        # (which a TUI uses for beginning-of-line) to Ctrl-t so screen doesn't
+        # swallow it. Fallback only — tmux is preferred + better tested.
+        return ("screen -e ^Tt -d -R -S " + shlex.quote(name)
                 + " bash -lc " + shlex.quote(inner), name)
     return (inner, None)
 
@@ -1150,6 +1159,8 @@ class Handler(BaseHTTPRequestHandler):
                 name = "stray-" + sid[:8]
                 if hn == "tmux":
                     run_cmd(["tmux", "-L", "stray", "kill-session", "-t", name])
+                elif hn == "screen":
+                    run_cmd(["screen", "-S", name, "-X", "quit"])
                 else:
                     run_cmd(["pkill", "-f", name])
             _save_terminals()

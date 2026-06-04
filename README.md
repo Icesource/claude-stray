@@ -122,9 +122,11 @@ background — you don't need to do anything.
 **Optional** (the cockpit's in-card terminal degrades gracefully without them):
 
 - `ttyd` — embed a real terminal in a card (`brew install ttyd`)
-- `abduco` *or* `tmux` — keep an embedded terminal's session alive across a
-  page refresh (`brew install abduco`). Without it the terminal still works;
-  it just re-`resume`s the session when you reload the page.
+- `tmux` (or `screen`, usually preinstalled on macOS) — keep an embedded
+  terminal's session alive **and repainted** across a page refresh
+  (`brew install tmux`). Without it the terminal still works; it just
+  re-`resume`s the session when you reload the page. (NB: `abduco`/`dtach`
+  do NOT work here — they don't replay the screen, so a TUI reattaches black.)
 
 ## Usage
 
