@@ -205,7 +205,7 @@ LOCALE = {
         "ago_m": "{}分钟前",
         "ago_h": "{}小时前",
         "ago_d": "{}天前",
-        "empty_no_data": "(还没有数据，请运行 mindmap --refresh)",
+        "empty_no_data": "(还没有数据，请运行 stray --refresh)",
         "ws_collapsed": "▶",
         "ws_expanded": "▼",
         "blocker_chip": "{} 卡点",
@@ -390,7 +390,7 @@ LOCALE = {
         "ago_m": "{}m ago",
         "ago_h": "{}h ago",
         "ago_d": "{}d ago",
-        "empty_no_data": "(no data yet — run mindmap --refresh)",
+        "empty_no_data": "(no data yet — run stray --refresh)",
         "ws_collapsed": "▶",
         "ws_expanded": "▼",
         "blocker_chip": "{} blockers",
@@ -6942,7 +6942,7 @@ def render_html(data: dict, L: dict, lang: str) -> str:
 def main() -> int:
     if not DASHBOARD_FILE.exists():
         print(f"No mindmap cache found at {DASHBOARD_FILE}", file=sys.stderr)
-        print("Run: mindmap --refresh", file=sys.stderr)
+        print("Run: stray --refresh", file=sys.stderr)
         return 1
     data = json.loads(DASHBOARD_FILE.read_text())
     lang = get_lang()

@@ -265,6 +265,14 @@
   .ttab.on{border-color:var(--run);color:var(--ink)}
   .ttab b{color:var(--ink-faint);font-weight:600;cursor:pointer;font-size:12px;line-height:1}
   .ttab b:hover{color:var(--needs)}
+  .empty-state{max-width:560px;margin:64px auto;text-align:center;padding:28px;border:1px solid var(--hair-soft);border-radius:12px;background:var(--bg-row)}
+  .empty-state.err{border-color:var(--needs-edge);background:var(--needs-bg)}
+  .empty-state .es-t{font-size:15px;font-weight:600;color:var(--ink);margin-bottom:8px}
+  .empty-state.err .es-t{color:var(--needs)}
+  .empty-state .es-b{font-size:12.5px;color:var(--ink-dim);line-height:1.6;margin:6px 0}
+  .empty-state code{font-family:var(--mono);font-size:11.5px;background:var(--bg-elev);border:1px solid var(--hair);border-radius:4px;padding:1px 5px}
+  .empty-state .es-log{text-align:left;font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);background:var(--bg-elev);border:1px solid var(--hair-soft);border-radius:7px;padding:9px 11px;margin:10px 0;max-height:160px;overflow:auto;white-space:pre-wrap}
+  .empty-state .es-spin{width:24px;height:24px;margin:0 auto 14px;border:3px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
   .termstack{flex:1;min-height:0;display:flex;position:relative}
   .term-loading{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0b0d}
   .term-loading[hidden]{display:none}
@@ -321,6 +329,8 @@
   let lastSig = null;        // skip re-render when nothing actually changed
   let MINDMAP = {workspaces:[]};
   let LIVE = {};
+  let SYNC = {};            // first-sync health {state,reason,log_tail} from /api/data
+  let CLAUDE_OK = true;     // is the `claude` CLI available (precondition for sync)
   const NEEDS_RE = /待用户|待 ?user|用户确认|用户决定|用户反馈|需确认|待确认|权限确认|等你/;
   function humanIdle(iso){ if(!iso) return ''; const u=Date.parse(iso); if(isNaN(u)) return '';
     let s=(Date.now()-u)/1000; if(s<0)s=0;
@@ -403,7 +413,7 @@
   // Signature of what's actually rendered (excludes the volatile idle timer),
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
-  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user]))+JSON.stringify(DATA.counts||{}); }
+  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
   function refreshUI(force){ const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent(); }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
@@ -411,6 +421,7 @@
       fetch(ORIGIN+'/api/live').then(r=>r.json()).catch(()=>({live:{}})) ]);
     MINDMAP=(d&&d.mindmap)||{workspaces:[]}; LIVE=(l&&l.live)||{};
     LOCATIONS=(d&&d.locations&&d.locations.by_session_id)||{};
+    SYNC=(d&&d.sync)||{}; CLAUDE_OK=!(d&&d.claude_ok===false);
     buildRows(); refreshUI();
   }catch(e){} }
   let _es=null;
@@ -511,8 +522,19 @@
   const loadOrder=t=>{try{return JSON.parse(localStorage.getItem('cockpit-order-'+t)||'null')}catch(e){return null}};
   const saveOrder=zone=>{try{localStorage.setItem('cockpit-order-'+zone.dataset.tier,JSON.stringify([...zone.querySelectorAll('.proj')].map(p=>p.dataset.ws)))}catch(e){}};
 
+  // Empty / first-run / sync-health panel — shown when there are no cards yet,
+  // so a fresh user (or a colleague) sees WHY (syncing / failed / claude missing)
+  // instead of a silent blank board.
+  function emptyStateHTML(){
+    if(!CLAUDE_OK) return `<div class="empty-state err"><div class="es-t">⚠ 未找到 claude CLI</div><div class="es-b">后台分析无法进行。确认已安装 Claude Code、<code>claude</code> 在 PATH 且已登录(试 <code>claude -p hi</code>),然后刷新。</div></div>`;
+    const st=SYNC.state||'';
+    if(st==='running') return `<div class="empty-state"><div class="es-spin"></div><div class="es-t">首次同步中…</div><div class="es-b">${esc(SYNC.reason||'正在分析你最近的会话(首次约 1–2 分钟,会用一点 Haiku)。')}</div></div>`;
+    if(st==='failed') return `<div class="empty-state err"><div class="es-t">⚠ 后台同步出问题了</div><div class="es-b">${esc(SYNC.reason||'同步失败。')}</div>`+(SYNC.log_tail?`<pre class="es-log">${esc(SYNC.log_tail)}</pre>`:'')+`<div class="es-b">修好后刷新页面,或在终端跑 <code>stray --refresh</code>。</div></div>`;
+    return `<div class="empty-state"><div class="es-t">还没有卡片</div><div class="es-b">近 48 小时没有 Claude Code 会话?要把全部历史拉进来,终端跑 <code>stray --backfill</code>。</div></div>`;
+  }
   // ATTENTION view
   function renderAttention(){mini.innerHTML='';let html='';
+    if(!DATA.rows.length){board.innerHTML=emptyStateHTML();return;}
     BANDS.forEach(b=>{const rows=DATA.rows.filter(r=>r.band===b.key).sort((x,y)=>y.idle_secs-x.idle_secs);
       if(!rows.length)return; if(b.collapse){html+=collapsedBand(b.key);return;}
       html+=`<section class="band" data-band="${b.key}"><div class="band-head"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;});
@@ -540,6 +562,7 @@
       `<span class="pstrip">${strip}</span><span class="ptimer">${esc(p.rows[0].idle)}</span></div>`+
       `<div class="rows">`+p.rows.map(rowEl).join('')+`</div></section>`;}
   function renderProject(){
+    if(!DATA.rows.length){mini.innerHTML='';board.innerHTML=emptyStateHTML();return;}
     const projs=projectAgg();
     const main=sortProjs(projs.filter(p=>p.tier==='main'),'main');
     const side=sortProjs(projs.filter(p=>p.tier==='side'),'side');

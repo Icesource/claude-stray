@@ -55,6 +55,8 @@ RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
 DERIVED_DIR = CACHE_DIR / "derived"
 SUMMARIES_DIR = CACHE_DIR / "summaries"  # Layer-1 per-session summaries
+SYNC_STATUS_JSON = CACHE_DIR / "sync_status.json"  # first-sync health for the UI
+SYNC_LOG = CACHE_DIR / "sync.log"
 
 PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
@@ -960,6 +962,10 @@ class Handler(BaseHTTPRequestHandler):
                 _freshen_progress_from_summaries(data.get("mindmap"))
             except Exception:
                 pass
+            # Sync health for the empty/first-run state: is the background
+            # analysis running / done / failed, and is claude even available.
+            data["sync"] = _read_sync_status()
+            data["claude_ok"] = bool(shutil.which("claude"))
             try: data["locations"] = json.load(open(LOCATIONS_JSON))
             except Exception: data["locations"] = None
             # Archived items from cache/archive/<ws>/<id>.json — these are
@@ -1653,6 +1659,32 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"ok": False, "error": str(e)})
 
 
+def _dashboard_empty() -> bool:
+    try:
+        data = json.loads(DASHBOARD_JSON.read_text(encoding="utf-8"))
+        return sum(len(w.get("initiatives") or [])
+                   for w in (data.get("workspaces") or [])) == 0
+    except Exception:
+        return True
+
+
+def _write_sync_status(state: str, reason: str = "", log_tail: str = "") -> None:
+    try:
+        SYNC_STATUS_JSON.write_text(json.dumps(
+            {"state": state, "reason": reason, "log_tail": log_tail,
+             "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
+            ensure_ascii=False))
+    except Exception:
+        pass
+
+
+def _read_sync_status() -> dict:
+    try:
+        return json.loads(SYNC_STATUS_JSON.read_text())
+    except Exception:
+        return {}
+
+
 def _maybe_kick_first_sync() -> bool:
     """Trigger a background pipeline run iff the cache is empty.
 
@@ -1668,27 +1700,47 @@ def _maybe_kick_first_sync() -> bool:
     """
     if not PIPELINE_RUN.exists():
         return False
-    if not DASHBOARD_JSON.exists():
-        empty = True
-    else:
-        try:
-            data = json.loads(DASHBOARD_JSON.read_text(encoding="utf-8"))
-            ws = data.get("workspaces") or []
-            init_count = sum(len(w.get("initiatives") or []) for w in ws)
-            empty = init_count == 0
-        except (OSError, json.JSONDecodeError):
-            empty = True
-    if not empty:
+    if not _dashboard_empty():
         return False
+    # claude availability is a PRECONDITION for the background analysis. If it's
+    # missing we can't sync at all — surface that to the page instead of leaving
+    # a silent blank dashboard.
+    if not shutil.which("claude"):
+        _write_sync_status("failed",
+            "未找到 claude CLI —— 后台分析无法进行。确认已装 Claude Code、`claude` 在 PATH 且已登录(试 `claude -p hi`)。")
+        print("[serve] first-sync: claude CLI not found", file=sys.stderr)
+        return False
+    _write_sync_status("running", "正在分析你最近的会话(首次约 1–2 分钟)…")
+
+    def _runner():
+        try:
+            with open(SYNC_LOG, "w") as log:
+                subprocess.run(
+                    ["bash", str(PIPELINE_RUN), "--all-dirty", "--force-classify"],
+                    env=os.environ.copy(), stdout=log, stderr=subprocess.STDOUT)
+        except Exception as e:
+            _write_sync_status("failed", f"后台同步启动失败:{e}")
+            return
+        if not _dashboard_empty():
+            _write_sync_status("ok")
+            return
+        tail = ""
+        try:
+            tail = "\n".join(SYNC_LOG.read_text(errors="replace").splitlines()[-12:])
+        except Exception:
+            pass
+        # Ran but produced nothing → almost always claude not logged in / AI call
+        # failing, or simply no sessions in the last 48h.
+        _write_sync_status("failed",
+            "后台同步跑完但没产出卡片 —— 多半是 `claude` 未登录或 AI 调用失败(试 `claude -p hi`),也可能近 48h 内没有会话(全量历史跑 `stray --backfill`)。",
+            tail)
+
     try:
-        subprocess.Popen(
-            ["bash", str(PIPELINE_RUN), "--all-dirty", "--force-classify"],
-            env=os.environ.copy(),
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        threading.Thread(target=_runner, daemon=True).start()
         print("[serve] cache is empty — kicked first-time sync in background")
         return True
     except Exception as e:
+        _write_sync_status("failed", f"后台同步启动失败:{e}")
         print(f"[serve] first-sync kick failed: {e}", file=sys.stderr)
         return False
 

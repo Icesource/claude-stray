@@ -148,6 +148,18 @@ Inside Claude Code, `/stray` renders the cached dashboard tree in the
 chat. The dashboard's 🔄 button (top-right) is the everyday "refresh
 now" affordance.
 
+### First run (what to expect)
+
+- On first `stray --serve` with an empty cache, the dashboard kicks a
+  background analysis of your recent sessions. It takes ~1–2 minutes; the
+  page shows a **"首次同步中…"** state and fills in as cards are produced.
+- It uses a little Haiku (**~$0.3–0.5** for a handful of sessions). If the
+  page shows a sync **error**, the usual cause is `claude` not being logged
+  in — check with `claude -p hi`.
+- Only sessions from the **last ~48h** sync on the first run (older ones
+  refresh lazily when you revisit them). To pull in your full history now,
+  run `stray --backfill`.
+
 ### Inside Claude Code conversations
 
 If you ran `bin/install-skill.sh`, the main Claude Code agent learns
