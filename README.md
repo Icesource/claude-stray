@@ -119,6 +119,13 @@ background — you don't need to do anything.
   fine — no separate API key needed)
 - macOS or Linux (Windows via WSL)
 
+**Optional** (the cockpit's in-card terminal degrades gracefully without them):
+
+- `ttyd` — embed a real terminal in a card (`brew install ttyd`)
+- `abduco` *or* `tmux` — keep an embedded terminal's session alive across a
+  page refresh (`brew install abduco`). Without it the terminal still works;
+  it just re-`resume`s the session when you reload the page.
+
 ## Usage
 
 ```bash

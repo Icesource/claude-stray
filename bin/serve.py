@@ -170,6 +170,40 @@ def live_snapshot() -> dict:
     return out
 
 
+_TMUX_CONF = CACHE_DIR / "tmux-stray.conf"
+
+
+def _terminal_holder() -> str | None:
+    """The detach/reattach session holder to run claude inside, so the session
+    survives ttyd WS drops (page refresh). Optional — None means run directly."""
+    for h in ("abduco", "tmux"):
+        if shutil.which(h):
+            return h
+    return None
+
+
+def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
+    """Wrap the resume command in a holder (abduco/tmux) so claude survives a
+    page refresh: the holder keeps the session; ttyd just attaches, and a refresh
+    re-attaches to the SAME claude. Returns (command, holder_session_name|None).
+    No holder installed → run `inner` directly (re-resumes on refresh; still
+    fully functional — the holder is a progressive enhancement, not required)."""
+    h = _terminal_holder()
+    name = "stray-" + sid[:8]
+    if h == "abduco":
+        return ("abduco -A " + shlex.quote(name) + " bash -lc " + shlex.quote(inner), name)
+    if h == "tmux":
+        try:
+            if not _TMUX_CONF.exists():
+                _TMUX_CONF.write_text("set -g status off\nset -g mouse on\n")
+        except Exception:
+            pass
+        return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))
+                + " new-session -A -s " + shlex.quote(name)
+                + " bash -lc " + shlex.quote(inner), name)
+    return (inner, None)
+
+
 def _resume_cwd_for(sid: str) -> str:
     """The cwd `claude --resume <sid>` MUST run from. claude resolves a session
     by the project dir derived from the *current* cwd, and a session's jsonl is
@@ -1106,9 +1140,18 @@ class Handler(BaseHTTPRequestHandler):
         ent = _TERMINALS.pop(sid, None)
         if ent:
             try:
-                os.kill(int(ent["pid"]), signal.SIGTERM)
+                os.kill(int(ent["pid"]), signal.SIGTERM)  # ttyd
             except Exception:
                 pass
+            hn = ent.get("holder")
+            if hn:
+                # End the holder session too — otherwise claude keeps running
+                # detached (ttyd dying only detaches the holder client).
+                name = "stray-" + sid[:8]
+                if hn == "tmux":
+                    run_cmd(["tmux", "-L", "stray", "kill-session", "-t", name])
+                else:
+                    run_cmd(["pkill", "-f", name])
             _save_terminals()
         return self._reply(200, {"ok": True})
 
@@ -1159,6 +1202,10 @@ class Handler(BaseHTTPRequestHandler):
         inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
         if cwd:
             inner = "cd " + shlex.quote(cwd) + " && " + inner
+        # Run inside a holder (abduco/tmux) if available, so a page refresh
+        # re-attaches to the SAME claude instead of re-resuming. Graceful
+        # fallback to direct resume when no holder is installed.
+        inner, holder_name = _wrap_in_holder(sid, inner)
         import socket
         s = socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
         # Strip ZELLIJ* env: serve.py itself runs inside a zellij session, so a
@@ -1174,7 +1221,7 @@ class Handler(BaseHTTPRequestHandler):
                 start_new_session=True)  # detach: serve Ctrl-C must NOT kill the terminal
         except Exception as e:
             return self._reply(500, {"error": str(e)})
-        _TERMINALS[sid] = {"port": port, "pid": proc.pid}
+        _TERMINALS[sid] = {"port": port, "pid": proc.pid, "holder": holder_name}
         _save_terminals()
         time.sleep(0.4)  # let ttyd bind before the browser connects
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "mode": mode})
