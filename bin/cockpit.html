@@ -406,8 +406,18 @@
     LOCATIONS=(d&&d.locations&&d.locations.by_session_id)||{};
     buildRows(); refreshUI();
   }catch(e){} }
-  function startLive(){ try{ const es=new EventSource(ORIGIN+'/api/events');
-    es.onmessage=e=>{ try{ LIVE=JSON.parse(e.data)||{}; buildRows(); refreshUI(); }catch(_){}}; }catch(_){}}
+  let _es=null;
+  function startLive(){
+    try{ if(_es)_es.close(); }catch(_){}
+    try{ const es=new EventSource(ORIGIN+'/api/events'); _es=es;
+      es.onmessage=e=>{ try{ LIVE=JSON.parse(e.data)||{}; buildRows(); refreshUI(); }catch(_){}};
+      es.onerror=()=>{ try{es.close()}catch(_){}; _es=null; setTimeout(startLive,3000); };
+    }catch(_){ setTimeout(startLive,3000); }
+  }
+  // When the cockpit tab regains focus (you came back from the terminal/ghostty),
+  // browsers throttle the background poll and may queue SSE — so live status can
+  // look stale. Force an immediate refresh + SSE reconnect the instant you return.
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ loadData(); if(!_es) startLive(); }});
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'done_unread',glyph:'✅',label:'完成 · 待查看',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
     {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'今天完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
