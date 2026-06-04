@@ -63,6 +63,28 @@ LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
 _TERMINALS = {}                 # sid -> (port, Popen) for spawned ttyd instances
 
 
+_JSONL_PATH_CACHE: dict = {}
+
+
+def _session_jsonl_path(sid: str):
+    """Cached path to a session's transcript jsonl (stable for a session)."""
+    if sid in _JSONL_PATH_CACHE:
+        return _JSONL_PATH_CACHE[sid]
+    p = None
+    try:
+        p = json.loads((CACHE_DIR / "sessions" / f"{sid}.json").read_text()).get("source_file")
+    except Exception:
+        p = None
+    if not p or not os.path.exists(p):
+        try:
+            hits = list((Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"))
+            p = str(hits[0]) if hits else None
+        except Exception:
+            p = None
+    _JSONL_PATH_CACHE[sid] = p
+    return p
+
+
 def live_snapshot() -> dict:
     """Per-session live status for the cockpit, keyed by session_id.
     Light staleness handling: a 'running' record untouched for >6h is
@@ -91,6 +113,26 @@ def live_snapshot() -> dict:
             rec = {**rec, "status": "unknown"}
         if status == "done_unread" and age > 16 * 3600:
             rec = {**rec, "status": "idle"}  # stale unread -> you've moved on
+        # Transcript-mtime override: the event model has a gap — answering an
+        # elicit / approving a permission / a missed UserPromptSubmit doesn't fire
+        # a `running` event, so a session can stay stuck on needs_you / idle while
+        # actually working. If the jsonl was written AFTER that event and within
+        # the last 45s, the session is actively working → show running.
+        st2 = rec.get("status")
+        if st2 in ("needs_you", "idle"):
+            jp = _session_jsonl_path(sid)
+            if jp:
+                try:
+                    jm = os.path.getmtime(jp)
+                except Exception:
+                    jm = 0
+                try:
+                    ss_ep = datetime.fromisoformat(
+                        (rec.get("status_since") or "").replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    ss_ep = 0
+                if jm > ss_ep + 5 and (now - jm) < 45:
+                    rec = {**rec, "status": "running", "_inferred": "jsonl-fresh"}
         out[sid] = rec
     return out
 
