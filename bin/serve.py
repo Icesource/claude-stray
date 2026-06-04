@@ -203,13 +203,13 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
             pass
         return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))
                 + " new-session -A -s " + shlex.quote(name)
-                + " bash -lc " + shlex.quote(inner), name)
+                + " bash -lc " + shlex.quote(inner), h)
     if h == "screen":
         # -d -R: attach-or-create; -e ^Tt remaps the command key off Ctrl-a
         # (which a TUI uses for beginning-of-line) to Ctrl-t so screen doesn't
         # swallow it. Fallback only — tmux is preferred + better tested.
         return ("screen -e ^Tt -d -R -S " + shlex.quote(name)
-                + " bash -lc " + shlex.quote(inner), name)
+                + " bash -lc " + shlex.quote(inner), h)
     return (inner, None)
 
 
@@ -1178,8 +1178,20 @@ class Handler(BaseHTTPRequestHandler):
         if not sid:
             return self._reply(400, {"error": "sid required"})
         ex = _TERMINALS.get(sid)
-        if ex and _pid_alive(ex.get("pid")):  # reuse a live ttyd (survives serve restart)
+        # Reuse a live ttyd (survives serve restart) — but ONLY if its holder
+        # type still matches what we'd spawn now. A stale terminal from an older
+        # holder (e.g. the abduco era, which left TUIs black) is dropped so we
+        # respawn a fresh, correct one instead of reusing a broken black screen.
+        if ex and _pid_alive(ex.get("pid")) and ex.get("holder") == _terminal_holder():
             return self._reply(200, {"url": f"http://127.0.0.1:{ex['port']}/", "reused": True})
+        if ex:  # stale/mismatched — tear it down before respawning
+            try:
+                os.kill(int(ex["pid"]), signal.SIGTERM)
+            except Exception:
+                pass
+            run_cmd(["pkill", "-f", "stray-" + sid[:8]])
+            _TERMINALS.pop(sid, None)
+            _save_terminals()
         # Single-driver gate (DD-018): never `claude --resume <sid>` a session
         # that already has a live process elsewhere. Two resumes fork the
         # session jsonl (uuid/parentUuid chain): the two agents diverge, can't
