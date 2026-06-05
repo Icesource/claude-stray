@@ -294,35 +294,35 @@
   .empty-state .es-spin{width:24px;height:24px;margin:0 auto 14px;border:3px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
   .termbody{flex:1;min-height:0;display:flex}
   .termstack{flex:1;min-height:0;display:flex;position:relative}
-  /* DD-021② (grouped tiles): each TYPE is a color-coded block — header = type
-     label + count, body = every item of that type listed. Blocks flow in 2
-     columns to use the gutter's width; all items visible, no hover needed to read.
-     External resources and code-location are kept in separate sections. */
+  /* DD-021③ (free scatter): tags float loosely like a tag-cloud / pinned sticky
+     notes — varied widths wrap to fill the 2D area, each with a slight tilt + drop
+     shadow. All visible; hover one to float it up + straighten + enlarge. Two
+     separate sections (外部资源 / 代码位置). --rot = per-tag tilt set by JS. */
   .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);left:calc(50% + 552px);
-    width:340px;max-height:92vh;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:7px;padding:2px}
+    width:312px;max-height:92vh;overflow-y:auto;overflow-x:visible;display:flex;flex-direction:column;gap:6px;padding:8px 10px}
   .termres[hidden]{display:none}
-  @media (max-width:1760px){ .termres{display:none} }
-  .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:2px 0 2px 3px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
-  .termres .tr-h2{margin-top:6px}
-  .restiles{columns:2;column-gap:9px}
-  .restile{break-inside:avoid;margin:0 0 9px;border:1px solid var(--hair);border-left-width:2.5px;border-radius:9px;
-    background:var(--bg-elev);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.34)}
-  .restile .rt-head{display:flex;align-items:center;gap:6px;padding:5px 9px;font-family:var(--mono);font-size:8.5px;
-    font-weight:700;letter-spacing:.06em;background:var(--bg-row);color:var(--ink-dim)}
-  .restile .rt-head .rt-n{margin-left:auto;color:var(--ink-faint);font-size:8px}
-  .restile .rt-item{display:block;width:100%;box-sizing:border-box;padding:6px 10px;font-size:11px;line-height:1.32;
-    color:var(--ink);text-decoration:none;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-    border-top:1px solid var(--hair-soft);background:none;font:inherit;cursor:pointer}
-  .restile .rt-item:hover{background:var(--bg-row-hover)}
-  a.rt-item:hover{color:var(--run)}
-  .restile .rt-item.loc{font-family:var(--mono);font-size:10.5px}
-  .restile .rt-item.nolink{cursor:default;color:var(--ink-dim)}
-  .restile.k-mr,.restile.k-pr{border-left-color:var(--mr)} .restile.k-mr .rt-head,.restile.k-pr .rt-head{color:var(--mr)}
-  .restile.k-cr{border-left-color:var(--cr)} .restile.k-cr .rt-head{color:var(--cr)}
-  .restile.k-issue{border-left-color:var(--needs)} .restile.k-issue .rt-head{color:var(--needs)}
-  .restile.k-deployment{border-left-color:var(--run)} .restile.k-deployment .rt-head{color:var(--run)}
-  .restile.k-doc{border-left-color:var(--cd)} .restile.k-doc .rt-head{color:var(--cd)}
-  .restile.k-branch,.restile.k-tag,.restile.k-worktree,.restile.k-other{border-left-color:var(--ink-faint)}
+  @media (max-width:1730px){ .termres{display:none} }
+  .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+  .termres .tr-h2{margin-top:9px}
+  .floatwrap{display:flex;flex-wrap:wrap;gap:9px 8px;align-items:flex-start;padding:3px 0}
+  .floatchip{position:relative;display:inline-flex;align-items:center;gap:6px;max-width:240px;box-sizing:border-box;
+    height:29px;padding:0 11px 0 7px;border:1px solid var(--hair);border-left-width:2.5px;border-radius:9px;
+    background:var(--bg-elev);box-shadow:0 6px 16px rgba(0,0,0,.42);text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;
+    transform:rotate(var(--rot,0deg));transition:transform .2s cubic-bezier(.2,.8,.2,1),box-shadow .2s,border-color .16s}
+  .floatchip:hover{transform:translateY(-4px) rotate(0) scale(1.07);box-shadow:0 18px 40px rgba(0,0,0,.62);border-color:var(--run);z-index:30}
+  .floatchip.loc:hover{border-color:var(--ink-dim)}
+  .floatchip.nolink{cursor:default}
+  .floatchip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
+    font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.04em;border-radius:4px;
+    background:var(--bg-row);border:1px solid var(--hair);color:var(--ink-dim)}
+  .floatchip .rc-l{flex:1;min-width:0;font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .floatchip.loc .rc-l{font-family:var(--mono);font-size:10.5px}
+  .floatchip.k-mr,.floatchip.k-pr{border-left-color:var(--mr)} .floatchip.k-mr .rc-ic,.floatchip.k-pr .rc-ic{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 50%,transparent)}
+  .floatchip.k-cr{border-left-color:var(--cr)} .floatchip.k-cr .rc-ic{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 50%,transparent)}
+  .floatchip.k-issue{border-left-color:var(--needs)} .floatchip.k-issue .rc-ic{color:var(--needs);border-color:var(--needs-edge)}
+  .floatchip.k-deployment{border-left-color:var(--run)} .floatchip.k-deployment .rc-ic{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
+  .floatchip.k-doc{border-left-color:var(--cd)} .floatchip.k-doc .rc-ic{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 50%,transparent)}
+  .floatchip.k-branch,.floatchip.k-tag,.floatchip.k-worktree,.floatchip.k-other{border-left-color:var(--ink-faint)}
   /* code-location items in the CARD DETAIL stay static rows (not floating chips) */
   .loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;
     width:100%;padding:9px 12px;border-radius:10px;text-align:left;font:inherit;cursor:pointer;
@@ -889,26 +889,28 @@
   const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'TREE'};
   const resLbl=t=>RES_LBL[(t||'').toLowerCase()]||(t||'REF').toUpperCase().slice(0,5);
   function groupByType(arts){const g={},ord=[];for(const a of (arts||[])){const t=(a.type||'other').toLowerCase();if(!g[t]){g[t]=[];ord.push(t);}g[t].push(a);}return ord.map(t=>({type:t,items:g[t]}));}
-  // one row inside a type tile
-  function tileRow(a){const t=(a.type||'ref').toLowerCase(),isLoc=RES_CODELOC.has(t),u=httpUrl(a);
-    const hasTitle=!!(a.title&&a.title.trim());
-    const label=esc(isLoc?(a.ref_id||a.title||''):(hasTitle?a.title:(a.ref_id||resLbl(t))));
+  // one floating tag. idx drives a stable per-tag tilt (no live randomness).
+  const FLOAT_TILT=[-1.8,1.3,-0.7,1.9,-1.2,0.6,-2.1,1.0];
+  function floatChip(a,idx){const t=(a.type||'ref').toLowerCase();
+    const isLoc=RES_CODELOC.has(t),u=httpUrl(a),hasTitle=!!(a.title&&a.title.trim());
+    const head=esc(isLoc?(a.ref_id||a.title||''):(hasTitle?a.title:(a.ref_id||resLbl(t))));
+    const style=`--rot:${FLOAT_TILT[idx%FLOAT_TILT.length]}deg`;
+    const inner=`<span class="rc-ic">${esc(resLbl(t))}</span><span class="rc-l">${head}</span>`;
     if(isLoc){const v=a.ref_id||a.title||'';
-      return `<button class="rt-item loc" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))">${label}</button>`;}
-    return u?`<a class="rt-item" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${label}</a>`
-            :`<span class="rt-item nolink" title="未捕获完整 URL(装全局提示词后会带 URL)">${label}</span>`;}
-  // one tile = a color block per type (header + all its items)
-  function tileFor(g){return `<div class="restile k-${esc(g.type)}"><div class="rt-head"><span>${esc(resLbl(g.type))}</span><span class="rt-n">${g.items.length}</span></div>`+g.items.map(tileRow).join('')+`</div>`;}
+      return `<button class="floatchip loc k-${esc(t)}" style="${style}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))">${inner}</button>`;}
+    return u?`<a class="floatchip k-${esc(t)}" style="${style}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
+            :`<span class="floatchip nolink k-${esc(t)}" style="${style}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
     const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
     if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
-    const tiles=arts=>`<div class="restiles">`+groupByType(arts).map(tileFor).join('')+`</div>`;
+    const order=arts=>groupByType(arts).flatMap(g=>g.items);   // same-type adjacent → colors cluster
+    const wrap=arts=>`<div class="floatwrap">`+order(arts).map((a,i)=>floatChip(a,i)).join('')+`</div>`;
     let html='';
-    if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+tiles(ea);
-    if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+tiles(la);
+    if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+wrap(ea);
+    if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+wrap(la);
     res.innerHTML=html;
   }
   function setActiveTerm(sid){
