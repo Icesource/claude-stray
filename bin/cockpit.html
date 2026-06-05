@@ -294,57 +294,39 @@
   .empty-state .es-spin{width:24px;height:24px;margin:0 auto 14px;border:3px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
   .termbody{flex:1;min-height:0;display:flex}
   .termstack{flex:1;min-height:0;display:flex;position:relative}
-  /* DD-021②: resources float as small single-line chips just OFF the terminal's
-     RIGHT edge — they radiate out FROM the webterminal, not from the screen edge.
-     Same-type chips form a tight cluster; hover a chip to enlarge + reveal its id.
-     Legible at rest. Narrow screens (no gutter) hide it; card detail still lists. */
-  .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);
-    left:calc(50% + 566px);right:auto;width:238px;max-height:90vh;
-    display:flex;flex-direction:column;gap:9px;padding:4px 2px;overflow:visible}
+  /* DD-021②: resources FAN OUT from the terminal's right edge like an opened hand
+     of cards / a peacock — all visible at rest, splayed along an arc. Each card
+     pivots at its OWN LEFT edge, so the type badges line up in a readable column
+     near the terminal while the titles fan outward. --ty (vertical slot) and
+     --rot (fan angle) are set per card by JS. Hover one → it flattens + comes
+     forward + the rest dim, so you read/click it cleanly. */
+  .termres{position:fixed;z-index:71;left:calc(50% + 556px);top:50%;width:216px;height:0;overflow:visible}
   .termres[hidden]{display:none}
   @media (max-width:1640px){ .termres{display:none} }
-  .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 1px 3px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
-  .termres .tr-h2{margin-top:9px}
-  /* same-type resources collapse into a CARD DECK: at rest only the top card is
-     full, with up to 2 backs peeking + a ×N count — so even 7 CRs stay compact.
-     Hover the deck and it fans open into a clean, readable column. The rest layout
-     is capped via :nth-child (never cascades); hover spread uses --i. */
-  .rescluster{position:relative;margin-bottom:9px;height:calc(30px + min(var(--n,1) - 1, 2) * 4px);
-    transition:height .3s cubic-bezier(.2,.85,.25,1)}
-  .rescluster:hover{height:calc(30px + (var(--n,1) - 1) * 34px);z-index:40}
-  .reschip{position:absolute;left:0;right:0;top:0;box-sizing:border-box;display:flex;align-items:center;gap:7px;
+  .fanchip{position:absolute;left:0;top:0;width:212px;box-sizing:border-box;display:flex;align-items:center;gap:7px;
     height:30px;padding:0 10px 0 8px;border:1px solid var(--hair);border-radius:8px;background:var(--bg-elev);
-    text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 5px 16px rgba(0,0,0,.42);
-    transform-origin:top center;transform:translateY(9px) scale(.93);opacity:0;z-index:10;
-    transition:transform .3s cubic-bezier(.2,.85,.25,1),opacity .24s,box-shadow .2s,border-color .16s}
-  /* rest: top card + at most 2 peeking backs; deeper cards hidden behind */
-  .rescluster .reschip:nth-child(1){transform:translateY(0) scale(1) rotate(0);opacity:1;z-index:33}
-  .rescluster .reschip:nth-child(2){transform:translateY(4px) scale(.972) rotate(.7deg);opacity:.55;z-index:32}
-  .rescluster .reschip:nth-child(3){transform:translateY(8px) scale(.944) rotate(1.3deg);opacity:.3;z-index:31}
-  /* hover: fan the whole deck open into a readable column */
-  .rescluster:hover .reschip{transform:translateY(calc(var(--i,0) * 34px)) scale(1) rotate(0);opacity:1;z-index:calc(33 - var(--i,0));box-shadow:0 7px 20px rgba(0,0,0,.45)}
-  .reschip:hover{border-color:var(--run);box-shadow:0 16px 38px rgba(0,0,0,.62)!important;z-index:60!important}
-  .reschip.loc:hover{border-color:var(--ink-dim)}
-  /* ×N count on a collapsed deck (hidden once fanned open) */
-  .deck-n{position:absolute;top:7px;right:8px;z-index:38;font-family:var(--mono);font-size:8px;font-weight:700;
-    color:var(--ink-dim);background:var(--bg-row);border:1px solid var(--hair);border-radius:4px;padding:1px 4px;
-    pointer-events:none;transition:opacity .18s}
-  .rescluster:hover .deck-n{opacity:0}
+    text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 6px 18px rgba(0,0,0,.45);
+    transform-origin:left center;transform:translate(0,calc(-50% + var(--ty,0px))) rotate(var(--rot,0deg));
+    transition:transform .26s cubic-bezier(.2,.85,.25,1),box-shadow .2s,border-color .16s,opacity .2s;z-index:20}
+  .termres:hover .fanchip{opacity:.4}
+  .termres .fanchip:hover{opacity:1;transform:translate(10px,calc(-50% + var(--ty,0px))) rotate(0) scale(1.06);
+    box-shadow:0 16px 42px rgba(0,0,0,.62);border-color:var(--run);z-index:60}
+  .fanchip.loc:hover{border-color:var(--ink-dim)}
+  .fanchip.nolink{cursor:default}
   /* type label badge — MR / CR / ISSUE … (text, glanceable, color-coded) */
-  .reschip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
+  .fanchip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
     font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.04em;border-radius:4px;
     background:var(--bg-row);border:1px solid var(--hair);color:var(--ink-dim)}
-  .reschip .rc-l{flex:1;min-width:0;font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .reschip.loc .rc-l{font-family:var(--mono);font-size:10.5px}
-  .reschip .rc-sub{flex:none;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-size:8.5px;font-family:var(--mono);color:var(--ink-faint);transition:max-width .2s,opacity .2s}
-  .reschip:hover .rc-sub{max-width:96px;opacity:1}
-  .reschip.nolink{cursor:default}
-  .reschip.k-mr,.reschip.k-pr{border-left:2.5px solid var(--mr)} .reschip.k-mr .rc-ic,.reschip.k-pr .rc-ic{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 50%,transparent)}
-  .reschip.k-cr{border-left:2.5px solid var(--cr)} .reschip.k-cr .rc-ic{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 50%,transparent)}
-  .reschip.k-issue{border-left:2.5px solid var(--needs)} .reschip.k-issue .rc-ic{color:var(--needs);border-color:var(--needs-edge)}
-  .reschip.k-deployment{border-left:2.5px solid var(--run)} .reschip.k-deployment .rc-ic{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
-  .reschip.k-doc{border-left:2.5px solid var(--cd)} .reschip.k-doc .rc-ic{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 50%,transparent)}
-  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-other{border-left:2.5px solid var(--ink-faint)}
+  .fanchip .rc-l{flex:1;min-width:0;font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fanchip.loc .rc-l{font-family:var(--mono);font-size:10.5px}
+  .fanchip .rc-sub{flex:none;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-size:8.5px;font-family:var(--mono);color:var(--ink-faint);transition:max-width .2s,opacity .2s}
+  .fanchip:hover .rc-sub{max-width:96px;opacity:1}
+  .fanchip.k-mr,.fanchip.k-pr{border-left:2.5px solid var(--mr)} .fanchip.k-mr .rc-ic,.fanchip.k-pr .rc-ic{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 50%,transparent)}
+  .fanchip.k-cr{border-left:2.5px solid var(--cr)} .fanchip.k-cr .rc-ic{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 50%,transparent)}
+  .fanchip.k-issue{border-left:2.5px solid var(--needs)} .fanchip.k-issue .rc-ic{color:var(--needs);border-color:var(--needs-edge)}
+  .fanchip.k-deployment{border-left:2.5px solid var(--run)} .fanchip.k-deployment .rc-ic{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
+  .fanchip.k-doc{border-left:2.5px solid var(--cd)} .fanchip.k-doc .rc-ic{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 50%,transparent)}
+  .fanchip.k-branch,.fanchip.k-tag,.fanchip.k-worktree,.fanchip.k-other{border-left:2.5px solid var(--ink-faint)}
   /* code-location items in the CARD DETAIL stay static rows (not floating chips) */
   .loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;
     width:100%;padding:9px 12px;border-radius:10px;text-align:left;font:inherit;cursor:pointer;
@@ -911,28 +893,27 @@
   const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'TREE'};
   const resLbl=t=>RES_LBL[(t||'').toLowerCase()]||(t||'REF').toUpperCase().slice(0,5);
   function groupByType(arts){const g={},ord=[];for(const a of (arts||[])){const t=(a.type||'other').toLowerCase();if(!g[t]){g[t]=[];ord.push(t);}g[t].push(a);}return ord.map(t=>({type:t,items:g[t]}));}
-  function extChip(a,i){const t=(a.type||'ref').toLowerCase();
-    const hasTitle=!!(a.title&&a.title.trim());
-    const head=esc(hasTitle?a.title:(a.ref_id||resLbl(t)));
-    const sub=esc(hasTitle&&a.ref_id?(resLbl(t)+' '+a.ref_id):resLbl(t));
+  // one card in the fan. ty=vertical slot (px), rot=fan angle (deg), both from JS.
+  function fanChip(a,ty,rot){const t=(a.type||'ref').toLowerCase();
+    const isLoc=RES_CODELOC.has(t), u=httpUrl(a), hasTitle=!!(a.title&&a.title.trim());
+    const head=esc(isLoc?(a.ref_id||a.title||''):(hasTitle?a.title:(a.ref_id||resLbl(t))));
+    const sub=esc(isLoc?'复制':(hasTitle&&a.ref_id?(resLbl(t)+' '+a.ref_id):resLbl(t)));
+    const style=`--ty:${ty.toFixed(1)}px;--rot:${rot.toFixed(2)}deg`;
     const inner=`<span class="rc-ic">${esc(resLbl(t))}</span><span class="rc-l">${head}</span><span class="rc-sub">${sub}</span>`;
-    const u=httpUrl(a);
-    return u?`<a class="reschip k-${esc(t)}" style="--i:${i}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
-            :`<span class="reschip nolink k-${esc(t)}" style="--i:${i}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
-  function locChip(a,i){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
-    return `<button class="reschip loc k-${esc(t)}" style="--i:${i}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="rc-ic">${esc(resLbl(t))}</span><span class="rc-l">${esc(v)}</span><span class="rc-sub">COPY</span></button>`;}
+    if(isLoc){const v=a.ref_id||a.title||'';
+      return `<button class="fanchip loc k-${esc(t)}" style="${style}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))">${inner}</button>`;}
+    return u?`<a class="fanchip k-${esc(t)}" style="${style}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
+            :`<span class="fanchip nolink k-${esc(t)}" style="${style}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
     const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
-    if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
+    const order=arts=>groupByType(arts).flatMap(g=>g.items);   // same-type adjacent in the fan
+    const all=[...order(ea),...order(la)];
+    if(!all.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
-    const clusters=(arts,fn)=>groupByType(arts).map(g=>{const n=g.items.length;
-      return `<div class="rescluster" data-type="${esc(g.type)}" style="--n:${n}">`+g.items.map(fn).join('')+(n>1?`<span class="deck-n">${n}</span>`:'')+`</div>`;}).join('');
-    let html='';
-    if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+clusters(ea,extChip);
-    if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+clusters(la,locChip);
-    res.innerHTML=html;
+    const n=all.length, maxP=(n-1)/2, VGAP=34, FAN=15;
+    res.innerHTML=all.map((a,i)=>{const p=i-maxP; return fanChip(a, p*VGAP, maxP?(p/maxP)*FAN:0);}).join('');
   }
   function setActiveTerm(sid){
     const m=getTermModal(); m.dataset.sid=sid;
