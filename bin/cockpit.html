@@ -159,7 +159,7 @@
   @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(86,211,182,0)}50%{box-shadow:0 0 8px 1px rgba(86,211,182,.6)}}
 
   /* row */
-  .row{display:grid;grid-template-columns:14px minmax(168px,250px) 1fr auto 52px 30px;align-items:center;gap:13px;
+  .row{display:grid;grid-template-columns:14px minmax(168px,250px) 1fr 52px 30px;align-items:center;gap:13px;
     padding:9px 14px;border-radius:7px;cursor:pointer;border:1px solid transparent;transition:background .12s}
   .row:hover{background:var(--bg-row-hover)}
   .dot{width:9px;height:9px;border-radius:50%;justify-self:center}
@@ -168,7 +168,7 @@
   .dot.idle{background:transparent;border:1.5px solid var(--idle)}
   .dot.done{background:var(--done)} .dot.paused{background:transparent;border:1.5px solid var(--paused)}
   .name{min-width:0}
-  .name .t{font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .name .t{font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:text;cursor:text}
   .name .ws{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);margin-top:1px;display:flex;align-items:center;gap:6px}
   .name .ws .lv{color:var(--hair);border:1px solid var(--hair);border-radius:3px;padding:0 4px;font-size:9.5px}
   body[data-view="project"] .name .ws{display:none}
@@ -363,6 +363,7 @@
     <div class="hud" id="hud"></div>
     <div class="right">
       <button class="newbtn" id="newTaskBtn" title="在选定目录里从头开始一条新的 Claude 会话(几句话之后会自动出现一张卡片)">＋ 新建任务</button>
+      <button class="iconbtn" id="collapseAllBtn" title="收起所有展开的卡片">⊟</button>
       <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill">⟳</button>
       <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
       <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button><button data-v="archive">归档</button></div>
@@ -621,9 +622,9 @@
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
-    return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
+    return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}" data-band="${r.band}" data-id="${esc(r.id||'')}" data-sid="${esc(r.session||'')}">${statusIcon(r.band,12)}`+
       `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}</div></div>`+
-      midCell(r)+`<div class="chips">${chipsRow(r.artifacts)}</div><div class="timer">${esc(r.idle)}</div><div class="go">→</div></div>`+detail(r);}
+      midCell(r)+`<div class="timer">${esc(r.idle)}</div><div class="go" title="在内嵌终端打开这条会话">▸</div></div>`+detail(r);}
   function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
     if(!rows.length)return '';
     return `<section class="band collapsed" data-band="${key}"><div class="band-head clickable"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span><span class="chev">▾</span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;}
@@ -702,7 +703,11 @@
   function wire(){
     board.querySelectorAll('.band-head.clickable').forEach(h=>h.addEventListener('click',()=>h.closest('.band').classList.toggle('collapsed')));
     board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;const sec=h.closest('.proj');sec.classList.toggle('collapsed');PCOLLAPSE[sec.dataset.ws]=sec.classList.contains('collapsed')?'c':'o';}));
-    board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){enter(e);return;}const id=row.getAttribute('data-id');const willOpen=!row.classList.contains('open');row.classList.toggle('open');if(id){willOpen?OPEN.add(id):OPEN.delete(id);}}));
+    board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){e.stopPropagation();const sid=row.getAttribute('data-sid');if(sid)openTerminal(e,sid);else toast('该工作没有关联会话');return;}
+      // if you've selected text in this row (e.g. framing the card name to copy),
+      // don't treat the mouse-up as a toggle — let the selection stand.
+      const sel=window.getSelection();if(sel&&sel.toString()&&sel.anchorNode&&row.contains(sel.anchorNode))return;
+      const id=row.getAttribute('data-id');const willOpen=!row.classList.contains('open');row.classList.toggle('open');if(id){willOpen?OPEN.add(id):OPEN.delete(id);}}));
     mini.querySelectorAll('.mnode,.mleaf').forEach(n=>n.addEventListener('click',()=>jumpTo(n.dataset.ws)));
     const mh=mini.querySelector('.mind-head');
     if(mh)mh.addEventListener('click',()=>{mini.classList.toggle('mclosed');if(!mini.classList.contains('mclosed'))requestAnimationFrame(drawMindLinks);});
@@ -916,8 +921,10 @@
     frames.forEach(f=>{ f.style.display=(f.dataset.sid===sid)?'block':'none'; });
     renderTermRes(sid);
     m.querySelector('.termtabs').innerHTML=frames.map(f=>{ const s=f.dataset.sid;
-      const lbl=s.indexOf('new-')===0?'🆕 新会话':esc(s.slice(0,8));
-      return `<span class="ttab${s===sid?' on':''}" onclick="setActiveTerm('${esc(s)}')" title="${esc(s)}">${lbl}<b onclick="endTermOne(event,'${esc(s)}')" title="结束此终端进程">×</b></span>`;
+      // label with the card's NAME (semantic), not the raw session id
+      const r=findRowForSid(s), nm=r&&r.name?r.name:'';
+      const lbl=s.indexOf('new-')===0?'🆕 新会话':esc(nm?(nm.length>16?nm.slice(0,16)+'…':nm):s.slice(0,8));
+      return `<span class="ttab${s===sid?' on':''}" onclick="setActiveTerm('${esc(s)}')" title="${esc(nm?nm+' · '+s:s)}">${lbl}<b onclick="endTermOne(event,'${esc(s)}')" title="结束此终端进程">×</b></span>`;
     }).join('');
     const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
     if(nt&&act) nt.href=act.src;
@@ -1028,6 +1035,7 @@
     }catch(_){ hideTermLoading(); toast('新建会话失败'); }
   }
   (function(){ const nb=document.getElementById('newTaskBtn'); if(nb)nb.addEventListener('click',newSession); })();
+  (function(){ const b=document.getElementById('collapseAllBtn'); if(b)b.addEventListener('click',()=>{ OPEN.clear(); document.querySelectorAll('.row.open').forEach(r=>r.classList.remove('open')); toast('已收起全部卡片'); }); })();
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
 </body>

@@ -218,7 +218,7 @@ weight that risks drift.)
     | `cr` | `aone.alibaba-inc.com/.../codereview/...`, `?cr=<id>`, `code.aone.alibaba.../cr/<id>` |
     | `mr` | `gitlab.*/-/merge_requests/<id>`, `gitlab.alibaba-inc.com/.../merge_requests/<id>`, `code.alibaba-inc.com/<group>/<repo>/codereview/<id>` |
     | `pr` | `github.com/<org>/<repo>/pull/<id>` |
-    | `issue` | `github.com/<org>/<repo>/issues/<id>`, `aone.alibaba-inc.com/.../task/<id>`, JIRA-style `[A-Z]+-\d+` |
+    | `issue` | `github.com/<org>/<repo>/issues/<id>`, Aone work-items: `aone.alibaba-inc.com/.../task/<id>`, `project.aone.alibaba-inc.com/.../req/<id>` (需求), `.../bug/<id>`, `.../task/<id>`, `.../story/<id>`, `.../workitem/<id>`, JIRA-style `[A-Z]+-\d+` |
     | `branch` | `git checkout <name>`, `branch=<name>` mentioned in plan or PR url |
     | `worktree` | a `git worktree` directory the work lives in (an absolute dir path stated as the worktree/checkout location). NOT an arbitrary edited file — only the worktree/checkout root. Put the dir path in `ref_id` (it has no URL). |
     | `tag` | `v\d+\.\d+\.\d+` mentioned as a release |
@@ -246,6 +246,13 @@ weight that risks drift.)
       Emit the entry with `ref_id: "27499051"` and `type: mr` but
       omit the `url` field entirely. The pattern table above is for
       RECOGNIZING URLs the user pasted, not for building new ones.
+    - **But ALWAYS include a verbatim URL when one IS present.** If a
+      real `http(s)://…` link for this artifact appears in `<turns>`,
+      put it in `url` — even if its path doesn't match any row in the
+      table above (the table is a non-exhaustive hint). E.g. an Aone
+      requirement `https://project.aone.alibaba-inc.com/v2/project/<pid>/req/<id>`
+      → `type: issue`, `ref_id: <id>`, `url: <that full link>`. Don't
+      drop a link just because its shape is unfamiliar.
     - **Minimum per entry: `type` + `status` + (`url` OR `ref_id`).**
     - **A semantic `title` is REQUIRED for external resources** (`cr`
       `mr` `pr` `issue` `deployment` `doc` `other`). The title is what
