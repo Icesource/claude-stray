@@ -305,28 +305,38 @@
   @media (max-width:1640px){ .termres{display:none} }
   .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 1px 3px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .termres .tr-h2{margin-top:9px}
-  /* a cluster of same-type chips: tight at rest, spreads a touch on hover */
-  .rescluster{display:flex;flex-direction:column;gap:3px;transition:gap .2s}
-  .rescluster:hover{gap:6px}
-  /* small single-line chip with a type icon + a type-colored left accent */
-  .reschip{display:flex;align-items:center;gap:7px;box-sizing:border-box;height:27px;padding:0 9px;
-    border:1px solid var(--hair);border-left-width:2.5px;border-radius:7px;background:var(--bg-elev);
-    box-shadow:0 3px 11px rgba(0,0,0,.3);text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;
-    transform-origin:left center;transition:transform .17s,box-shadow .17s,border-color .17s}
-  .reschip .rc-ic{flex:none;width:15px;text-align:center;font-size:11px;line-height:1}
+  /* same-type resources bundle into a fanned CARD STACK — like a held hand of
+     cards / a clip of bookmarks. At rest they overlap with a slight fan (each
+     readable); hover the cluster and it spreads open into a clean column.
+     --i = index in cluster, --n = cluster size (set inline by JS). */
+  .rescluster{position:relative;margin-bottom:8px;height:calc(30px + (var(--n,1) - 1) * 19px);
+    transition:height .28s cubic-bezier(.2,.85,.25,1)}
+  .rescluster:hover{height:calc(30px + (var(--n,1) - 1) * 35px);z-index:40}
+  .reschip{position:absolute;left:0;right:0;top:0;box-sizing:border-box;display:flex;align-items:center;gap:7px;
+    height:30px;padding:0 10px 0 8px;border:1px solid var(--hair);border-radius:8px;background:var(--bg-elev);
+    text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 5px 16px rgba(0,0,0,.42);
+    transform-origin:top left;
+    transform:translateY(calc(var(--i,0) * 19px)) rotate(calc(var(--i,0) * 1.7deg)) translateX(calc(var(--i,0) * 2.5px));
+    z-index:calc(20 + var(--i,0));
+    transition:transform .28s cubic-bezier(.2,.85,.25,1),box-shadow .2s,border-color .16s}
+  .rescluster:hover .reschip{transform:translateY(calc(var(--i,0) * 35px)) rotate(0) translateX(0);box-shadow:0 7px 20px rgba(0,0,0,.45)}
+  .reschip:hover{border-color:var(--run);box-shadow:0 16px 38px rgba(0,0,0,.62)!important;z-index:60!important}
+  .reschip.loc:hover{border-color:var(--ink-dim)}
+  /* type label badge — MR / CR / ISSUE … (text, glanceable, color-coded) */
+  .reschip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
+    font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.04em;border-radius:4px;
+    background:var(--bg-row);border:1px solid var(--hair);color:var(--ink-dim)}
   .reschip .rc-l{flex:1;min-width:0;font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .reschip.loc .rc-l{font-family:var(--mono);font-size:10.5px}
   .reschip .rc-sub{flex:none;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-size:8.5px;font-family:var(--mono);color:var(--ink-faint);transition:max-width .2s,opacity .2s}
-  .reschip:hover{transform:translateX(6px) scale(1.04);box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:6;border-color:var(--run)}
-  .reschip.loc:hover{border-color:var(--ink-dim)}
-  .reschip:hover .rc-sub{max-width:98px;opacity:1}
+  .reschip:hover .rc-sub{max-width:96px;opacity:1}
   .reschip.nolink{cursor:default}
-  .reschip.k-mr,.reschip.k-pr{border-left-color:var(--mr)}
-  .reschip.k-cr{border-left-color:var(--cr)}
-  .reschip.k-issue{border-left-color:var(--needs)}
-  .reschip.k-deployment{border-left-color:var(--run)}
-  .reschip.k-doc{border-left-color:var(--cd)}
-  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-other{border-left-color:var(--ink-faint)}
+  .reschip.k-mr,.reschip.k-pr{border-left:2.5px solid var(--mr)} .reschip.k-mr .rc-ic,.reschip.k-pr .rc-ic{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 50%,transparent)}
+  .reschip.k-cr{border-left:2.5px solid var(--cr)} .reschip.k-cr .rc-ic{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 50%,transparent)}
+  .reschip.k-issue{border-left:2.5px solid var(--needs)} .reschip.k-issue .rc-ic{color:var(--needs);border-color:var(--needs-edge)}
+  .reschip.k-deployment{border-left:2.5px solid var(--run)} .reschip.k-deployment .rc-ic{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
+  .reschip.k-doc{border-left:2.5px solid var(--cd)} .reschip.k-doc .rc-ic{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 50%,transparent)}
+  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-other{border-left:2.5px solid var(--ink-faint)}
   /* code-location items in the CARD DETAIL stay static rows (not floating chips) */
   .loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;
     width:100%;padding:9px 12px;border-radius:10px;text-align:left;font:inherit;cursor:pointer;
@@ -884,28 +894,28 @@
   // DD-021②: the resources (MR/ISSUE/CR/doc) this session produced, shown
   // beside its terminal so you jump to the page in one click — no hunting.
   function findRowForSid(sid){ return (DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
-  // floating-panel chips: a small type icon distinguishes the resource kind, and
-  // same-type chips render as one cluster.
-  const RES_ICON={mr:'🔀',pr:'🔀',cr:'👁',issue:'◎',deployment:'🚀',doc:'📄',other:'🔗',branch:'⎇',tag:'🏷',worktree:'📁'};
-  const resIcon=t=>RES_ICON[(t||'').toLowerCase()]||'•';
+  // floating-panel chips: a glanceable TEXT label (MR/CR/ISSUE…) marks the kind,
+  // and same-type chips render as one fanned cluster (--i index, --n cluster size).
+  const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'TREE'};
+  const resLbl=t=>RES_LBL[(t||'').toLowerCase()]||(t||'REF').toUpperCase().slice(0,5);
   function groupByType(arts){const g={},ord=[];for(const a of (arts||[])){const t=(a.type||'other').toLowerCase();if(!g[t]){g[t]=[];ord.push(t);}g[t].push(a);}return ord.map(t=>({type:t,items:g[t]}));}
-  function extChip(a){const t=(a.type||'ref').toLowerCase();
+  function extChip(a,i){const t=(a.type||'ref').toLowerCase();
     const hasTitle=!!(a.title&&a.title.trim());
-    const head=esc(hasTitle?a.title:(a.ref_id||t.toUpperCase()));
-    const sub=esc(hasTitle&&a.ref_id?(t.toUpperCase()+' '+a.ref_id):t.toUpperCase());
-    const inner=`<span class="rc-ic">${resIcon(t)}</span><span class="rc-l">${head}</span><span class="rc-sub">${sub}</span>`;
+    const head=esc(hasTitle?a.title:(a.ref_id||resLbl(t)));
+    const sub=esc(hasTitle&&a.ref_id?(resLbl(t)+' '+a.ref_id):resLbl(t));
+    const inner=`<span class="rc-ic">${esc(resLbl(t))}</span><span class="rc-l">${head}</span><span class="rc-sub">${sub}</span>`;
     const u=httpUrl(a);
-    return u?`<a class="reschip k-${esc(t)}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
-            :`<span class="reschip nolink k-${esc(t)}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
-  function locChip(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
-    return `<button class="reschip loc k-${esc(t)}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="rc-ic">${resIcon(t)}</span><span class="rc-l">${esc(v)}</span><span class="rc-sub">${esc(t.toUpperCase())}</span></button>`;}
+    return u?`<a class="reschip k-${esc(t)}" style="--i:${i}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
+            :`<span class="reschip nolink k-${esc(t)}" style="--i:${i}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
+  function locChip(a,i){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
+    return `<button class="reschip loc k-${esc(t)}" style="--i:${i}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="rc-ic">${esc(resLbl(t))}</span><span class="rc-l">${esc(v)}</span><span class="rc-sub">COPY</span></button>`;}
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
     const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
     if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
-    const clusters=(arts,fn)=>groupByType(arts).map(g=>`<div class="rescluster" data-type="${esc(g.type)}">`+g.items.map(fn).join('')+`</div>`).join('');
+    const clusters=(arts,fn)=>groupByType(arts).map(g=>`<div class="rescluster" data-type="${esc(g.type)}" style="--n:${g.items.length}">`+g.items.map(fn).join('')+`</div>`).join('');
     let html='';
     if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+clusters(ea,extChip);
     if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+clusters(la,locChip);
