@@ -308,11 +308,13 @@ def artifact_key(a: dict) -> str | None:
         return "url::" + url
     typ = (a.get("type") or "").strip().lower()
     ref = str(a.get("ref_id") or "").strip()
-    if typ and ref:
-        return f"tid::{typ}::{ref}"
     title = (a.get("title") or "").strip()
-    if typ and title:
-        return f"ttl::{typ}::{title}"
+    # DD-021: the same artifact often arrives with its name in `ref_id` on one
+    # entry and in `title` on another (e.g. a branch). Key both under one
+    # namespace on `ref_id or title` so they collapse instead of double-listing.
+    ident = ref or title
+    if typ and ident:
+        return f"tid::{typ}::{ident}"
     return None
 
 
@@ -1743,8 +1745,16 @@ def aggregate_artifacts(new_mm: dict, prior: dict,
                 # Rule 10 no longer emits it; drop it here too so legacy
                 # `commit` artifacts carried over in older dashboard.json
                 # evaporate on the next classify instead of lingering as noise.
-                if (art.get("type") or "").strip().lower() == "commit":
+                atype = (art.get("type") or "").strip().lower()
+                if atype == "commit":
                     return
+                # DD-021: a `doc` is an external resource only if it has an http
+                # url. A local file path in `url` (legacy data) is not a resource
+                # and 404s when clicked — drop it so it stops showing.
+                if atype == "doc":
+                    u = (art.get("url") or "").strip().lower()
+                    if not (u.startswith("http://") or u.startswith("https://")):
+                        return
                 k = artifact_key(art)
                 if not k:
                     return
