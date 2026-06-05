@@ -215,6 +215,51 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
     return (inner, None)
 
 
+def _ttyd_patched_index():
+    """Path to a cached copy of ttyd's index.html with the browser context menu
+    suppressed, or None. Right-click inside the terminal otherwise pops the
+    page's default menu over the selection; xterm's rightClickSelectsWord does
+    NOT stop it. ttyd's index is a single self-contained file, so we fetch it
+    once from a throwaway ttyd, inject a contextmenu preventDefault, cache it,
+    and pass it via `-I`. Regenerated when the ttyd version changes. Any failure
+    → None (caller launches ttyd without -I, unchanged behavior)."""
+    ttyd = shutil.which("ttyd")
+    if not ttyd:
+        return None
+    out = CACHE_DIR / "ttyd-index.html"
+    stamp = CACHE_DIR / "ttyd-index.ver"
+    try:
+        r = subprocess.run([ttyd, "--version"], capture_output=True, text=True)
+        ver = (r.stdout + r.stderr).strip()
+    except Exception:
+        ver = ""
+    try:
+        if out.exists() and stamp.exists() and stamp.read_text().strip() == ver:
+            return str(out)
+    except Exception:
+        pass
+    import socket as _socket, urllib.request as _ureq
+    proc = None
+    try:
+        s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+        proc = subprocess.Popen([ttyd, "-p", str(port), "-i", "127.0.0.1", "bash", "-lc", "sleep 6"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        time.sleep(0.6)
+        html = _ureq.urlopen(f"http://127.0.0.1:{port}/", timeout=3).read().decode("utf-8", "replace")
+        inject = ("<script>window.addEventListener('contextmenu',"
+                  "function(e){e.preventDefault();},true);</script>")
+        html = html.replace("</body>", inject + "</body>", 1) if "</body>" in html else html + inject
+        out.write_text(html)
+        stamp.write_text(ver)
+        return str(out)
+    except Exception:
+        return None
+    finally:
+        if proc is not None:
+            try: proc.terminate()
+            except Exception: pass
+
+
 def _resume_cwd_for(sid: str) -> str:
     """The cwd `claude --resume <sid>` MUST run from. claude resolves a session
     by the project dir derived from the *current* cwd, and a session's jsonl is
@@ -1084,6 +1129,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/delete": return self._handle_delete(body)
         if path == "/api/archive": return self._handle_archive(body)
         if path == "/api/terminal": return self._handle_terminal(body)
+        if path == "/api/new-session": return self._handle_new_session(body)
         if path == "/api/terminal-close": return self._handle_terminal_close(body)
         if path == "/api/send": return self._handle_send(body)
         if path == "/api/suggest": return self._handle_suggest(body)
@@ -1242,20 +1288,23 @@ class Handler(BaseHTTPRequestHandler):
         # would panic with "trying to attach to the current session". Clearing
         # it makes ttyd's shell a fresh client that can attach/mirror.
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
+        # rendererType=dom → terminal is real selectable DOM text (canvas/webgl
+        #   is pixels → unselectable). Enables drag-select + ⌘C / right-click Copy.
+        # rightClickSelectsWord=true → right-click selects the word under cursor.
+        # -I patched index → suppresses the browser's own context menu so it no
+        #   longer pops over the selection (the rightClickSelectsWord option alone
+        #   does NOT stop it). Falls back to no -I if patching fails.
+        args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
+                "-t", "titleFixed=" + sid[:8],
+                "-t", "rendererType=dom",
+                "-t", "rightClickSelectsWord=true"]
+        idx = _ttyd_patched_index()
+        if idx:
+            args += ["-I", idx]
+        args += ["bash", "-lc", inner]
         try:
             proc = subprocess.Popen(
-                # rendererType=dom → terminal is real selectable DOM text (the
-                #   canvas/webgl renderer is pixels, so the browser can't
-                #   select/copy it). This makes drag-select + ⌘C / right-click
-                #   Copy work natively.
-                # rightClickSelectsWord=true → right-click selects a word and
-                #   suppresses the page's default context menu in the terminal.
-                [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
-                 "-t", "titleFixed=" + sid[:8],
-                 "-t", "rendererType=dom",
-                 "-t", "rightClickSelectsWord=true",
-                 "bash", "-lc", inner],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env,
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env,
                 start_new_session=True)  # detach: serve Ctrl-C must NOT kill the terminal
         except Exception as e:
             return self._reply(500, {"error": str(e)})
@@ -1263,6 +1312,44 @@ class Handler(BaseHTTPRequestHandler):
         _save_terminals()
         time.sleep(0.4)  # let ttyd bind before the browser connects
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "mode": mode})
+
+    def _handle_new_session(self, body: dict):
+        """Start a FRESH claude session in a chosen directory, in an embedded
+        terminal — the 'new card from scratch' action. claude mints a brand-new
+        session_id; once the user does work, the Stop/SessionStart hooks surface
+        it as a card automatically. Body: {cwd}. There's no sid yet, so the
+        terminal is keyed by an ephemeral token; a holder keeps it alive across a
+        page refresh just like a resumed one."""
+        ttyd = shutil.which("ttyd")
+        if not ttyd:
+            return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
+        cwd = (body.get("cwd") or "").strip()
+        cwd = os.path.expanduser(cwd) if cwd else os.path.expanduser("~")
+        if not os.path.isdir(cwd):
+            return self._reply(400, {"error": "not a directory", "hint": cwd})
+        import uuid as _uuid
+        token = "new-" + _uuid.uuid4().hex[:8]
+        inner = "cd " + shlex.quote(cwd) + " && claude --dangerously-skip-permissions"
+        inner, holder_name = _wrap_in_holder(token, inner)
+        import socket as _socket
+        s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+        child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
+        args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
+                "-t", "titleFixed=new", "-t", "rendererType=dom",
+                "-t", "rightClickSelectsWord=true"]
+        idx = _ttyd_patched_index()
+        if idx:
+            args += ["-I", idx]
+        args += ["bash", "-lc", inner]
+        try:
+            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    env=child_env, start_new_session=True)
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
+        _save_terminals()
+        time.sleep(0.4)
+        return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token, "cwd": cwd})
 
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and
