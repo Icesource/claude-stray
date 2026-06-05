@@ -1670,8 +1670,8 @@ def aggregate_artifacts(new_mm: dict, prior: dict,
     aggregate_tasks.
 
     Invariant (the one the user actually cares about): once an MR / PR /
-    CR / issue / commit / etc. has been seen for an initiative, it stays
-    on that initiative until the **user** explicitly removes it via
+    CR / issue / deployment / etc. has been seen for an initiative, it
+    stays on that initiative until the **user** explicitly removes it via
     `hidden_artifacts` in user_overrides.json. AI is allowed to add new
     entries and push status forward — never to delete and never to
     revert a terminal status.
@@ -1739,6 +1739,12 @@ def aggregate_artifacts(new_mm: dict, prior: dict,
                 `source_recency` is used to break status ties (most
                 recent wins, with terminal-monotone clamp).
                 """
+                # DD-021: a commit SHA is a step, not a follow-up resource.
+                # Rule 10 no longer emits it; drop it here too so legacy
+                # `commit` artifacts carried over in older dashboard.json
+                # evaporate on the next classify instead of lingering as noise.
+                if (art.get("type") or "").strip().lower() == "commit":
+                    return
                 k = artifact_key(art)
                 if not k:
                     return

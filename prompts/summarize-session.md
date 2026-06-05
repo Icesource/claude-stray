@@ -39,7 +39,7 @@ status_guess: active | paused | done | abandoned
 next_step: 跑 daily 验证 tri 路由到 12222   # see Rule 14. one concrete next action, ≤ 80 chars. omit if none.
 awaiting_user: 确认是否接受仅兼容 3 个 _ALL ACL   # see Rule 14. ONLY when blocked on the human. omit otherwise.
 artifacts:                                # see Rule 10. omit key if none.
-  - type: cr                              # cr|mr|pr|issue|branch|commit|tag|deployment|doc|other
+  - type: cr                              # cr|mr|pr|issue|deployment|doc|branch|tag|worktree|other  (NO commit; doc=external URL only)
     title: HSF EagleEye 链路追踪修复       # ≤ 60 chars, omit if none
     ref_id: "27369464"                    # platform-specific id, optional
     url: https://aone.alibaba-inc.com/code/g/...?cr=27369464
@@ -184,11 +184,28 @@ weight that risks drift.)
    `tools` + `edits` signals. Don't write "(无)" just because turns
    are sparse on text.
 
-10. **artifacts: extract concrete deliverable references.** A session
-    often produces or references CRs, merge requests, GitHub PRs,
-    issues, branches, commit SHAs, deploy/release tags, or doc links
-    that the user will want to follow up on. Walk `<turns>` and pull
-    every distinct one out.
+10. **artifacts: extract resources, not steps.** A resource is a
+    durable, externally-addressable handle the user will follow up on
+    or hand off — it must (a) have an external address (URL or an ID
+    that resolves to one), (b) be an outcome not an intermediate step,
+    (c) live outside the session (on a server / as a stable work
+    anchor). Walk `<turns>` and pull every distinct one out. The
+    artifact types fall into two groups:
+
+    - **External resources** (the follow-up endpoints): `cr` `mr` `pr`
+      `issue` `deployment` `doc` `other`.
+    - **Code location** (anchors to re-enter the work): `branch` `tag`
+      `worktree`.
+
+    **Do NOT emit these — they are noise, not resources:**
+    - **`commit`** — a commit SHA is an internal *step*, not a
+      follow-up endpoint. Never emit `type: commit`. (A commit may
+      appear as *evidence* on a task; that's fine — it just isn't an
+      artifact.)
+    - **Local file paths** — a path to a file you edited is not a
+      resource: no external address, and it goes stale the moment a
+      branch is switched. Never emit a file path as an artifact. This
+      includes repo-local docs — see `doc` below.
 
     **URL pattern table — for RECOGNITION ONLY, not construction.**
     These patterns help you *spot* a URL in `<turns>` and classify
@@ -203,11 +220,11 @@ weight that risks drift.)
     | `pr` | `github.com/<org>/<repo>/pull/<id>` |
     | `issue` | `github.com/<org>/<repo>/issues/<id>`, `aone.alibaba-inc.com/.../task/<id>`, JIRA-style `[A-Z]+-\d+` |
     | `branch` | `git checkout <name>`, `branch=<name>` mentioned in plan or PR url |
-    | `commit` | 7-40 hex SHA followed by " (commit)" / " 提交" |
+    | `worktree` | a `git worktree` directory the work lives in (an absolute dir path stated as the worktree/checkout location). NOT an arbitrary edited file — only the worktree/checkout root. Put the dir path in `ref_id` (it has no URL). |
     | `tag` | `v\d+\.\d+\.\d+` mentioned as a release |
     | `deployment` | "上线 / 灰度 / publish / deploy" + a target env |
-    | `doc` | `yuque.com/...`, `confluence/...`, `notion.so/...`, internal wiki URL |
-    | `other` | anything else worth tracking (e.g. a forum thread) |
+    | `doc` | **external doc URL only** — `yuque.com/...`, `confluence/...`, `notion.so/...`, internal wiki URL. A repo-local path like `docs/xxx.md` is NOT a doc artifact (it's a local file path — do not emit). |
+    | `other` | anything else with an external URL worth tracking (e.g. a forum thread) |
 
     `status` enum by type:
 
@@ -216,7 +233,7 @@ weight that risks drift.)
     | cr/mr/pr | `pending` (awaiting review), `approved`, `merged`, `closed`, `unknown` |
     | issue | `open`, `closed`, `wontfix`, `unknown` |
     | branch | `active`, `merged`, `stale`, `unknown` |
-    | commit | `pushed`, `local`, `unknown` |
+    | worktree | `active`, `removed`, `unknown` |
     | tag | `released`, `unknown` |
     | deployment | `pending`, `live`, `rolled-back`, `unknown` |
     | doc/other | `unknown` |
