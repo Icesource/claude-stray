@@ -294,47 +294,47 @@
   .empty-state .es-spin{width:24px;height:24px;margin:0 auto 14px;border:3px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
   .termbody{flex:1;min-height:0;display:flex}
   .termstack{flex:1;min-height:0;display:flex;position:relative}
-  /* DD-021②: resources float as INDIVIDUAL tags in the right gutter beside the
-     terminal modal (modal is centered, max 1120px → wide screens leave a gutter).
-     Each tag rests tucked toward the edge, compact; hover pops it out + enlarges
-     + reveals detail. Narrow screens have no gutter → hide (card detail still
-     lists them). Left gutter is reserved for future "next sentence" suggestions. */
+  /* DD-021②: resources float as small single-line chips just OFF the terminal's
+     RIGHT edge — they radiate out FROM the webterminal, not from the screen edge.
+     Same-type chips form a tight cluster; hover a chip to enlarge + reveal its id.
+     Legible at rest. Narrow screens (no gutter) hide it; card detail still lists. */
   .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);
-    right:clamp(14px,2vw,42px);left:auto;width:250px;max-height:90vh;
+    left:calc(50% + 566px);right:auto;width:238px;max-height:90vh;
     display:flex;flex-direction:column;gap:9px;padding:4px 2px;overflow:visible}
   .termres[hidden]{display:none}
-  @media (max-width:1740px){ .termres{display:none} }
-  .termres .tr-h{font-size:9px;font-family:var(--mono);letter-spacing:.12em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 0 4px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
-  .termres .tr-h2{margin-top:10px}
-  /* base tag look — shared by the floating panel and the card detail */
-  .tr-item,.loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:5px;
-    width:100%;padding:9px 12px;border-radius:12px;text-decoration:none;text-align:left;font:inherit;cursor:pointer;
+  @media (max-width:1640px){ .termres{display:none} }
+  .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 1px 3px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+  .termres .tr-h2{margin-top:9px}
+  /* a cluster of same-type chips: tight at rest, spreads a touch on hover */
+  .rescluster{display:flex;flex-direction:column;gap:3px;transition:gap .2s}
+  .rescluster:hover{gap:6px}
+  /* small single-line chip with a type icon + a type-colored left accent */
+  .reschip{display:flex;align-items:center;gap:7px;box-sizing:border-box;height:27px;padding:0 9px;
+    border:1px solid var(--hair);border-left-width:2.5px;border-radius:7px;background:var(--bg-elev);
+    box-shadow:0 3px 11px rgba(0,0,0,.3);text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;
+    transform-origin:left center;transition:transform .17s,box-shadow .17s,border-color .17s}
+  .reschip .rc-ic{flex:none;width:15px;text-align:center;font-size:11px;line-height:1}
+  .reschip .rc-l{flex:1;min-width:0;font-size:11px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .reschip.loc .rc-l{font-family:var(--mono);font-size:10.5px}
+  .reschip .rc-sub{flex:none;max-width:0;opacity:0;overflow:hidden;white-space:nowrap;font-size:8.5px;font-family:var(--mono);color:var(--ink-faint);transition:max-width .2s,opacity .2s}
+  .reschip:hover{transform:translateX(6px) scale(1.04);box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:6;border-color:var(--run)}
+  .reschip.loc:hover{border-color:var(--ink-dim)}
+  .reschip:hover .rc-sub{max-width:98px;opacity:1}
+  .reschip.nolink{cursor:default}
+  .reschip.k-mr,.reschip.k-pr{border-left-color:var(--mr)}
+  .reschip.k-cr{border-left-color:var(--cr)}
+  .reschip.k-issue{border-left-color:var(--needs)}
+  .reschip.k-deployment{border-left-color:var(--run)}
+  .reschip.k-doc{border-left-color:var(--cd)}
+  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-other{border-left-color:var(--ink-faint)}
+  /* code-location items in the CARD DETAIL stay static rows (not floating chips) */
+  .loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;
+    width:100%;padding:9px 12px;border-radius:10px;text-align:left;font:inherit;cursor:pointer;
     border:1px solid var(--hair);background:var(--bg-elev)}
-  a.tr-item:hover{border-color:var(--run)}
   .loc-item:hover{border-color:var(--ink-dim)}
-  .tr-item.nolink{cursor:default}
-  .tr-item .tr-k,.loc-item .loc-k{align-self:flex-start;font-size:8.5px;font-family:var(--mono);letter-spacing:.07em;font-weight:700;text-transform:uppercase}
-  .tr-item .tr-k{padding:2px 6px;border-radius:5px;background:var(--bg-row);border:1px solid var(--hair);color:var(--ink-dim)}
-  .tr-item .tr-k.k-mr,.tr-item .tr-k.k-pr{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 45%,transparent)}
-  .tr-item .tr-k.k-cr{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 45%,transparent)}
-  .tr-item .tr-k.k-issue{color:var(--needs);border-color:var(--needs-edge)}
-  .tr-item .tr-k.k-deployment{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
-  .tr-item .tr-k.k-doc{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 45%,transparent)}
-  .loc-item .loc-k{color:var(--ink-dim)}
-  .tr-item .tr-l{font-size:12px;color:var(--ink);line-height:1.38;word-break:break-word}
-  .tr-item .tr-sub{font-size:9.5px;font-family:var(--mono);color:var(--ink-faint);word-break:break-all}
+  .loc-item .loc-k{align-self:flex-start;font-size:8.5px;font-family:var(--mono);letter-spacing:.07em;font-weight:700;text-transform:uppercase;color:var(--ink-dim)}
   .loc-item .loc-v{font-size:11px;font-family:var(--mono);color:var(--ink);line-height:1.35;word-break:break-all}
   .loc-row{display:flex;flex-direction:column;gap:7px;margin:2px 0 4px}
-  /* floating behavior — ONLY in the right-gutter panel: each tag rests tucked +
-     compact, hover pops it out, enlarges, and reveals detail (clamp → full). */
-  .termres .tr-item,.termres .loc-item{box-shadow:0 7px 20px rgba(0,0,0,.36);
-    transform-origin:right center;transform:translateX(15px) scale(.965);
-    transition:transform .24s cubic-bezier(.2,.75,.2,1),box-shadow .24s,border-color .18s}
-  .termres .tr-item:hover,.termres .loc-item:hover{transform:translateX(-10px) scale(1.055);box-shadow:0 18px 46px rgba(0,0,0,.55);z-index:6}
-  .termres .tr-item .tr-l,.termres .loc-item .loc-v{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1}
-  .termres .tr-item:hover .tr-l,.termres .loc-item:hover .loc-v{-webkit-line-clamp:4}
-  .termres .tr-item .tr-sub{max-height:0;opacity:0;overflow:hidden;transition:max-height .24s,opacity .24s}
-  .termres .tr-item:hover .tr-sub{max-height:36px;opacity:1}
   .term-loading{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0b0d}
   .term-loading[hidden]{display:none}
   .tl-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.14);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
@@ -884,27 +884,31 @@
   // DD-021②: the resources (MR/ISSUE/CR/doc) this session produced, shown
   // beside its terminal so you jump to the page in one click — no hunting.
   function findRowForSid(sid){ return (DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
+  // floating-panel chips: a small type icon distinguishes the resource kind, and
+  // same-type chips render as one cluster.
+  const RES_ICON={mr:'🔀',pr:'🔀',cr:'👁',issue:'◎',deployment:'🚀',doc:'📄',other:'🔗',branch:'⎇',tag:'🏷',worktree:'📁'};
+  const resIcon=t=>RES_ICON[(t||'').toLowerCase()]||'•';
+  function groupByType(arts){const g={},ord=[];for(const a of (arts||[])){const t=(a.type||'other').toLowerCase();if(!g[t]){g[t]=[];ord.push(t);}g[t].push(a);}return ord.map(t=>({type:t,items:g[t]}));}
+  function extChip(a){const t=(a.type||'ref').toLowerCase();
+    const hasTitle=!!(a.title&&a.title.trim());
+    const head=esc(hasTitle?a.title:(a.ref_id||t.toUpperCase()));
+    const sub=esc(hasTitle&&a.ref_id?(t.toUpperCase()+' '+a.ref_id):t.toUpperCase());
+    const inner=`<span class="rc-ic">${resIcon(t)}</span><span class="rc-l">${head}</span><span class="rc-sub">${sub}</span>`;
+    const u=httpUrl(a);
+    return u?`<a class="reschip k-${esc(t)}" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${inner}</a>`
+            :`<span class="reschip nolink k-${esc(t)}" title="未捕获完整 URL(装全局提示词后会带 URL)">${inner}</span>`;}
+  function locChip(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
+    return `<button class="reschip loc k-${esc(t)}" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="rc-ic">${resIcon(t)}</span><span class="rc-l">${esc(v)}</span><span class="rc-sub">${esc(t.toUpperCase())}</span></button>`;}
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
     const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
     if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
+    const clusters=(arts,fn)=>groupByType(arts).map(g=>`<div class="rescluster" data-type="${esc(g.type)}">`+g.items.map(fn).join('')+`</div>`).join('');
     let html='';
-    if(ea.length){html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+ea.map(a=>{
-      const tl=(a.type||'ref').toLowerCase(), t=tl.toUpperCase();
-      // semantic title is the headline; the raw id is a small secondary line so
-      // a bare "CR 27369464" never stands alone as the label (DD-021).
-      const hasTitle=!!(a.title&&a.title.trim());
-      const head=esc(hasTitle?a.title:(a.ref_id||t));
-      const sub=hasTitle&&a.ref_id?`<span class="tr-sub">${esc(t)} ${esc(a.ref_id)}</span>`:'';
-      const badge=`<span class="tr-k k-${esc(tl)}">${esc(t)}</span>`;
-      const u=httpUrl(a);
-      return u
-        ? `<a class="tr-item" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${badge}<span class="tr-l">${head}</span>${sub}</a>`
-        : `<div class="tr-item nolink" title="未捕获完整 URL(装全局提示词后会带 URL)">${badge}<span class="tr-l">${head}</span>${sub}</div>`;
-    }).join('');}
-    if(la.length){html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+la.map(locItem).join('');}
+    if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+clusters(ea,extChip);
+    if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+clusters(la,locChip);
     res.innerHTML=html;
   }
   function setActiveTerm(sid){
