@@ -305,23 +305,31 @@
   @media (max-width:1640px){ .termres{display:none} }
   .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 1px 3px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .termres .tr-h2{margin-top:9px}
-  /* same-type resources bundle into a fanned CARD STACK — like a held hand of
-     cards / a clip of bookmarks. At rest they overlap with a slight fan (each
-     readable); hover the cluster and it spreads open into a clean column.
-     --i = index in cluster, --n = cluster size (set inline by JS). */
-  .rescluster{position:relative;margin-bottom:8px;height:calc(30px + (var(--n,1) - 1) * 19px);
-    transition:height .28s cubic-bezier(.2,.85,.25,1)}
-  .rescluster:hover{height:calc(30px + (var(--n,1) - 1) * 35px);z-index:40}
+  /* same-type resources collapse into a CARD DECK: at rest only the top card is
+     full, with up to 2 backs peeking + a ×N count — so even 7 CRs stay compact.
+     Hover the deck and it fans open into a clean, readable column. The rest layout
+     is capped via :nth-child (never cascades); hover spread uses --i. */
+  .rescluster{position:relative;margin-bottom:9px;height:calc(30px + min(var(--n,1) - 1, 2) * 4px);
+    transition:height .3s cubic-bezier(.2,.85,.25,1)}
+  .rescluster:hover{height:calc(30px + (var(--n,1) - 1) * 34px);z-index:40}
   .reschip{position:absolute;left:0;right:0;top:0;box-sizing:border-box;display:flex;align-items:center;gap:7px;
     height:30px;padding:0 10px 0 8px;border:1px solid var(--hair);border-radius:8px;background:var(--bg-elev);
     text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;box-shadow:0 5px 16px rgba(0,0,0,.42);
-    transform-origin:top left;
-    transform:translateY(calc(var(--i,0) * 19px)) rotate(calc(var(--i,0) * 1.7deg)) translateX(calc(var(--i,0) * 2.5px));
-    z-index:calc(20 + var(--i,0));
-    transition:transform .28s cubic-bezier(.2,.85,.25,1),box-shadow .2s,border-color .16s}
-  .rescluster:hover .reschip{transform:translateY(calc(var(--i,0) * 35px)) rotate(0) translateX(0);box-shadow:0 7px 20px rgba(0,0,0,.45)}
+    transform-origin:top center;transform:translateY(9px) scale(.93);opacity:0;z-index:10;
+    transition:transform .3s cubic-bezier(.2,.85,.25,1),opacity .24s,box-shadow .2s,border-color .16s}
+  /* rest: top card + at most 2 peeking backs; deeper cards hidden behind */
+  .rescluster .reschip:nth-child(1){transform:translateY(0) scale(1) rotate(0);opacity:1;z-index:33}
+  .rescluster .reschip:nth-child(2){transform:translateY(4px) scale(.972) rotate(.7deg);opacity:.55;z-index:32}
+  .rescluster .reschip:nth-child(3){transform:translateY(8px) scale(.944) rotate(1.3deg);opacity:.3;z-index:31}
+  /* hover: fan the whole deck open into a readable column */
+  .rescluster:hover .reschip{transform:translateY(calc(var(--i,0) * 34px)) scale(1) rotate(0);opacity:1;z-index:calc(33 - var(--i,0));box-shadow:0 7px 20px rgba(0,0,0,.45)}
   .reschip:hover{border-color:var(--run);box-shadow:0 16px 38px rgba(0,0,0,.62)!important;z-index:60!important}
   .reschip.loc:hover{border-color:var(--ink-dim)}
+  /* ×N count on a collapsed deck (hidden once fanned open) */
+  .deck-n{position:absolute;top:7px;right:8px;z-index:38;font-family:var(--mono);font-size:8px;font-weight:700;
+    color:var(--ink-dim);background:var(--bg-row);border:1px solid var(--hair);border-radius:4px;padding:1px 4px;
+    pointer-events:none;transition:opacity .18s}
+  .rescluster:hover .deck-n{opacity:0}
   /* type label badge — MR / CR / ISSUE … (text, glanceable, color-coded) */
   .reschip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
     font-family:var(--mono);font-size:8px;font-weight:700;letter-spacing:.04em;border-radius:4px;
@@ -574,12 +582,16 @@
   // only an http(s) url is a real, openable external link. A local file path in
   // `url` (legacy data) is NOT — never render it as a link (it 404s on serve).
   const httpUrl=a=>{const u=(a&&a.url||'').trim();return /^https?:\/\//i.test(u)?u:'';};
-  // dedupe: same artifact can arrive with its name in ref_id on one entry and
-  // title on another → different keys upstream. Collapse by http-url, else by
-  // type+name (ref_id||title), so identical branches/docs don't double up.
-  const artKey=a=>{const u=httpUrl(a);if(u)return 'u:'+u;
-    const t=(a.type||'').toLowerCase(),n=((a.ref_id||a.title||'')+'').trim().toLowerCase();return t+':'+n;};
-  const dedupe=arts=>{const seen=new Set();return (arts||[]).filter(a=>{const k=artKey(a);if(seen.has(k))return false;seen.add(k);return true;});};
+  // dedupe key: prefer (type, ref_id) — the SAME artifact often arrives once
+  // WITH a url and once WITHOUT (different AI runs), so keying on url first would
+  // split them. ref_id is the stable identity; fall back to url, then title.
+  const artKey=a=>{const t=(a.type||'').toLowerCase();
+    const ref=((a.ref_id||'')+'').trim().toLowerCase(); if(ref)return t+':'+ref;
+    const u=httpUrl(a); if(u)return 'u:'+u;
+    return t+':'+((a.title||'')+'').trim().toLowerCase();};
+  // collapse duplicates, but keep the variant that HAS an http url (clickable).
+  const dedupe=arts=>{const m=new Map();for(const a of (arts||[])){const k=artKey(a),ex=m.get(k);
+    if(!ex||(!httpUrl(ex)&&httpUrl(a)))m.set(k,a);} return [...m.values()];};
   // a `doc` is external only if it has an http url (DD-021: local doc paths are
   // not resources). Drop local-path docs so they don't show as dead links.
   const isExternal=a=>{const t=(a.type||'').toLowerCase();if(!RES_EXTERNAL.has(t))return false;
@@ -915,7 +927,8 @@
     const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
     if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
-    const clusters=(arts,fn)=>groupByType(arts).map(g=>`<div class="rescluster" data-type="${esc(g.type)}" style="--n:${g.items.length}">`+g.items.map(fn).join('')+`</div>`).join('');
+    const clusters=(arts,fn)=>groupByType(arts).map(g=>{const n=g.items.length;
+      return `<div class="rescluster" data-type="${esc(g.type)}" style="--n:${n}">`+g.items.map(fn).join('')+(n>1?`<span class="deck-n">${n}</span>`:'')+`</div>`;}).join('');
     let html='';
     if(ea.length) html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+clusters(ea,extChip);
     if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+clusters(la,locChip);

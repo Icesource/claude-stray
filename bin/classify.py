@@ -303,18 +303,20 @@ def artifact_key(a: dict) -> str | None:
     """
     if not isinstance(a, dict):
         return None
-    url = (a.get("url") or "").strip()
-    if url.startswith("http://") or url.startswith("https://"):
-        return "url::" + url
     typ = (a.get("type") or "").strip().lower()
     ref = str(a.get("ref_id") or "").strip()
     title = (a.get("title") or "").strip()
-    # DD-021: the same artifact often arrives with its name in `ref_id` on one
-    # entry and in `title` on another (e.g. a branch). Key both under one
-    # namespace on `ref_id or title` so they collapse instead of double-listing.
-    ident = ref or title
-    if typ and ident:
-        return f"tid::{typ}::{ident}"
+    # DD-021: prefer (type, ref_id) as identity. The SAME artifact often arrives
+    # once WITH a url and once WITHOUT (different runs), and once with its name in
+    # ref_id vs title — keying on url first would split those into duplicates.
+    # ref_id is the stable id; fall back to url, then title.
+    if typ and ref:
+        return f"tid::{typ}::{ref}"
+    url = (a.get("url") or "").strip()
+    if url.startswith("http://") or url.startswith("https://"):
+        return "url::" + url
+    if typ and title:
+        return f"tid::{typ}::{title}"
     return None
 
 
