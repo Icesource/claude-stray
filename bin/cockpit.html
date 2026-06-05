@@ -204,6 +204,7 @@
   .detail .sealed-note{font-size:11.5px;color:var(--ink-faint);background:var(--proj-open);border:1px solid var(--hair-soft);border-radius:7px;padding:7px 9px;margin-bottom:10px;line-height:1.5}
   .detail .sealed-note code{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim)}
   .name .ws .lv.sealed{color:var(--ink-faint);border-color:var(--hair-soft)}
+  .name .ws .lv.arch{color:var(--done);border-color:color-mix(in srgb,var(--done) 40%,transparent)}
   .row.is-sealed .name .t{color:var(--ink-dim)}
   .detail .progress{font-size:13px;color:var(--ink);margin-bottom:12px;line-height:1.5}
   .detail .prog-steps{list-style:none;margin:2px 0 12px;padding:0;display:flex;flex-direction:column;gap:5px}
@@ -371,6 +372,7 @@
   const PCOLLAPSE = {};      // ws -> 'o'|'c' : manual project collapse override
   let lastSig = null;        // skip re-render when nothing actually changed
   let MINDMAP = {workspaces:[]};
+  let ARCHIVED = [];          // [{ws_name, init, archived_at}] — filed-away cards
   let LIVE = {};
   let SYNC = {};            // first-sync health {state,reason,log_tail} from /api/data
   let CLAUDE_OK = true;     // is the `claude` CLI available (precondition for sync)
@@ -431,6 +433,20 @@
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
+    // Archiving a card = "done & filed away". Surface the RECENTLY-archived ones
+    // (≤36h) in the done band so 今天完成 reflects what you just archived. Older
+    // archives stay only in the 归档 weekly view, to avoid flooding the band.
+    const _seen=new Set(rows.map(r=>r.id)), DAY36=36*3600;
+    for(const a of (ARCHIVED||[])){ const init=a.init||{}; if(!init.id||_seen.has(init.id))continue;
+      const iso=a.archived_at||init.last_activity_at; if(idleSecs(iso)>DAY36)continue;
+      const tasks=init.tasks||[];
+      rows.push({ id:init.id, name:init.name, ws:a.ws_name||'', status:'archived', level:init.level,
+        band:'done', reason:'已归档', idle:humanIdle(iso), idle_secs:idleSecs(iso),
+        artifacts:init.artifacts||[], blockers:[], tasks_total:tasks.length, tasks_pending:0,
+        sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
+        session:(init.sessions||[])[0]||init.origin_session||null,
+        sealed:!!init.sealed, origin_session:init.origin_session||null, archived:true,
+        next_step:null, awaiting_user:null, progress:init.progress, summary:init.summary }); }
     rows.sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
     const counts={}; rows.forEach(r=>counts[r.band]=(counts[r.band]||0)+1);
     DATA={counts, rows};
@@ -465,6 +481,7 @@
       fetch(ORIGIN+'/api/data').then(r=>r.json()),
       fetch(ORIGIN+'/api/live').then(r=>r.json()).catch(()=>({live:{}})) ]);
     MINDMAP=(d&&d.mindmap)||{workspaces:[]}; LIVE=(l&&l.live)||{};
+    ARCHIVED=(d&&d.archived)||[];
     LOCATIONS=(d&&d.locations&&d.locations.by_session_id)||{};
     SYNC=(d&&d.sync)||{}; CLAUDE_OK=!(d&&d.claude_ok===false);
     buildRows(); refreshUI();
@@ -586,8 +603,8 @@
     h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="suggestReplies(event,'${sid0}')" title="AI 建议接下来发给这条会话的下一句(全局视角,多选)">建议下一句 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
-    const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:'';
-    return `<div class="row${r.sealed?' is-sealed':''}" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
+    const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
+    return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}" data-band="${r.band}" data-id="${esc(r.id||'')}">${statusIcon(r.band,12)}`+
       `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}</div></div>`+
       midCell(r)+`<div class="chips">${chipsRow(r.artifacts)}</div><div class="timer">${esc(r.idle)}</div><div class="go">→</div></div>`+detail(r);}
   function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
