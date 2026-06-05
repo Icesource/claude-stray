@@ -40,7 +40,7 @@ next_step: 跑 daily 验证 tri 路由到 12222   # see Rule 14. one concrete ne
 awaiting_user: 确认是否接受仅兼容 3 个 _ALL ACL   # see Rule 14. ONLY when blocked on the human. omit otherwise.
 artifacts:                                # see Rule 10. omit key if none.
   - type: cr                              # cr|mr|pr|issue|deployment|doc|branch|tag|worktree|other  (NO commit; doc=external URL only)
-    title: HSF EagleEye 链路追踪修复       # ≤ 60 chars, omit if none
+    title: HSF EagleEye 链路追踪修复       # ≤ 60 chars; REQUIRED & semantic for external resources (not a bare id)
     ref_id: "27369464"                    # platform-specific id, optional
     url: https://aone.alibaba-inc.com/code/g/...?cr=27369464
     status: pending                       # see Rule 10 enum table
@@ -247,8 +247,16 @@ weight that risks drift.)
       omit the `url` field entirely. The pattern table above is for
       RECOGNIZING URLs the user pasted, not for building new ones.
     - **Minimum per entry: `type` + `status` + (`url` OR `ref_id`).**
-      Title is nice-to-have. An entry with only `ref_id` is fine —
-      better a partial record than a hallucinated link.
+    - **A semantic `title` is REQUIRED for external resources** (`cr`
+      `mr` `pr` `issue` `deployment` `doc` `other`). The title is what
+      the user reads in the cockpit — a bare id like "CR 27369464" or
+      "MR 27752189" is useless on its own. Write a short human-readable
+      description of *what this resource is* from the conversation
+      context (e.g. `HSF EagleEye 链路追踪修复`, not `27369464`). ≤ 60
+      chars, in output_lang. Only if the transcript truly gives no clue
+      what it's about may you fall back to id-only. Code-location types
+      (`branch` `tag` `worktree`) don't need a title — their name/path
+      is already meaningful.
     - **`status` from latest turn that talks about it.** If user said
       "CR passed review" 5 turns ago and nothing newer, status is
       `approved` (not `merged`). Don't infer further than evidence.
