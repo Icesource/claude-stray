@@ -276,41 +276,47 @@
   .empty-state .es-spin{width:24px;height:24px;margin:0 auto 14px;border:3px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
   .termbody{flex:1;min-height:0;display:flex}
   .termstack{flex:1;min-height:0;display:flex;position:relative}
-  /* DD-021②: resources float as a card in the RIGHT gutter beside the terminal
-     modal (the modal is centered, max 1120px → wide screens leave a gutter).
-     On narrower screens there's no gutter, so hide it — the card detail still
-     lists the same resources. Left gutter is reserved for future suggestions. */
+  /* DD-021②: resources float as INDIVIDUAL tags in the right gutter beside the
+     terminal modal (modal is centered, max 1120px → wide screens leave a gutter).
+     Each tag rests tucked toward the edge, compact; hover pops it out + enlarges
+     + reveals detail. Narrow screens have no gutter → hide (card detail still
+     lists them). Left gutter is reserved for future "next sentence" suggestions. */
   .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);
-    right:clamp(16px,2.2vw,46px);left:auto;width:256px;max-height:84vh;overflow-y:auto;
-    display:flex;flex-direction:column;gap:7px;padding:15px 13px 17px;
-    background:var(--bg-elev);border:1px solid var(--hair);border-radius:14px;
-    box-shadow:0 20px 56px rgba(0,0,0,.5)}
+    right:clamp(14px,2vw,42px);left:auto;width:250px;max-height:90vh;
+    display:flex;flex-direction:column;gap:9px;padding:4px 2px;overflow:visible}
   .termres[hidden]{display:none}
-  /* no gutter on narrow screens → panel would cover the terminal; hide it (the
-     card detail still lists the same resources). ~1740 keeps a clean gap above
-     the 1120px modal so the float never overlaps the terminal. */
   @media (max-width:1740px){ .termres{display:none} }
-  .termres .tr-h{font-size:9.5px;font-family:var(--mono);letter-spacing:.1em;color:var(--ink-dim);text-transform:uppercase;font-weight:600;margin:0 2px 1px}
-  .termres .tr-h2{margin-top:7px;padding-top:12px;border-top:1px dashed var(--hair)}
-  .tr-item{display:flex;flex-direction:column;gap:5px;padding:9px 11px;border-radius:10px;text-decoration:none;border:1px solid var(--hair-soft);background:var(--bg-row);transition:border-color .12s,transform .12s}
-  a.tr-item:hover{border-color:var(--run);transform:translateX(-2px)}
-  .tr-item .tr-k{align-self:flex-start;font-size:8.5px;font-family:var(--mono);letter-spacing:.07em;font-weight:700;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--bg-elev);border:1px solid var(--hair);color:var(--ink-dim)}
+  .termres .tr-h{font-size:9px;font-family:var(--mono);letter-spacing:.12em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 0 4px;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+  .termres .tr-h2{margin-top:10px}
+  /* base tag look — shared by the floating panel and the card detail */
+  .tr-item,.loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:5px;
+    width:100%;padding:9px 12px;border-radius:12px;text-decoration:none;text-align:left;font:inherit;cursor:pointer;
+    border:1px solid var(--hair);background:var(--bg-elev)}
+  a.tr-item:hover{border-color:var(--run)}
+  .loc-item:hover{border-color:var(--ink-dim)}
+  .tr-item.nolink{cursor:default}
+  .tr-item .tr-k,.loc-item .loc-k{align-self:flex-start;font-size:8.5px;font-family:var(--mono);letter-spacing:.07em;font-weight:700;text-transform:uppercase}
+  .tr-item .tr-k{padding:2px 6px;border-radius:5px;background:var(--bg-row);border:1px solid var(--hair);color:var(--ink-dim)}
   .tr-item .tr-k.k-mr,.tr-item .tr-k.k-pr{color:var(--mr);border-color:color-mix(in srgb,var(--mr) 45%,transparent)}
   .tr-item .tr-k.k-cr{color:var(--cr);border-color:color-mix(in srgb,var(--cr) 45%,transparent)}
   .tr-item .tr-k.k-issue{color:var(--needs);border-color:var(--needs-edge)}
   .tr-item .tr-k.k-deployment{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
   .tr-item .tr-k.k-doc{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 45%,transparent)}
-  .tr-item .tr-l{font-size:12px;color:var(--ink);line-height:1.4;word-break:break-word}
+  .loc-item .loc-k{color:var(--ink-dim)}
+  .tr-item .tr-l{font-size:12px;color:var(--ink);line-height:1.38;word-break:break-word}
   .tr-item .tr-sub{font-size:9.5px;font-family:var(--mono);color:var(--ink-faint);word-break:break-all}
-  .tr-item.nolink{cursor:default}
-  /* code-location items (branch/tag/worktree) — click-to-copy. Used in both the
-     floating panel and the card detail. Value is bright (--ink) so the path/name
-     is actually legible in dark mode (the old --ink-soft was undefined → broke). */
-  .loc-item{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;padding:9px 11px;margin:0;border-radius:10px;border:1px solid var(--hair-soft);background:var(--bg-row);cursor:pointer;font:inherit;transition:border-color .12s}
-  .loc-item:hover{border-color:var(--ink-dim)}
-  .loc-item .loc-k{font-size:8.5px;font-family:var(--mono);letter-spacing:.07em;color:var(--ink-dim);text-transform:uppercase;font-weight:600}
   .loc-item .loc-v{font-size:11px;font-family:var(--mono);color:var(--ink);line-height:1.35;word-break:break-all}
-  .loc-row{display:flex;flex-direction:column;gap:6px;margin:2px 0 4px}
+  .loc-row{display:flex;flex-direction:column;gap:7px;margin:2px 0 4px}
+  /* floating behavior — ONLY in the right-gutter panel: each tag rests tucked +
+     compact, hover pops it out, enlarges, and reveals detail (clamp → full). */
+  .termres .tr-item,.termres .loc-item{box-shadow:0 7px 20px rgba(0,0,0,.36);
+    transform-origin:right center;transform:translateX(15px) scale(.965);
+    transition:transform .24s cubic-bezier(.2,.75,.2,1),box-shadow .24s,border-color .18s}
+  .termres .tr-item:hover,.termres .loc-item:hover{transform:translateX(-10px) scale(1.055);box-shadow:0 18px 46px rgba(0,0,0,.55);z-index:6}
+  .termres .tr-item .tr-l,.termres .loc-item .loc-v{overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1}
+  .termres .tr-item:hover .tr-l,.termres .loc-item:hover .loc-v{-webkit-line-clamp:4}
+  .termres .tr-item .tr-sub{max-height:0;opacity:0;overflow:hidden;transition:max-height .24s,opacity .24s}
+  .termres .tr-item:hover .tr-sub{max-height:36px;opacity:1}
   .term-loading{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0b0d}
   .term-loading[hidden]{display:none}
   .tl-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.14);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
@@ -512,7 +518,7 @@
   // shared pieces
   function chip(a){const t=(a.type||'').toLowerCase(),cls=t==='mr'?'mr':(t==='cr'?'cr':'cd');
     const inner=`<span class="k">${esc(t.toUpperCase()||'REF')}</span><span>!${esc(a.ref_id||'')}</span>`,tip=esc(a.title||'');
-    return a.url?`<a class="chip ${cls} link" href="${esc(a.url)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
+    const u=httpUrl(a);return u?`<a class="chip ${cls} link" href="${esc(u)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
   // DD-021: artifacts split into two visually-distinct groups (the principle):
   //   ① external resources — follow-up endpoints you open in a browser
   //   ② code location      — branch/tag/worktree, where the work lives
@@ -520,9 +526,22 @@
   // anything outside both sets is residual legacy noise → collapsed to a count.
   const RES_EXTERNAL=new Set(['mr','pr','cr','issue','deployment','doc','other']);
   const RES_CODELOC=new Set(['branch','tag','worktree']);
-  const extArts=arts=>(arts||[]).filter(a=>RES_EXTERNAL.has((a.type||'').toLowerCase()));
-  const locArts=arts=>(arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase()));
-  const noiseCount=arts=>(arts||[]).length-extArts(arts).length-locArts(arts).length;
+  // only an http(s) url is a real, openable external link. A local file path in
+  // `url` (legacy data) is NOT — never render it as a link (it 404s on serve).
+  const httpUrl=a=>{const u=(a&&a.url||'').trim();return /^https?:\/\//i.test(u)?u:'';};
+  // dedupe: same artifact can arrive with its name in ref_id on one entry and
+  // title on another → different keys upstream. Collapse by http-url, else by
+  // type+name (ref_id||title), so identical branches/docs don't double up.
+  const artKey=a=>{const u=httpUrl(a);if(u)return 'u:'+u;
+    const t=(a.type||'').toLowerCase(),n=((a.ref_id||a.title||'')+'').trim().toLowerCase();return t+':'+n;};
+  const dedupe=arts=>{const seen=new Set();return (arts||[]).filter(a=>{const k=artKey(a);if(seen.has(k))return false;seen.add(k);return true;});};
+  // a `doc` is external only if it has an http url (DD-021: local doc paths are
+  // not resources). Drop local-path docs so they don't show as dead links.
+  const isExternal=a=>{const t=(a.type||'').toLowerCase();if(!RES_EXTERNAL.has(t))return false;
+    if(t==='doc'&&!httpUrl(a))return false;return true;};
+  const extArts=arts=>dedupe((arts||[]).filter(isExternal));
+  const locArts=arts=>dedupe((arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase())));
+  const noiseCount=arts=>(arts||[]).length-(arts||[]).filter(isExternal).length-(arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase())).length;
   const chipsRow=arts=>{const s=extArts(arts);return !s.length?'':s.slice(0,3).map(chip).join('')+(s.length>3?`<span class="chip more">+${s.length-3}</span>`:'');};
   // code-location item: name/path is local (no URL) → click to copy so you can
   // cd / git checkout it. data-copy carries the raw value (esc-safe in attr).
@@ -845,8 +864,9 @@
       const head=esc(hasTitle?a.title:(a.ref_id||t));
       const sub=hasTitle&&a.ref_id?`<span class="tr-sub">${esc(t)} ${esc(a.ref_id)}</span>`:'';
       const badge=`<span class="tr-k k-${esc(tl)}">${esc(t)}</span>`;
-      return a.url
-        ? `<a class="tr-item" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.title||a.url)}">${badge}<span class="tr-l">${head}</span>${sub}</a>`
+      const u=httpUrl(a);
+      return u
+        ? `<a class="tr-item" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(a.title||u)}">${badge}<span class="tr-l">${head}</span>${sub}</a>`
         : `<div class="tr-item nolink" title="未捕获完整 URL(装全局提示词后会带 URL)">${badge}<span class="tr-l">${head}</span>${sub}</div>`;
     }).join('');}
     if(la.length){html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+la.map(locItem).join('');}
