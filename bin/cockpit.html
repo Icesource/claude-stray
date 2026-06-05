@@ -300,7 +300,15 @@
   .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);left:calc(50% + 558px);
     width:248px;max-height:92vh;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:5px;padding:6px}
   .termres[hidden]{display:none}
-  @media (max-width:1640px){ .termres{display:none} }
+  /* Narrow screens (laptops) have no gutter to float in → dock the panel as a
+     side column of the modal and shrink the terminal to make room, so resources
+     stay visible instead of disappearing. */
+  @media (max-width:1640px){
+    .termbox{width:min(1120px, calc(95vw - 256px))}
+    .termres{position:static;transform:none;left:auto;top:auto;flex:none;width:232px;
+      height:min(80vh,880px);max-height:none;margin-left:12px;padding:11px 9px;
+      background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  }
   .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .termres .tr-h2{margin-top:8px}
   .reschip{display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;height:29px;padding:0 10px 0 7px;
@@ -618,7 +626,7 @@
     // DD-019: sealed cards have no live session — "进入会话" resumes the
     // origin session; the merge action is meaningless (empty sessions[]).
     const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="suggestReplies(event,'${sid0}')" title="AI 建议接下来发给这条会话的下一句(全局视角,多选)">建议下一句 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
