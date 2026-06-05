@@ -284,6 +284,14 @@
   .tr-item .tr-k{font-size:9px;font-family:var(--mono);letter-spacing:.05em;color:var(--needs)}
   .tr-item .tr-l{font-size:11.5px;color:var(--ink);line-height:1.35;word-break:break-word}
   .tr-item.nolink{opacity:.55;cursor:default}
+  .termres .tr-h2{margin-top:14px;border-top:1px dashed var(--hair);padding-top:11px}
+  /* code-location items (branch/tag/worktree) — distinct from external resources:
+     dimmer accent, mono value, click-to-copy. Used in both termres and card detail. */
+  .loc-item{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;padding:6px 9px;margin-bottom:5px;border-radius:8px;border:1px solid var(--hair-soft);background:transparent;cursor:pointer;font:inherit}
+  .loc-item:hover{border-color:var(--ink-faint);background:var(--bg-row)}
+  .loc-item .loc-k{font-size:9px;font-family:var(--mono);letter-spacing:.05em;color:var(--ink-faint);text-transform:uppercase}
+  .loc-item .loc-v{font-size:11px;font-family:var(--mono);color:var(--ink-soft);line-height:1.3;word-break:break-all}
+  .loc-row{display:flex;flex-direction:column;gap:0;margin:2px 0 4px}
   .term-loading{position:absolute;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0b0b0d}
   .term-loading[hidden]{display:none}
   .tl-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.14);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
@@ -486,13 +494,22 @@
   function chip(a){const t=(a.type||'').toLowerCase(),cls=t==='mr'?'mr':(t==='cr'?'cr':'cd');
     const inner=`<span class="k">${esc(t.toUpperCase()||'REF')}</span><span>!${esc(a.ref_id||'')}</span>`,tip=esc(a.title||'');
     return a.url?`<a class="chip ${cls} link" href="${esc(a.url)}" target="_blank" title="${tip}" onclick="event.stopPropagation()">${inner}</a>`:`<span class="chip ${cls}" title="${tip}">${inner}</span>`;}
-  // DD-021: only the high-signal resources belong on the card (MR/PR/CR/ISSUE/
-  // deployment/doc). commit/branch/tag flood and drown the useful ones, so they
-  // are collapsed to a count.
-  const RES_SIGNAL=new Set(['mr','pr','cr','issue','deployment','doc']);
-  const sigArts=arts=>(arts||[]).filter(a=>RES_SIGNAL.has((a.type||'').toLowerCase()));
-  const noiseCount=arts=>(arts||[]).length-sigArts(arts).length;
-  const chipsRow=arts=>{const s=sigArts(arts);return !s.length?'':s.slice(0,3).map(chip).join('')+(s.length>3?`<span class="chip more">+${s.length-3}</span>`:'');};
+  // DD-021: artifacts split into two visually-distinct groups (the principle):
+  //   ① external resources — follow-up endpoints you open in a browser
+  //   ② code location      — branch/tag/worktree, where the work lives
+  // commit + local file paths are dropped at the source (summarize Rule 10), so
+  // anything outside both sets is residual legacy noise → collapsed to a count.
+  const RES_EXTERNAL=new Set(['mr','pr','cr','issue','deployment','doc','other']);
+  const RES_CODELOC=new Set(['branch','tag','worktree']);
+  const extArts=arts=>(arts||[]).filter(a=>RES_EXTERNAL.has((a.type||'').toLowerCase()));
+  const locArts=arts=>(arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase()));
+  const noiseCount=arts=>(arts||[]).length-extArts(arts).length-locArts(arts).length;
+  const chipsRow=arts=>{const s=extArts(arts);return !s.length?'':s.slice(0,3).map(chip).join('')+(s.length>3?`<span class="chip more">+${s.length-3}</span>`:'');};
+  // code-location item: name/path is local (no URL) → click to copy so you can
+  // cd / git checkout it. data-copy carries the raw value (esc-safe in attr).
+  function locItem(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
+    const icon=t==='worktree'?'📁':(t==='tag'?'🏷':'⎇');
+    return `<button class="loc-item" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="loc-k">${icon} ${esc(t)}</span><span class="loc-v">${esc(v)}</span></button>`;}
   // 取 progress 首句,让搁置/空闲的卡在列表行也能瞥见最新进展(完整文本进 tooltip)
   function firstSent(s){s=(s||'').replace(/\s+/g,' ').trim();if(!s)return '';const i=s.search(/[。!?；]/);const out=i>0?s.slice(0,i+1):s;return out.length>80?out.slice(0,80)+'…':out;}
   function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
@@ -518,9 +535,10 @@
     if(r.next_step)h+=`<div class="next-line" title="AI 判断的下一步动作">▸ 下一步:${esc(r.next_step)}</div>`;
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
-    if(r.artifacts&&r.artifacts.length){const sa=sigArts(r.artifacts),nc=noiseCount(r.artifacts);
-      if(sa.length)h+=`<div class="sectit">关联资源</div><div class="chips-full">`+sa.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
-      if(nc>0)h+=`<div class="res-noise">+ ${nc} 个 commit/分支(已折叠,避免淹没)</div>`;}
+    if(r.artifacts&&r.artifacts.length){const ea=extArts(r.artifacts),la=locArts(r.artifacts),nc=noiseCount(r.artifacts);
+      if(ea.length)h+=`<div class="sectit">外部资源</div><div class="chips-full">`+ea.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
+      if(la.length)h+=`<div class="sectit">代码位置</div><div class="loc-row">`+la.map(locItem).join('')+`</div>`;
+      if(nc>0)h+=`<div class="res-noise">+ ${nc} 个已折叠(commit 等噪声,下次同步自动清除)</div>`;}
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
     h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
@@ -796,15 +814,18 @@
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
-    const row=findRowForSid(sid); const arts=row?sigArts(row.artifacts):[];
-    if(!arts.length){ res.hidden=true; res.innerHTML=''; return; }
+    const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
+    if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
-    res.innerHTML=`<div class="tr-h">资源 · ${arts.length}</div>`+arts.map(a=>{
+    let html='';
+    if(ea.length){html+=`<div class="tr-h">外部资源 · ${ea.length}</div>`+ea.map(a=>{
       const t=(a.type||'ref').toUpperCase(), label=esc(a.title||a.ref_id||t);
       return a.url
         ? `<a class="tr-item" href="${esc(a.url)}" target="_blank" rel="noopener" title="${esc(a.title||a.url)}"><span class="tr-k">${esc(t)}</span><span class="tr-l">${label}</span></a>`
         : `<div class="tr-item nolink" title="未捕获完整 URL(装全局提示词后会带 URL)"><span class="tr-k">${esc(t)}</span><span class="tr-l">${esc(a.ref_id||'')}</span></div>`;
-    }).join('');
+    }).join('');}
+    if(la.length){html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+la.map(locItem).join('');}
+    res.innerHTML=html;
   }
   function setActiveTerm(sid){
     const m=getTermModal(); m.dataset.sid=sid;
