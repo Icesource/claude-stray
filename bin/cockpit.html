@@ -447,7 +447,7 @@
       rows.push({ id:init.id, name:init.name, ws:w.name, status:init.status, level:init.level,
         band:b.band, reason:b.reason, activity:b.activity, pct:b.pct,
         idle:humanIdle(iso), idle_secs:idleSecs(iso),
-        artifacts:init.artifacts||[], blockers:init.blockers||[],
+        artifacts:init.artifacts||[], blockers:init.blockers||[], code_location:init.code_location||null,
         tasks_total:tasks.length, tasks_pending:tasks.filter(x=>(x.status||(x.done?'done':'pending'))==='pending').length,
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
@@ -591,6 +591,16 @@
   function locItem(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
     const icon=t==='worktree'?'📁':(t==='tag'?'🏷':'⎇');
     return `<button class="loc-item" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="loc-k">${icon} ${esc(t)}</span><span class="loc-v">${esc(v)}</span></button>`;}
+  // DD-022-A: code location is MECHANICAL (worktree/branch from the session's cwd)
+  // when serve provides it, else fall back to AI-extracted artifacts. The main
+  // checkout shows just its branch; a real linked worktree also shows its dir path.
+  function codeLocList(r){const cl=r&&r.code_location;
+    if(!cl) return locArts(r&&r.artifacts);
+    const out=[];
+    if(cl.branch) out.push({type:'branch',ref_id:cl.branch});
+    if(cl.is_worktree&&cl.worktree) out.push({type:'worktree',ref_id:cl.worktree});
+    for(const a of (r.artifacts||[])) if((a.type||'').toLowerCase()==='tag') out.push(a);
+    return dedupe(out);}
   // 取 progress 首句,让搁置/空闲的卡在列表行也能瞥见最新进展(完整文本进 tooltip)
   function firstSent(s){s=(s||'').replace(/\s+/g,' ').trim();if(!s)return '';const i=s.search(/[。!?；]/);const out=i>0?s.slice(0,i+1):s;return out.length>80?out.slice(0,80)+'…':out;}
   function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
@@ -616,10 +626,10 @@
     if(r.next_step)h+=`<div class="next-line" title="AI 判断的下一步动作">▸ 下一步:${esc(r.next_step)}</div>`;
     if(r.blockers&&r.blockers.length)h+=`<div class="sectit">卡点 / 等待</div><ul>`+r.blockers.map(b=>`<li class="blk"><span class="b">▍</span><span>${esc(b)}</span></li>`).join('')+`</ul>`;
     if(r.tasks_total)h+=`<div class="sectit">任务 · 共 ${r.tasks_total} · 待办 ${r.tasks_pending}</div>`;
-    if(r.artifacts&&r.artifacts.length){const ea=extArts(r.artifacts),la=locArts(r.artifacts),nc=noiseCount(r.artifacts);
+    {const ea=extArts(r.artifacts),la=codeLocList(r),nc=noiseCount(r.artifacts);if(ea.length||la.length||nc>0||r.artifacts&&r.artifacts.length){
       if(ea.length)h+=`<div class="sectit">外部资源</div><div class="chips-full">`+ea.map(a=>`<span style="display:flex;gap:6px;align-items:center">${chip(a)}${a.title?`<span style="font-size:11.5px;color:var(--ink-faint)">${esc(a.title)}</span>`:''}</span>`).join('')+`</div>`;
       if(la.length)h+=`<div class="sectit">代码位置</div><div class="loc-row">`+la.map(locItem).join('')+`</div>`;
-      if(nc>0)h+=`<div class="res-noise">+ ${nc} 个已折叠(commit 等噪声,下次同步自动清除)</div>`;}
+      if(nc>0)h+=`<div class="res-noise">+ ${nc} 个已折叠(commit 等噪声,下次同步自动清除)</div>`;}}
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
     h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
@@ -914,7 +924,7 @@
   function renderTermRes(sid){
     const m=document.getElementById('termModal'); if(!m)return;
     const res=m.querySelector('.termres'); if(!res)return;
-    const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?locArts(row.artifacts):[];
+    const row=findRowForSid(sid); const ea=row?extArts(row.artifacts):[], la=row?codeLocList(row):[];
     if(!ea.length&&!la.length){ res.hidden=true; res.innerHTML=''; return; }
     res.hidden=false;
     const list=arts=>groupByType(arts).flatMap(g=>g.items).map(resChip).join('');   // same-type adjacent

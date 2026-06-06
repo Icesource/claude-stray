@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# DD-024: run the test suite. Zero deps — just runs each tests/test_*.py.
+# (pytest also works if installed: `python3 -m pytest tests/`.)
+set -u
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+fail=0
+for f in "$REPO"/tests/test_*.py; do
+  [ -e "$f" ] || continue
+  echo "── $(basename "$f")"
+  python3 "$f" || fail=1
+done
+[ "$fail" -eq 0 ] && echo "ALL TESTS PASSED" || echo "SOME TESTS FAILED"
+exit "$fail"

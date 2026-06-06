@@ -290,6 +290,33 @@ def _resume_cwd_for(sid: str) -> str:
         return ""
 
 
+try:
+    import _worktree  # DD-022-A: mechanical worktree/branch from cwd (serve.py is in bin/)
+except Exception:
+    _worktree = None
+
+
+def _attach_code_location(mindmap: dict) -> int:
+    """DD-022-A: set init['code_location'] = {worktree, branch, is_worktree, main_repo}
+    mechanically from each card's session cwd (git, cached) — replaces AI-guessed
+    worktree/branch. Best-effort; absent git / non-repo cwd just leaves it unset."""
+    if _worktree is None or not mindmap:
+        return 0
+    n = 0
+    for w in mindmap.get("workspaces", []) or []:
+        for init in w.get("initiatives", []) or []:
+            sids = init.get("sessions") or (
+                [init["origin_session"]] if init.get("origin_session") else [])
+            if not sids:
+                continue
+            cwd = _resume_cwd_for(sids[0])
+            cl = _worktree.code_location_for_cwd(cwd) if cwd else None
+            if cl:
+                init["code_location"] = cl
+                n += 1
+    return n
+
+
 def _summary_section(body: str, *titles: str) -> str | None:
     """Extract one H1 section body (e.g. '当前状态') from a Layer-1 summary.
     Returns the trimmed text up to the next '# ' header, or None."""
@@ -1005,6 +1032,10 @@ class Handler(BaseHTTPRequestHandler):
             # active card reflects your latest turn without waiting for classify.
             try:
                 _freshen_progress_from_summaries(data.get("mindmap"))
+            except Exception:
+                pass
+            try:
+                _attach_code_location(data.get("mindmap"))  # DD-022-A: real worktree/branch
             except Exception:
                 pass
             # Sync health for the empty/first-run state: is the background
