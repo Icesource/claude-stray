@@ -298,23 +298,23 @@
      grouped into 外部资源 / 代码位置. Text badge (MR/CR/…) + title; click to open
      or copy. No decks/fans — just legible and complete. (Fancier layouts later.) */
   .termres{position:fixed;z-index:71;top:50%;transform:translateY(-50%);left:calc(50% + 558px);
-    width:248px;max-height:92vh;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:5px;padding:6px}
+    width:250px;max-height:92vh;overflow-y:auto;overflow-x:visible;display:flex;flex-direction:column;gap:8px;padding:6px 8px}
   .termres[hidden]{display:none}
-  /* Narrow screens (laptops) have no gutter to float in → dock the panel as a
-     side column of the modal and shrink the terminal to make room, so resources
-     stay visible instead of disappearing. */
+  /* Narrow screens (laptops) have no gutter to float in → dock the column beside a
+     slightly-shrunk terminal so resources stay visible. Panel stays TRANSPARENT —
+     the chips float as individual tags (each has its own shadow), not one block. */
   @media (max-width:1640px){
     .termbox{width:min(1120px, calc(95vw - 256px))}
-    .termres{position:static;transform:none;left:auto;top:auto;flex:none;width:232px;
-      height:min(80vh,880px);max-height:none;margin-left:12px;padding:11px 9px;
-      background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+    .termres{position:static;transform:none;left:auto;top:auto;flex:none;width:236px;
+      height:min(80vh,880px);max-height:none;margin-left:14px;padding:4px 6px;overflow-y:auto}
   }
   .termres .tr-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .termres .tr-h2{margin-top:8px}
   .reschip{display:flex;align-items:center;gap:7px;box-sizing:border-box;width:100%;height:29px;padding:0 10px 0 7px;
     border:1px solid var(--hair);border-left-width:2.5px;border-radius:8px;background:var(--bg-elev);
-    text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;transition:border-color .15s,background .15s}
-  .reschip:hover{border-color:var(--run);background:var(--bg-row-hover)}
+    box-shadow:0 4px 13px rgba(0,0,0,.38);
+    text-decoration:none;text-align:left;cursor:pointer;overflow:hidden;transition:transform .14s,border-color .15s,box-shadow .15s}
+  .reschip:hover{border-color:var(--run);transform:translateX(-3px);box-shadow:0 9px 22px rgba(0,0,0,.5)}
   .reschip.loc:hover{border-color:var(--ink-dim)}
   .reschip.nolink{cursor:default}
   .reschip .rc-ic{flex:none;display:flex;align-items:center;justify-content:center;height:15px;padding:0 5px;
@@ -329,7 +329,7 @@
   .reschip.k-issue{border-left-color:var(--needs)} .reschip.k-issue .rc-ic{color:var(--needs);border-color:var(--needs-edge)}
   .reschip.k-deployment{border-left-color:var(--run)} .reschip.k-deployment .rc-ic{color:var(--run);border-color:color-mix(in srgb,var(--run) 50%,transparent)}
   .reschip.k-doc{border-left-color:var(--cd)} .reschip.k-doc .rc-ic{color:var(--cd);border-color:color-mix(in srgb,var(--cd) 50%,transparent)}
-  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-other{border-left-color:var(--ink-faint)}
+  .reschip.k-branch,.reschip.k-tag,.reschip.k-worktree,.reschip.k-dir,.reschip.k-other{border-left-color:var(--ink-faint)}
   /* code-location items in the CARD DETAIL stay static rows (not floating chips) */
   .loc-item{position:relative;box-sizing:border-box;display:flex;flex-direction:column;gap:4px;
     width:100%;padding:9px 12px;border-radius:10px;text-align:left;font:inherit;cursor:pointer;
@@ -589,7 +589,7 @@
   // code-location item: name/path is local (no URL) → click to copy so you can
   // cd / git checkout it. data-copy carries the raw value (esc-safe in attr).
   function locItem(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
-    const icon=t==='worktree'?'📁':(t==='tag'?'🏷':'⎇');
+    const icon=(t==='worktree'||t==='dir')?'📁':(t==='tag'?'🏷':'⎇');
     return `<button class="loc-item" data-copy="${esc(v)}" title="点击复制:${esc(v)}" onclick="event.stopPropagation();copyText(this.dataset.copy).then(()=>toast('已复制 '+this.dataset.copy))"><span class="loc-k">${icon} ${esc(t)}</span><span class="loc-v">${esc(v)}</span></button>`;}
   // DD-022-A: code location is MECHANICAL (worktree/branch from the session's cwd)
   // when serve provides it, else fall back to AI-extracted artifacts. The main
@@ -598,7 +598,9 @@
     if(!cl) return locArts(r&&r.artifacts);
     const out=[];
     if(cl.branch) out.push({type:'branch',ref_id:cl.branch});
-    if(cl.is_worktree&&cl.worktree) out.push({type:'worktree',ref_id:cl.worktree});
+    // always surface the directory: a real linked worktree → 'worktree', else the
+    // checkout dir → 'dir'. Lets you see + copy the path the session lives in.
+    if(cl.worktree) out.push({type:cl.is_worktree?'worktree':'dir',ref_id:cl.worktree});
     for(const a of (r.artifacts||[])) if((a.type||'').toLowerCase()==='tag') out.push(a);
     return dedupe(out);}
   // 取 progress 首句,让搁置/空闲的卡在列表行也能瞥见最新进展(完整文本进 tooltip)
@@ -908,7 +910,7 @@
   function findRowForSid(sid){ return (DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
   // floating-panel chips: a glanceable TEXT label (MR/CR/ISSUE…) marks the kind,
   // and same-type chips render as one fanned cluster (--i index, --n cluster size).
-  const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'TREE'};
+  const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'WORKTREE',dir:'目录'};
   const resLbl=t=>RES_LBL[(t||'').toLowerCase()]||(t||'REF').toUpperCase().slice(0,5);
   function groupByType(arts){const g={},ord=[];for(const a of (arts||[])){const t=(a.type||'other').toLowerCase();if(!g[t]){g[t]=[];ord.push(t);}g[t].push(a);}return ord.map(t=>({type:t,items:g[t]}));}
   // one row in the list: text badge (MR/CR/…) + title; click to open or copy.
