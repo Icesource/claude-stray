@@ -55,6 +55,15 @@ def test_linked_worktree():
             subprocess.run(["git", "-C", REPO, "branch", "-D", branch], capture_output=True)
 
 
+def test_slugify():
+    s = _worktree.slugify
+    assert s("Authz Fix!") == "authz-fix"
+    assert s("  改鉴权超时 timeout  ") == "timeout"          # non-ascii dropped, trimmed
+    assert s("feat/HSF--doc__v2") == "feat-hsf-doc-v2"        # collapse + lowercase
+    assert s("") == "" and s("中文") == ""                    # nothing usable → ''
+    assert len(s("a" * 80)) == 40                              # capped
+
+
 def test_cache_reuses(monkeypatch=None):
     """code_location_for_cwd caches within the TTL (git not re-shelled)."""
     calls = {"n": 0}

@@ -1358,9 +1358,25 @@ class Handler(BaseHTTPRequestHandler):
         cwd = os.path.expanduser(cwd) if cwd else os.path.expanduser("~")
         if not os.path.isdir(cwd):
             return self._reply(400, {"error": "not a directory", "hint": cwd})
+        # DD-022-B: optionally start the session in a NEW git worktree (semantic
+        # name). We reuse Claude Code's native `claude --worktree <slug>` (creates
+        # .claude/worktrees/<slug>/), so we inherit its conventions instead of
+        # rebuilding worktree management.
+        want_wt = bool(body.get("worktree"))
+        wt_name = _worktree.slugify(body.get("name") or "") if _worktree else ""
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
-        inner = "cd " + shlex.quote(cwd) + " && claude --dangerously-skip-permissions"
+        if want_wt:
+            if not (_worktree and _worktree.compute_code_location(cwd)):
+                return self._reply(400, {"error": "not a git repo",
+                                         "hint": "新建 worktree 需要在一个 git 仓库目录里"})
+            parts = ["claude", "--worktree"] + ([wt_name] if wt_name else [])
+            if wt_name:
+                parts += ["--name", wt_name]
+            parts += ["--dangerously-skip-permissions"]
+            inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
+        else:
+            inner = "cd " + shlex.quote(cwd) + " && claude --dangerously-skip-permissions"
         inner, holder_name = _wrap_in_holder(token, inner)
         import socket as _socket
         s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
@@ -1380,7 +1396,9 @@ class Handler(BaseHTTPRequestHandler):
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
         _save_terminals()
         time.sleep(0.4)
-        return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token, "cwd": cwd})
+        return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token,
+                                 "cwd": cwd, "worktree": want_wt,
+                                 "worktree_name": wt_name if want_wt else None})
 
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and

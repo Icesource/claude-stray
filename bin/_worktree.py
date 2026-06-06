@@ -5,8 +5,16 @@ the AI could never reliably collect it; the cwd always can).
 Standalone + dependency-free so it's unit-testable without importing serve.py.
 """
 import os
+import re
 import subprocess
 import time
+
+
+def slugify(s: str) -> str:
+    """A safe, semantic worktree/branch slug from a task name: lowercase, ascii
+    [a-z0-9-], collapsed dashes, trimmed, ≤40 chars. '' if nothing usable
+    (caller then lets `claude --worktree` auto-name)."""
+    return re.sub(r"[^a-z0-9]+", "-", (s or "").strip().lower()).strip("-")[:40]
 
 
 def _git(cwd, *args, timeout=3):
