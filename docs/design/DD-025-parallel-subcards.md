@@ -14,6 +14,36 @@ fixing the CLI multi-agent UX gap (poor visualization, hard switching, hard to t
 to each agent). Two prior research passes (Claude Code internals + industry survey)
 sharpened both the *how* and the *what not to build*.
 
+## Positioning vs Qoder 专家团 (and the red line)
+
+The sub-card canvas *looks* like Qoder 专家团 (Alibaba's IDE expert-team). That
+resemblance is real and must be handled deliberately — otherwise we ship a thinner,
+weaker Qoder, which is pointless. Three structural differences make them different
+*products*, not competitors:
+
+| | Qoder 专家团 | claude-stray |
+|---|---|---|
+| **Owns execution?** | YES — it IS the agent runtime (decomposes, dispatches, runs its own agents) | NO — reuses your real Claude Code (your skills/MCP/worktrees/CLI). We only triage + visualize |
+| **Scope** | one requirement's sub-agent team | ALL your work in flight across repos/sessions; sub-cards are one part, not the product |
+| **Posture** | "躺着当 CTO" — high autonomy, hand it off | "you drive each piece, we make N parallel things legible + cheap to switch" — human-in-control, low autonomy |
+
+**Honest risks (named so we don't drift):**
+- The "canvas of parallel agent cards" is becoming **table stakes** (Qoder, Cursor
+  Agents Window, Windsurf, Claude Agent View). As a standalone feature it is **not
+  defensible**. So sub-cards must be a *natural extension of the attention-triage core*,
+  never the headline, and never an excuse to start owning execution/orchestration.
+- Qoder's #1 complaints (credit burn, "codes too early, rework") are **the cost of high
+  autonomy**. Our low-autonomy / no-execution stance avoids them *as long as we don't
+  imitate the autonomy*.
+
+**The moat is the combination, not the canvas:** a thin layer over *real* Claude Code
+(no IDE switch) + cross-all-work attention triage + human-in-control posture + per-session
+AI (summaries/resources/next-step) + conflict-aware triage. Sub-cards ride on that.
+
+> Positioning one-liner (north-star footnote): **Qoder makes an AI team work *for* you;
+> claude-stray lets you *oversee everything you're doing at once* — including the things
+> you fanned out.**
+
 ## What the industry research settled (decision inputs)
 
 **The market converged on one model that actually works:** *human-as-orchestrator over
@@ -97,6 +127,84 @@ stop — which is exactly the unmet need the industry survey surfaced.
 - Reuse DD-022 `code_location` (mechanical worktree/branch from cwd) — the sub-card's
   worktree is already known mechanically.
 - Sibling conflict set computed at read time (no new persisted state).
+
+## The spawn flow (parent fans out sub-cards)
+
+The parent fans out **from natural language**, the parent claude session does the
+spawning, and we provide only a thin primitive + the parent/child bookkeeping.
+
+```
+1. You (in the parent terminal): "并行起三个子任务, team 叫 hsf-authz:
+     A 改鉴权超时  B 补鉴权文档  C 加鉴权测试"
+2. Parent claude session recognizes a fan-out and runs (via its Bash tool):
+     stray spawn --team hsf-authz --name authz-fix  "改鉴权超时…"
+     stray spawn --team hsf-authz --name authz-doc  "补鉴权文档…"
+     stray spawn --team hsf-authz --name authz-test "加鉴权测试…"
+3. `stray spawn` (us) for each:
+     - runs  claude --bg --name <slug> "<task>"   (native: own session +
+       .claude/worktrees/<slug>/ + observable jsonl)
+     - records {parent_sid → child_sid, team, name, worktree} in cache/subcards.json
+     - returns child sid + worktree path
+4. cockpit reads subcards.json → renders A/B/C nested under the parent card
+5. You drive each sub-card (own terminal) or let them run in background; pull progress
+   back into the parent any time with /stray subtasks
+```
+
+**`stray spawn` is just a thin wrapper around `claude --bg --name` that ALSO records
+the parent link.** Decomposition ("which three tasks") is decided by **you or the
+parent session — never us** (the red line). We provide the spawn command + the
+parent/child registry + the nested render. Nothing else.
+
+**single-driver detail (must钉):** a `--bg` child runs under Claude Code's supervisor.
+So the cockpit's "open terminal" for such a child must `claude attach <id>` (take over
+the supervised process), **NOT** `claude --resume <id>` (that would be a second driver →
+forks the jsonl, violates DD-018). The live-status gate (DD-018) must know "this card is
+a `--bg`-supervised child" and route to attach.
+
+## Injecting sub-card progress into the parent (human-pull, metadata JSON)
+
+**No native mode shares this**, so we provide it (genuinely additive, not reinvention):
+- **Agent View** (`--bg` background sessions): flat, independent — sessions know *nothing*
+  of each other, no parent/child recorded.
+- **Subagents**: parent gets only the child's *returned summary*, not its context.
+- **Teammates**: a shared task list + explicit messages; no auto transcript sharing.
+
+So the parent's "global view" is something **we** compose, on human-pull, cheaply:
+
+`/stray subtasks` (slash command, run in the parent — output enters context as a tool
+result, least intrusive) returns a low-token **metadata JSON**, one entry per child:
+
+```json
+{ "parent": "<parent_sid>", "team": "<batch name>",
+  "subcards": [{
+    "name": "authz-fix",
+    "session_id": "<child sid>",
+    "jsonl": "~/.claude/projects/.../<child sid>.jsonl",
+    "worktree": ".claude/worktrees/authz-fix",
+    "branch": "worktree-authz-fix",
+    "status": "running|idle|needs_you|done",
+    "progress": "<child Layer-1 one-line>",
+    "blockers": ["..."], "next_step": "...",
+    "conflicts_with": ["authz-doc"]
+  }]
+}
+```
+
+- **Light**: ~tens of tokens per child — the parent gets the whole picture on demand.
+- **Handle to go deeper**: the `jsonl` field lets the parent read a child's *full*
+  conversation only when it needs to (or a `/stray peek <name>` digest) — so the parent's
+  context isn't bloated by default, but深挖 is one step away.
+- **Content is free**: composed from existing Layer-1 summaries + DD-022 mechanical
+  worktree + the sibling-conflict computation. Zero extra AI.
+
+**Red line on injection:** always human-initiated (running the command / clicking a
+button) — material for a *human-driven* parent to reason with. We **provide pull**, we
+do **not build a push loop / auto-trigger** that makes the parent react autonomously. If
+the parent agent chooses to pull repeatedly to self-coordinate, that's *its* behavior
+using a command — not orchestration we built.
+
+Deferred: a re-entry digest (auto-inject "while you were away…" when you refocus the
+parent) — start with human-pull + UI milestone badges only.
 
 ## Open questions
 
