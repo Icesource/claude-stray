@@ -839,17 +839,16 @@ def mint_subcard_initiatives(new_mm: dict, all_summaries: list,
         return 0
     deleted_set = set(deleted_ids or [])
     archived = archived_ids_on_disk()
-    represented: set[str] = set()
     ws_by_name = {w.get("name"): w for w in (new_mm.get("workspaces") or [])}
+    # index: which cards currently contain each session
+    cards_with: dict[str, list] = {}
     for ws in (new_mm.get("workspaces") or []):
         for init in (ws.get("initiatives") or []):
             for s in (init.get("sessions") or []):
-                represented.add(s)
+                cards_with.setdefault(s, []).append(init)
     by_sid = {sid: (fm, raw_fm) for sid, fm, _b, raw_fm in all_summaries}
     minted = 0
     for sid, ent in subcards.items():
-        if sid in represented:
-            continue
         s = by_sid.get(sid)
         if not s:
             continue
@@ -857,6 +856,16 @@ def mint_subcard_initiatives(new_mm: dict, all_summaries: list,
         cid = "subcard::" + sid
         if cid in deleted_set or cid in archived:
             continue
+        holders = cards_with.get(sid) or []
+        # Already a DEDICATED card (sole owner of this session — the AI emitted a
+        # proper card for it, or a prior run minted one)? Leave it; link() nests it.
+        if any(list(h.get("sessions") or []) == [sid] for h in holders):
+            continue
+        # Otherwise the AI LUMPED this sub-card's session into a shared card (e.g. the
+        # parent's own card — same repo, looks related) or dropped it. A sub-card must
+        # be its OWN nested card, so pull the session out of any shared card, then mint.
+        for h in holders:
+            h["sessions"] = [x for x in (h.get("sessions") or []) if x != sid]
         cwd = fm.get("cwd") or ""
         la = fm.get("last_activity_at") or now_utc_iso()
         status = (fm.get("status_guess") or "active").strip().lower() or "active"
@@ -884,7 +893,7 @@ def mint_subcard_initiatives(new_mm: dict, all_summaries: list,
             (new_mm.setdefault("workspaces", [])).append(ws)
             ws_by_name[ws_name] = ws
         ws.setdefault("initiatives", []).append(init)
-        represented.add(sid)
+        cards_with.setdefault(sid, []).append(init)
         minted += 1
     return minted
 

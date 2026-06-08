@@ -37,13 +37,31 @@ def test_mint_creates_subcard_in_parent_repo_ws():
     assert "awaiting_user" not in i                    # empty string omitted
 
 
-def test_mint_skips_already_represented():
-    """AI already emitted a card containing the session → no mint (no duplicate)."""
+def test_mint_leaves_dedicated_card():
+    """AI emitted a card SOLELY for the sub-card's session → leave it (link nests it)."""
     sid = "child-1"
     all_summaries = [(sid, {"cwd": "/r/.claude/worktrees/a"}, "", "")]
     subs = {sid: {"parent": "P", "slug": "x"}}
     mm = {"workspaces": [{"name": "r", "initiatives": [{"id": "ai-card", "sessions": [sid]}]}]}
     assert classify.mint_subcard_initiatives(mm, all_summaries, subs, []) == 0
+    assert mm["workspaces"][0]["initiatives"][0]["sessions"] == [sid]   # untouched
+
+
+def test_mint_pulls_session_out_of_shared_card():
+    """AI lumped the sub-card session into a SHARED card (e.g. the parent's own) →
+    pull it out into its own dedicated nested card."""
+    sid = "child-1"
+    all_summaries = [(sid, {"cwd": "/Users/x/Code/repo/.claude/worktrees/a",
+                            "status_guess": "active"}, "", "")]
+    subs = {sid: {"parent": "P", "slug": "authz"}}
+    mm = {"workspaces": [{"name": "repo", "initiatives": [
+        {"id": "parent-card", "sessions": ["P", sid]}]}]}   # AI merged child into parent
+    n = classify.mint_subcard_initiatives(mm, all_summaries, subs, [])
+    assert n == 1
+    inits = {i["id"]: i for i in mm["workspaces"][0]["initiatives"]}
+    assert inits["parent-card"]["sessions"] == ["P"]          # child stripped out
+    assert inits["subcard::child-1"]["sessions"] == [sid]     # dedicated card minted
+    assert inits["subcard::child-1"]["name"] == "authz"
 
 
 def test_mint_respects_deleted_tombstone():
