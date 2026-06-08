@@ -53,6 +53,7 @@ def main() -> int:
 
     session_id = (
         payload.get("session_id")
+        or os.environ.get("CLAUDE_CODE_SESSION_ID")
         or os.environ.get("CLAUDE_SESSION_ID")
         or ""
     )

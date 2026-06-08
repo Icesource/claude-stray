@@ -14,7 +14,7 @@ REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." &
 # --- Subcommand: spawn (DD-025) ---------------------------------------------
 # Fan out a sub-card from the CURRENT session: starts an independent claude in a
 # new git worktree, working on <task>, linked as a child of this session (parent
-# = $CLAUDE_SESSION_ID, injected by Claude Code). The cockpit nests it under the
+# = $CLAUDE_CODE_SESSION_ID, injected by Claude Code). The cockpit nests it under the
 # current card. Run BY the parent session (or you) — we provide the primitive; we
 # do NOT run an autonomous coordination loop.
 #   Usage: stray spawn "<task>" [--name <slug>] [--no-worktree]
@@ -30,7 +30,7 @@ if [ "${1:-}" = "spawn" ]; then
     esac
   done
   [ -n "$SPAWN_TASK" ] || { echo 'stray spawn: 需要任务,例:stray spawn "修鉴权超时"' >&2; exit 1; }
-  python3 - "${STRAY_PORT:-9876}" "$(pwd)" "${CLAUDE_SESSION_ID:-}" "$SPAWN_NAME" "$SPAWN_WT" "$SPAWN_TASK" <<'PY'
+  python3 - "${STRAY_PORT:-9876}" "$(pwd)" "${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}" "$SPAWN_NAME" "$SPAWN_WT" "$SPAWN_TASK" <<'PY'
 import json, sys, urllib.request
 port, cwd, parent, name, wt, task = sys.argv[1:7]
 body = json.dumps({"cwd": cwd, "worktree": wt == "1", "name": name,
@@ -51,13 +51,13 @@ fi
 
 # --- Subcommand: subtasks (DD-025) ------------------------------------------
 # Pull this session's sub-cards' progress digest into context (run by the parent).
-#   Usage: stray subtasks   (uses $CLAUDE_SESSION_ID as the parent)
+#   Usage: stray subtasks   (uses $CLAUDE_CODE_SESSION_ID as the parent)
 if [ "${1:-}" = "subtasks" ]; then
-  python3 - "${STRAY_PORT:-9876}" "${CLAUDE_SESSION_ID:-}" <<'PY'
+  python3 - "${STRAY_PORT:-9876}" "${CLAUDE_CODE_SESSION_ID:-${CLAUDE_SESSION_ID:-}}" <<'PY'
 import json, sys, urllib.request, urllib.parse
 port, parent = sys.argv[1], sys.argv[2]
 if not parent:
-    print("(无 $CLAUDE_SESSION_ID — 在一条 claude 会话里运行才能识别父会话)"); sys.exit(0)
+    print("(无 $CLAUDE_CODE_SESSION_ID — 在一条 claude 会话里运行才能识别父会话)"); sys.exit(0)
 try:
     q = urllib.parse.urlencode({"parent": parent})
     j = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/subtasks?{q}", timeout=10))

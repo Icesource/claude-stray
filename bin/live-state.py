@@ -97,7 +97,9 @@ def main() -> int:
         except json.JSONDecodeError:
             payload = {}
 
-    session_id = payload.get("session_id") or os.environ.get("CLAUDE_SESSION_ID") or ""
+    session_id = (payload.get("session_id")
+                  or os.environ.get("CLAUDE_CODE_SESSION_ID")
+                  or os.environ.get("CLAUDE_SESSION_ID") or "")
     if not session_id:
         return 0
 
