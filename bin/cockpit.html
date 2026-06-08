@@ -197,6 +197,16 @@
   .row.open + .detail{display:block}
   .row[data-band="needs_you"].open + .detail{border-left-color:var(--needs-edge)}
   .row[data-band="running"].open + .detail{border-left-color:var(--run)}
+  /* DD-025: sub-cards nested under a parent row */
+  .subcards{margin:-1px 8px 9px 30px;display:flex;flex-direction:column;gap:3px}
+  .subrow{display:flex;align-items:center;gap:8px;padding:5px 9px;border-radius:6px;border:1px solid var(--hair-soft);border-left:2px solid var(--connector);background:var(--bg-row);cursor:pointer}
+  .subrow:hover{border-color:var(--ink-faint);background:var(--bg-row-hover)}
+  .subrow .sr-name{font-size:12px;color:var(--ink);white-space:nowrap;flex:none;max-width:210px;overflow:hidden;text-overflow:ellipsis}
+  .subrow .sr-prog{flex:1;min-width:0;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .subrow .sr-go{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:12px}
+  .subrow .sr-go:hover{border-color:var(--run);color:var(--run)}
+  .name .ws .lv.subc{color:var(--ink-dim);border-color:var(--hair)}
+  .name .ws .lv.subc.needs{color:var(--needs);border-color:var(--needs-edge)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
   .detail .fresh-tag{font-size:10.5px;color:var(--run);font-family:var(--mono);letter-spacing:.04em;margin-bottom:7px}
   .detail .await-line{font-size:12.5px;color:var(--needs);background:var(--needs-bg);border:1px solid var(--needs-edge);border-radius:7px;padding:7px 10px;margin:2px 0 8px;line-height:1.5}
@@ -456,6 +466,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
+        parent_session_id:init.parent_session_id||null,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -474,9 +485,25 @@
         sealed:!!init.sealed, origin_session:init.origin_session||null, archived:true,
         next_step:null, awaiting_user:null, progress:init.progress, summary:init.summary }); }
     rows.sort((a,b)=>RANK[a.band]-RANK[b.band]||b.idle_secs-a.idle_secs);
-    const counts={}; rows.forEach(r=>counts[r.band]=(counts[r.band]||0)+1);
-    DATA={counts, rows};
+    const top=groupSubcards(rows);   // DD-025: nest sub-cards under their parent
+    const counts={}; top.forEach(r=>counts[r.band]=(counts[r.band]||0)+1);
+    DATA={counts, rows:top, allRows:rows};
   }
+  // DD-025: attach each sub-card (parent_session_id → a known card's session) to
+  // its parent as r.children, and return the top-level rows (children removed, so
+  // they render nested, not twice). Pure — node-checked.
+  function groupSubcards(rows){
+    const bySid=new Map();
+    for(const r of rows) for(const s of (r.sessions||[])) if(s&&!bySid.has(s)) bySid.set(s,r);
+    const childIds=new Set();
+    for(const r of rows){ const p=r.parent_session_id;
+      if(p&&bySid.has(p)&&bySid.get(p)!==r){ const par=bySid.get(p);
+        (par.children=par.children||[]).push(r); childIds.add(r.id); r.is_subcard=true; } }
+    return rows.filter(r=>!childIds.has(r.id));
+  }
+  // roll-up of a parent's children: counts by band for the parent's badge
+  function subRollup(ch){const c={total:ch.length,needs:0,done:0,running:0};
+    for(const r of ch){ if(r.band==='needs_you')c.needs++; else if(r.band==='done'||r.band==='done_unread')c.done++; else if(r.band==='running')c.running++; } return c;}
   function renderCurrent(){ const v=document.body.dataset.view; if(v==='archive')return renderArchive(); v==='attention'?renderAttention():renderProject(); }
   // 归档周视图:已完成/归档的工作按 ISO 周分组,每周一句话小结
   async function renderArchive(){
@@ -644,11 +671,23 @@
     const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
     h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
+  // DD-025: a parent's sub-cards rendered as compact rows nested under it.
+  function subRowsEl(ch){ if(!ch||!ch.length)return '';
+    const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
+      const sid=esc(c.session||''); const prog=c.progress?firstSent(c.progress):(c.reason||'');
+      return `<div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
+        `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
+        `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button></div>`;
+    }).join('');
+    return `<div class="subcards">${rows}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
-    return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}" data-band="${r.band}" data-id="${esc(r.id||'')}" data-sid="${esc(r.session||'')}">${statusIcon(r.band,12)}`+
-      `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}</div></div>`+
-      midCell(r)+`<div class="timer">${esc(r.idle)}</div><div class="go" title="在内嵌终端打开这条会话">▸</div></div>`+detail(r);}
+    let roll='';
+    if(r.children&&r.children.length){const c=subRollup(r.children);
+      roll=`<span class="lv subc${c.needs?' needs':''}" title="${c.total} 个子任务">⑃ ${c.total}${c.needs?' · '+c.needs+'等你':(c.done?' · '+c.done+'完成':'')}</span>`;}
+    return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}${r.children?' has-subs':''}" data-band="${r.band}" data-id="${esc(r.id||'')}" data-sid="${esc(r.session||'')}">${statusIcon(r.band,12)}`+
+      `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}${roll}</div></div>`+
+      midCell(r)+`<div class="timer">${esc(r.idle)}</div><div class="go" title="在内嵌终端打开这条会话">▸</div></div>`+detail(r)+subRowsEl(r.children);}
   function collapsedBand(key){const b=BANDS.find(x=>x.key===key),rows=DATA.rows.filter(r=>r.band===key);
     if(!rows.length)return '';
     return `<section class="band collapsed" data-band="${key}"><div class="band-head clickable"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span><span class="chev">▾</span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;}
@@ -727,6 +766,7 @@
   function wire(){
     board.querySelectorAll('.band-head.clickable').forEach(h=>h.addEventListener('click',()=>h.closest('.band').classList.toggle('collapsed')));
     board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;const sec=h.closest('.proj');sec.classList.toggle('collapsed');PCOLLAPSE[sec.dataset.ws]=sec.classList.contains('collapsed')?'c':'o';}));
+    board.querySelectorAll('.subrow').forEach(sr=>sr.addEventListener('click',e=>{if(e.target.closest('.sr-go'))return;const s=sr.getAttribute('data-sid');if(s)openTerminal(e,s);}));
     board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){e.stopPropagation();const sid=row.getAttribute('data-sid');if(sid)openTerminal(e,sid);else toast('该工作没有关联会话');return;}
       // if you've selected text in this row (e.g. framing the card name to copy),
       // don't treat the mouse-up as a toggle — let the selection stand.
@@ -911,7 +951,7 @@
   }
   // DD-021②: the resources (MR/ISSUE/CR/doc) this session produced, shown
   // beside its terminal so you jump to the page in one click — no hunting.
-  function findRowForSid(sid){ return (DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
+  function findRowForSid(sid){ return (DATA.allRows||DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
   // floating-panel chips: a glanceable TEXT label (MR/CR/ISSUE…) marks the kind,
   // and same-type chips render as one fanned cluster (--i index, --n cluster size).
   const RES_LBL={mr:'MR',pr:'PR',cr:'CR',issue:'ISSUE',deployment:'DEPLOY',doc:'DOC',other:'LINK',branch:'BRANCH',tag:'TAG',worktree:'WORKTREE',dir:'目录'};

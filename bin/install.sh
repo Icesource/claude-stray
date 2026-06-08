@@ -213,7 +213,9 @@ body = ("When you create or reference an external resource through a CLI/skill "
         "start each one as its own sub-card with: `stray spawn \"<task>\"` "
         "(one call per sub-task; each gets its own git worktree and is linked "
         "under this session). Let the USER decide the split — don't fan out on "
-        "your own.")
+        "your own. To check those sub-cards' progress, run `stray subtasks`; to "
+        "relay a message into one, `stray send <session_id> \"...\"`. Use these "
+        "on demand when the user asks — don't run an autonomous loop.)")
 block = (START + "\n<!-- managed by claude-stray; removed on uninstall -->\n"
          + body + "\n" + END + "\n")
 os.makedirs(os.path.dirname(path), exist_ok=True)

@@ -59,6 +59,30 @@ def test_find_session_by_cwd():
         assert _subcards.find_session_by_cwd(proj, "/other/path") is None
 
 
+def test_subtask_metadata():
+    subcards = {"c1": {"parent": "P"}, "c2": {"parent": "P"}, "c3": {"parent": "OTHER"}}
+    mm = {"workspaces": [{"initiatives": [
+        {"name": "改鉴权", "sessions": ["c1"], "status": "active",
+         "progress": "写了 handler\n还差测试", "blockers": ["等评审"], "next_step": "加测试",
+         "code_location": {"worktree": "/w/authz", "branch": "worktree-authz"}},
+        {"name": "写文档", "sessions": ["c2"], "status": "done", "progress": "完成"},
+        {"name": "别人的", "sessions": ["c3"]},
+        {"name": "父卡", "sessions": ["P"]},
+    ]}]}
+    md = _subcards.subtask_metadata("P", mm, subcards, jsonl_lookup=lambda s: f"/j/{s}.jsonl")
+    assert {m["name"] for m in md} == {"改鉴权", "写文档"}
+    a = next(m for m in md if m["session_id"] == "c1")
+    assert a["progress"] == "写了 handler 还差测试" and a["blockers"] == ["等评审"]
+    assert a["worktree"] == "/w/authz" and a["jsonl"] == "/j/c1.jsonl"
+
+
+def test_find_conflicts():
+    fb = {"a": ["x.py", "y.py"], "b": ["y.py", "z.py"], "c": ["q.py"]}
+    out = _subcards.find_conflicts(fb)
+    assert out == {"a": ["b"], "b": ["a"]}        # a&b share y.py; c alone
+    assert _subcards.find_conflicts({}) == {}
+
+
 def test_link_empty_registry_noop():
     mm = {"workspaces": [{"initiatives": [{"id": "i1", "sessions": ["x"]}]}]}
     assert _subcards.link(mm, {}) == 0

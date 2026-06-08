@@ -49,6 +49,51 @@ PY
   exit $?
 fi
 
+# --- Subcommand: subtasks (DD-025) ------------------------------------------
+# Pull this session's sub-cards' progress digest into context (run by the parent).
+#   Usage: stray subtasks   (uses $CLAUDE_SESSION_ID as the parent)
+if [ "${1:-}" = "subtasks" ]; then
+  python3 - "${STRAY_PORT:-9876}" "${CLAUDE_SESSION_ID:-}" <<'PY'
+import json, sys, urllib.request, urllib.parse
+port, parent = sys.argv[1], sys.argv[2]
+if not parent:
+    print("(无 $CLAUDE_SESSION_ID — 在一条 claude 会话里运行才能识别父会话)"); sys.exit(0)
+try:
+    q = urllib.parse.urlencode({"parent": parent})
+    j = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/api/subtasks?{q}", timeout=10))
+except Exception as e:
+    print("subtasks 失败(serve 没在跑?):", e, file=sys.stderr); sys.exit(1)
+subs = j.get("subcards") or []
+if not subs:
+    print("当前会话还没有子卡。"); sys.exit(0)
+print(json.dumps({"parent": parent, "subcards": subs}, ensure_ascii=False, indent=2))
+PY
+  exit $?
+fi
+
+# --- Subcommand: send (DD-025) ----------------------------------------------
+# Relay one message into a (live) session's terminal — human-directed, one-shot.
+#   Usage: stray send <session_id> "<message>"
+if [ "${1:-}" = "send" ]; then
+  shift || true
+  SEND_SID="${1:-}"; shift || true
+  SEND_MSG="$*"
+  [ -n "$SEND_SID" ] && [ -n "$SEND_MSG" ] || { echo 'Usage: stray send <session_id> "<message>"' >&2; exit 1; }
+  python3 - "${STRAY_PORT:-9876}" "$SEND_SID" "$SEND_MSG" <<'PY'
+import json, sys, urllib.request
+port, sid, msg = sys.argv[1], sys.argv[2], sys.argv[3]
+body = json.dumps({"sid": sid, "text": msg}).encode()
+try:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/send", data=body,
+                                 headers={"Content-Type": "application/json"})
+    j = json.load(urllib.request.urlopen(req, timeout=10))
+except Exception as e:
+    print("send 失败(serve 没在跑?):", e, file=sys.stderr); sys.exit(1)
+print("✓ 已发送" if not j.get("error") else ("发送结果:" + str(j.get("hint") or j.get("error"))))
+PY
+  exit $?
+fi
+
 DO_REFRESH=0
 DO_HTML=0
 DO_OPEN=0

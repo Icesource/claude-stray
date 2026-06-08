@@ -1026,6 +1026,27 @@ class Handler(BaseHTTPRequestHandler):
             return self._handle_transcript()
         if path == "/api/archive-weeks":
             return self._handle_archive_weeks()
+        if path == "/api/subtasks":
+            from urllib.parse import parse_qs
+            parent = (parse_qs(urlparse(self.path).query).get("parent") or [""])[0]
+            if not parent or _subcards is None:
+                return self._reply(200, {"parent": parent, "subcards": []})
+            try:
+                mm = json.load(open(DASHBOARD_JSON))
+            except Exception:
+                mm = {}
+            try:
+                _attach_code_location(mm)   # populate worktree/branch on the cards
+            except Exception:
+                pass
+
+            def _jsonl(sid):
+                import glob as _g
+                hits = _g.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
+                return hits[0] if hits else None
+            md = _subcards.subtask_metadata(parent, mm,
+                                            _subcards.load(str(SUBCARDS_JSON)), _jsonl)
+            return self._reply(200, {"parent": parent, "subcards": md})
         if path == "/api/data":
             data = {}
             try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
