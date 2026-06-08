@@ -13,13 +13,6 @@ set -u
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# Kill switch. If this flag file exists, exit immediately and do no
-# AI work. Used to halt the pipeline when cost runs hot. Remove the
-# file (`rm cache/.refresh-disabled`) to re-enable.
-if [ -f "$REPO_ROOT/cache/.refresh-disabled" ]; then
-  exit 0
-fi
-
 # Platform-aware log location.
 if [ "$(uname)" = "Darwin" ]; then
   LOG="$HOME/Library/Logs/claude-stray.log"
@@ -52,6 +45,14 @@ printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/record-location.py" 2>>"$LOG" |
 # Stop/SessionStart map to idle here; running/needs_you come from the
 # UserPromptSubmit/Notification hooks via live-hook.sh.
 printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/live-state.py" 2>>"$LOG" || true
+
+# Kill switch. Halts ONLY the expensive AI pipeline (the fork below) when cost
+# runs hot — the cheap, no-AI live-status + location recording ABOVE always runs,
+# so the cockpit's bands stay accurate even while the pipeline is paused (else a
+# Stop never flips a card out of 进行中). Remove cache/.refresh-disabled to re-enable.
+if [ -f "$REPO_ROOT/cache/.refresh-disabled" ]; then
+  exit 0
+fi
 
 # Fork the actual work and detach so the hook returns immediately.
 (
