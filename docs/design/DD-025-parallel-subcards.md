@@ -221,6 +221,28 @@ parent) — start with human-pull + UI milestone badges only.
 - **Conflict signal fidelity**: filename-overlap is a coarse first cut; semantic overlap
   is the real problem but harder. Ship filename-overlap first, label it as such.
 
+## Implementation notes (found while building)
+
+- **Parent sid is free**: Claude Code injects **`CLAUDE_SESSION_ID`** into the session
+  env (record-location.py already uses it). So when the parent agent runs `stray spawn`
+  via Bash, the subprocess reads the parent sid directly — no jsonl guessing.
+- **Link by CHILD session_id, not by worktree path/branch**: don't depend on guessing
+  `claude --worktree`'s exact dir/branch naming. Capture the child's own session_id at
+  spawn (poll for the new jsonl that appears just after spawn) and key the registry by it.
+- **Registry**: `cache/subcards.json` = `{child_sid: {parent, slug, created_at}}`
+  (`bin/_subcards.py`: load / record / link). serve's `link()` runs at /api/data
+  (alongside DD-022-A's code_location attach) and sets `init.parent_session_id` on any
+  card whose session is a registered child. Pure render-time, no new persistence churn.
+- **Sub-cards require a worktree** (isolation) — that's the whole point of fanning out.
+
+### Slices
+1. ✅ `_subcards.py` registry (load/record/link) + tests — the linkage data layer.
+2. `stray spawn "<task>"`: parent=$CLAUDE_SESSION_ID, generate slug, POST /api/new-session
+   {worktree:true, name:slug, parent}; serve spawns the child, polls for its new sid,
+   `_subcards.record(child_sid, parent)`. (The one live-untested bit: `claude --worktree`.)
+3. cockpit: nest sub-cards under the parent card + parent status roll-up; ⚠ same-files
+   conflict warning across siblings (DD-022-C folds in here).
+
 ## Rough plan (after DD-022 phase A lands — worktree data must be mechanical first)
 
 1. `parent_session_id` on cards + nested sub-card render + parent status roll-up.
