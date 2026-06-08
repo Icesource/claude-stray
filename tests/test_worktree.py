@@ -64,6 +64,30 @@ def test_slugify():
     assert len(s("a" * 80)) == 40                              # capped
 
 
+def test_changed_files():
+    """changed_files reports uncommitted + committed-since-fork; empty on non-repo."""
+    with tempfile.TemporaryDirectory() as d:
+        def g(*a):
+            return subprocess.run(["git", "-C", d, *a], capture_output=True, text=True)
+        g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+        open(os.path.join(d, "base.txt"), "w").write("x\n")
+        g("add", "-A"); g("commit", "-qm", "base")
+        fork = g("rev-parse", "HEAD").stdout.strip()
+        # commit a new file on top of the fork point
+        open(os.path.join(d, "feat.py"), "w").write("y\n")
+        g("add", "-A"); g("commit", "-qm", "feat")
+        # and an uncommitted working-tree change
+        open(os.path.join(d, "wip.py"), "w").write("z\n")
+        g("add", "wip.py")
+        files = _worktree.changed_files(d, fork)
+        assert "feat.py" in files and "wip.py" in files, files
+        assert "base.txt" not in files, files
+        # no base_ref → only working-tree changes (feat.py was committed, so excluded)
+        wt_only = _worktree.changed_files(d, "")
+        assert "wip.py" in wt_only and "feat.py" not in wt_only, wt_only
+    assert _worktree.changed_files("/no/such/dir") == []
+
+
 def test_cache_reuses(monkeypatch=None):
     """code_location_for_cwd caches within the TTL (git not re-shelled)."""
     calls = {"n": 0}

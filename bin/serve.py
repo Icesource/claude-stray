@@ -324,8 +324,48 @@ def _attach_code_location(mindmap: dict) -> int:
     if _subcards is not None:
         try:
             _subcards.link(mindmap, _subcards.load(str(SUBCARDS_JSON)))
+            _attach_conflicts(mindmap)
         except Exception:
             pass
+    return n
+
+
+def _attach_conflicts(mindmap: dict) -> int:
+    """DD-025: set init['conflicts_with'] = [sibling card names] on parallel sub-cards
+    that have touched ≥1 of the same file. Siblings = sub-cards sharing a parent
+    (parent_session_id, set by _subcards.link). Coarse filename overlap via git diff
+    per worktree (cached); base = the parent card's branch (the shared fork point).
+    Best-effort render-time enrichment — no persistence."""
+    if _subcards is None or _worktree is None or not mindmap:
+        return 0
+    by_sid: dict = {}                      # sid -> init (first session)
+    groups: dict = {}                      # parent_sid -> [(sid, init), ...]
+    for w in mindmap.get("workspaces", []) or []:
+        for init in w.get("initiatives", []) or []:
+            sids = init.get("sessions") or (
+                [init["origin_session"]] if init.get("origin_session") else [])
+            sid = sids[0] if sids else None
+            if not sid:
+                continue
+            by_sid[sid] = init
+            p = init.get("parent_session_id")
+            if p:
+                groups.setdefault(p, []).append((sid, init))
+    n = 0
+    for parent, sibs in groups.items():
+        if len(sibs) < 2:                  # need ≥2 parallel sub-cards to conflict
+            continue
+        base = ((by_sid.get(parent) or {}).get("code_location") or {}).get("branch") or ""
+        files_by_sid = {}
+        for sid, init in sibs:
+            wt = (init.get("code_location") or {}).get("worktree")
+            if wt:
+                files_by_sid[sid] = _worktree.changed_files_cached(wt, base)
+        name_of = {sid: (init.get("name") or sid[:8]) for sid, init in sibs}
+        init_of = dict(sibs)
+        for sid, peers in _subcards.find_conflicts(files_by_sid).items():
+            init_of[sid]["conflicts_with"] = [name_of[pe] for pe in peers if pe in name_of]
+            n += 1
     return n
 
 
