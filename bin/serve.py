@@ -298,8 +298,73 @@ try:
     import _subcards  # DD-025: parent↔child sub-card registry
 except Exception:
     _subcards = None
+try:
+    import _resources  # DD-026: mechanical url resolution (backfill + reconstruct)
+except Exception:
+    _resources = None
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
+
+_RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
+_RES_REMOTE_CACHE: dict = {}   # cwd -> (epoch, remote_url)
+
+
+def _jsonl_text_cached(sid: str) -> str:
+    """Full text of a session's jsonl, cached by mtime (for url backfill)."""
+    for f in PROJECTS_DIR.glob(f"*/{sid}.jsonl"):
+        try:
+            mt = f.stat().st_mtime
+        except OSError:
+            continue
+        ent = _RES_JSONL_CACHE.get(str(f))
+        if ent and ent[0] == mt:
+            return ent[1]
+        try:
+            txt = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            txt = ""
+        _RES_JSONL_CACHE[str(f)] = (mt, txt)
+        return txt
+    return ""
+
+
+def _remote_for_cwd(cwd: str) -> str:
+    """`git -C cwd remote get-url origin`, cached 5 min (for url reconstruct)."""
+    if not cwd or _worktree is None:
+        return ""
+    now = time.time()
+    ent = _RES_REMOTE_CACHE.get(cwd)
+    if ent and now - ent[0] < 300:
+        return ent[1]
+    remote = _worktree._git(cwd, "remote", "get-url", "origin") or ""
+    _RES_REMOTE_CACHE[cwd] = (now, remote)
+    return remote
+
+
+def _attach_resource_urls(mindmap: dict) -> int:
+    """DD-026: fill missing http urls on collected MR/CR/issue artifacts so they
+    stop showing as dead grey chips. Two layers — exact backfill from the session
+    transcript, then reconstruct from the repo remote + ref_id. Only cards with a
+    url-less, ref_id'd artifact pay the jsonl read. Best-effort, render-time."""
+    if _resources is None or not mindmap:
+        return 0
+    n = 0
+    for w in mindmap.get("workspaces", []) or []:
+        for init in w.get("initiatives", []) or []:
+            arts = init.get("artifacts") or []
+            need = any(isinstance(a, dict) and a.get("ref_id")
+                       and not str(a.get("url") or "").startswith("http")
+                       for a in arts)
+            if not need:
+                continue
+            sids = init.get("sessions") or (
+                [init["origin_session"]] if init.get("origin_session") else [])
+            if not sids:
+                continue
+            cwd = _resume_cwd_for(sids[0])
+            n += _resources.resolve_urls(arts, _jsonl_text_cached(sids[0]),
+                                         _remote_for_cwd(cwd))
+    return n
 
 
 def _attach_code_location(mindmap: dict) -> int:
@@ -1037,6 +1102,7 @@ class Handler(BaseHTTPRequestHandler):
                 mm = {}
             try:
                 _attach_code_location(mm)   # populate worktree/branch on the cards
+                _attach_resource_urls(mm)   # DD-026: backfill/reconstruct MR/CR urls
             except Exception:
                 pass
 
@@ -1069,6 +1135,7 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             try:
                 _attach_code_location(data.get("mindmap"))  # DD-022-A: real worktree/branch
+                _attach_resource_urls(data.get("mindmap"))  # DD-026: backfill/reconstruct urls
             except Exception:
                 pass
             # Sync health for the empty/first-run state: is the background

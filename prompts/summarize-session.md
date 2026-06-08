@@ -397,11 +397,22 @@ weight that risks drift.)
       的持有人数". This is the short structured form of `# 下一步`; keep them
       consistent. Omit the key only when the work is truly finished with
       nothing next.
-    - **`awaiting_user`**: emit ONLY when the work is **blocked on the human** —
-      the session genuinely cannot proceed until the user decides/answers/
-      approves something. Give the **specific** thing in one line, e.g.
-      "确认是否接受仅兼容 3 个 _ALL ACL" / "选 A 方案还是 B 方案". This is the
-      strongest signal in the cockpit (it drives the 需要你 band), so do NOT
-      emit it for "I could ask but don't need to", routine FYIs, or work the
-      AI can continue on its own. When in doubt, omit. If you emit
-      `awaiting_user`, `status_guess` must be `active` (not `done`).
+    - **`awaiting_user`**: emit when the work is **blocked on the human** — the
+      ball is in the user's court and the work cannot progress until they act.
+      This covers BOTH:
+      (a) **a decision/answer/approval the AI needs** — e.g. "确认是否接受仅兼容
+          3 个 _ALL ACL" / "选 A 方案还是 B 方案"; AND
+      (b) **a hand-off action only the user can perform outside this session** —
+          the AI has done its part and the next move is a manual human step it
+          cannot do itself: run a prod/DB-platform SQL, click deploy/发布, merge
+          /approve a CR, flip a config switch on a console, etc. e.g. "去数据库
+          平台执行 ALTER 发布 step 3" / "在发布单点确认上线" / "合并 CR 27724957".
+      The test is **WHO performs the next action**: if only the human can (or
+      must decide), emit `awaiting_user` with that specific one-liner. If the AI
+      will just do it next turn (run tests, grep code, write a patch), do NOT
+      emit — that's a plain `next_step`. This is the strongest signal in the
+      cockpit (drives the 需要你 band), so don't emit it for "I could ask but
+      don't need to" or routine FYIs. When the next step is genuinely a manual
+      user action, it IS awaiting_user even if the AI never literally asked a
+      question. If you emit `awaiting_user`, `status_guess` must be `active`
+      (not `done`); and `next_step` should usually echo the same hand-off action.
