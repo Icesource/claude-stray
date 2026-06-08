@@ -1389,7 +1389,10 @@ class Handler(BaseHTTPRequestHandler):
             # ensure a slug so we know the worktree path (to capture the child sid)
             if not wt_name:
                 wt_name = "task-" + _uuid.uuid4().hex[:6]
-            wt_path = os.path.join(cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name)
+            # realpath: the child session records its cwd resolved (e.g. /tmp →
+            # /private/tmp on macOS), so the prefix we match against must be too.
+            wt_path = os.path.realpath(os.path.join(
+                cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
             parts = ["claude", "--worktree", wt_name, "--name", wt_name,
                      "--dangerously-skip-permissions"]
             if prompt:
