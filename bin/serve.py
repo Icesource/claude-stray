@@ -1466,6 +1466,14 @@ class Handler(BaseHTTPRequestHandler):
         wt_name = _worktree.slugify(body.get("name") or "") if _worktree else ""
         parent = (body.get("parent") or "").strip()        # DD-025: parent session id
         prompt = (body.get("prompt") or "").strip()        # DD-025: seed the child's task
+        # DD-025: a parent-spawned sub-card runs HEADLESS via `claude -p --worktree`.
+        # Verified 2026-06-08: interactive `claude --worktree` in a ttyd hangs and
+        # never creates the worktree; `claude -p --worktree` reliably creates the
+        # worktree+branch+a RESUMABLE session, runs the task, then exits — so the
+        # later cockpit "open terminal" resume is the SOLE driver (single-driver
+        # safe, no fork). No ttyd is spawned for the child.
+        if parent and want_wt:
+            return self._spawn_subcard(cwd, body.get("name") or "", parent, prompt)
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
         wt_path = ""   # the worktree dir we expect claude to create (for sid capture)
@@ -1542,6 +1550,55 @@ class Handler(BaseHTTPRequestHandler):
                                  "cwd": cwd, "worktree": want_wt,
                                  "worktree_name": wt_name if want_wt else None,
                                  "parent": parent or None})
+
+    def _spawn_subcard(self, cwd: str, name: str, parent: str, prompt: str):
+        """DD-025: fan out a sub-card — run `claude -p --worktree <slug>` DETACHED.
+        It creates .claude/worktrees/<slug>/ + branch worktree-<slug> + a resumable
+        session, runs the seeded task headless, then exits. A bg thread captures the
+        child's session id (its first cwd == the worktree) and records the parent
+        link. The cockpit shows it nested under the parent; "open terminal" resumes
+        it (sole driver — the -p process already exited). No ttyd for the child."""
+        if _worktree is None:
+            return self._reply(500, {"error": "worktree helper unavailable"})
+        cl0 = _worktree.compute_code_location(cwd)
+        if not cl0:
+            return self._reply(400, {"error": "not a git repo",
+                                     "hint": "子卡要在一个 git 仓库目录里 spawn"})
+        if not prompt:
+            return self._reply(400, {"error": "empty task", "hint": "子卡需要一个任务描述"})
+        claude = shutil.which("claude")
+        if not claude:
+            return self._reply(503, {"error": "claude not found", "hint": "claude 不在 PATH 上"})
+        import uuid as _uuid
+        wt_name = _worktree.slugify(name) or ("task-" + _uuid.uuid4().hex[:6])
+        # realpath so the captured child cwd (resolved, e.g. /tmp→/private/tmp) matches
+        wt_path = os.path.realpath(os.path.join(
+            cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
+        parts = [claude, "-p", "--worktree", wt_name, "--name", wt_name,
+                 "--dangerously-skip-permissions", prompt]
+        child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
+        try:
+            proc = subprocess.Popen(parts, cwd=cwd, env=child_env,
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    stdin=subprocess.DEVNULL, start_new_session=True)
+        except Exception as e:
+            return self._reply(500, {"error": str(e)})
+        if _subcards is not None:
+            since = time.time() - 2
+
+            def _capture():
+                for _ in range(40):     # -p spins up the worktree + first write
+                    time.sleep(1)
+                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
+                    if sid:
+                        try:
+                            _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
+                        except Exception:
+                            pass
+                        return
+            threading.Thread(target=_capture, daemon=True).start()
+        return self._reply(200, {"ok": True, "detached": True, "worktree_name": wt_name,
+                                 "worktree": True, "parent": parent, "pid": proc.pid})
 
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and

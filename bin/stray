@@ -41,10 +41,11 @@ try:
     j = json.load(urllib.request.urlopen(req, timeout=10))
 except Exception as e:
     print("spawn 失败(serve 没在跑?):", e, file=sys.stderr); sys.exit(1)
-if not j.get("url"):
+if not (j.get("ok") or j.get("url")):
     print("spawn 失败:", j.get("hint") or j.get("error") or j, file=sys.stderr); sys.exit(1)
-print(f"✓ 子卡已起:{j.get('worktree_name') or '新会话'}  (worktree={j.get('worktree')})")
-print("  几秒后它会作为子卡挂在当前卡下;在驾驶舱里打开它的终端即可驱动。")
+print(f"✓ 子卡已起(后台 headless):{j.get('worktree_name') or '新会话'}")
+print("  它在新 worktree 里跑这个任务;十几秒后作为子卡挂在当前卡下。")
+print("  跑完后在驾驶舱打开它的终端(resume)即可接着驱动。")
 PY
   exit $?
 fi
