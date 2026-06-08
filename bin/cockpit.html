@@ -525,7 +525,10 @@
   // Signature of what's actually rendered (excludes the volatile idle timer),
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
-  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
+  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user,
+    // DD-025: include sub-cards' state too, else a child's band change alone (its own
+    // running→done) doesn't move the signature and the subrow + parent ⑃ roll-up freeze.
+    (r.children||[]).map(c=>[c.id,c.band,c.progress])]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
