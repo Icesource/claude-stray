@@ -97,19 +97,6 @@ def subtask_metadata(parent_sid, mindmap, subcards, jsonl_lookup=None):
     return out
 
 
-def find_conflicts(files_by_sid):
-    """files_by_sid: {sid: iterable of changed file paths}. Returns {sid: [sibling
-    sids that touch >=1 of the same files]} — the ⚠ same-files warning across
-    parallel sub-cards (filename overlap; coarse but no product does even this)."""
-    items = [(s, set(fs or [])) for s, fs in (files_by_sid or {}).items()]
-    out = {}
-    for s, fs in items:
-        peers = sorted(s2 for s2, fs2 in items if s2 != s and fs and (fs & fs2))
-        if peers:
-            out[s] = peers
-    return out
-
-
 def link(mindmap, subcards):
     """Set init['parent_session_id'] on every card that IS a registered sub-card
     (its session is a child). Returns how many cards were linked. Pure render-time

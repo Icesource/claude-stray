@@ -205,11 +205,8 @@
   .subrow .sr-prog{flex:1;min-width:0;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .subrow .sr-go{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:12px}
   .subrow .sr-go:hover{border-color:var(--run);color:var(--run)}
-  .subrow .sr-warn{flex:none;font-size:12px;color:var(--needs);cursor:help}
-  .subrow.has-conflict{border-left-color:var(--needs)}
   .name .ws .lv.subc{color:var(--ink-dim);border-color:var(--hair)}
   .name .ws .lv.subc.needs{color:var(--needs);border-color:var(--needs-edge)}
-  .name .ws .lv.conflict{color:var(--needs);border-color:var(--needs-edge)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
   .detail .fresh-tag{font-size:10.5px;color:var(--run);font-family:var(--mono);letter-spacing:.04em;margin-bottom:7px}
   .detail .await-line{font-size:12.5px;color:var(--needs);background:var(--needs-bg);border:1px solid var(--needs-edge);border-radius:7px;padding:7px 10px;margin:2px 0 8px;line-height:1.5}
@@ -469,7 +466,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
-        parent_session_id:init.parent_session_id||null, conflicts_with:init.conflicts_with||null,
+        parent_session_id:init.parent_session_id||null,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -505,9 +502,8 @@
     return rows.filter(r=>!childIds.has(r.id));
   }
   // roll-up of a parent's children: counts by band for the parent's badge
-  function subRollup(ch){const c={total:ch.length,needs:0,done:0,running:0,conflict:0};
-    for(const r of ch){ if(r.band==='needs_you')c.needs++; else if(r.band==='done'||r.band==='done_unread')c.done++; else if(r.band==='running')c.running++;
-      if(r.conflicts_with&&r.conflicts_with.length)c.conflict++; } return c;}
+  function subRollup(ch){const c={total:ch.length,needs:0,done:0,running:0};
+    for(const r of ch){ if(r.band==='needs_you')c.needs++; else if(r.band==='done'||r.band==='done_unread')c.done++; else if(r.band==='running')c.running++; } return c;}
   function renderCurrent(){ const v=document.body.dataset.view; if(v==='archive')return renderArchive(); v==='attention'?renderAttention():renderProject(); }
   // 归档周视图:已完成/归档的工作按 ISO 周分组,每周一句话小结
   async function renderArchive(){
@@ -679,10 +675,8 @@
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
       const sid=esc(c.session||''); const prog=c.progress?firstSent(c.progress):(c.reason||'');
-      const cf=(c.conflicts_with&&c.conflicts_with.length)
-        ?`<span class="sr-warn" title="改到和这些子任务相同的文件：${esc(c.conflicts_with.join('、'))}">⚠</span>`:'';
-      return `<div class="subrow${cf?' has-conflict':''}" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
-        `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>${cf}`+
+      return `<div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
+        `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button></div>`;
     }).join('');
     return `<div class="subcards">${rows}</div>`;}
@@ -690,8 +684,7 @@
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
     let roll='';
     if(r.children&&r.children.length){const c=subRollup(r.children);
-      roll=`<span class="lv subc${c.needs?' needs':''}" title="${c.total} 个子任务">⑃ ${c.total}${c.needs?' · '+c.needs+'等你':(c.done?' · '+c.done+'完成':'')}</span>`;
-      if(c.conflict)roll+=`<span class="lv conflict" title="${c.conflict} 个子任务改到相同文件">⚠ ${c.conflict}</span>`;}
+      roll=`<span class="lv subc${c.needs?' needs':''}" title="${c.total} 个子任务">⑃ ${c.total}${c.needs?' · '+c.needs+'等你':(c.done?' · '+c.done+'完成':'')}</span>`;}
     return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}${r.children?' has-subs':''}" data-band="${r.band}" data-id="${esc(r.id||'')}" data-sid="${esc(r.session||'')}">${statusIcon(r.band,12)}`+
       `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}${roll}</div></div>`+
       midCell(r)+`<div class="timer">${esc(r.idle)}</div><div class="go" title="在内嵌终端打开这条会话">▸</div></div>`+detail(r)+subRowsEl(r.children);}

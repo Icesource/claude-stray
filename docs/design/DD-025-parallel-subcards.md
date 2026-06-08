@@ -102,10 +102,9 @@ The cockpit provides three things and *only* three:
    live status + one-line progress (read-only; reuses existing per-session summaries +
    live state). This satisfies "父卡理应有全局视野" with zero orchestration: it's
    rendering, not coordinating.
-3. **Conflict-aware triage** (the differentiator no product nails) — when ≥2 sibling
-   sub-cards' worktrees touch the **same files**, surface a **⚠ 可能冲突** warning on
-   the parent. This directly attacks complaint #2, and is pure observation (diff the
-   worktrees / `git diff --name-only` per child, intersect).
+3. ~~**Conflict-aware triage** — ⚠ when ≥2 sibling worktrees touch the same files.~~
+   **撤销(2026-06-08):** 并行 agent 改同一文件是高概率常态,文件名重叠预警噪音 >> 信号;
+   冲突留给子任务完成后逐个 CR 合并时解决。详见下方 Slices §3。
 
 Attention bands (needs_you → running → idle → done) apply per sub-card; the parent
 shows a roll-up. Each sub-card is independently driveable (its own terminal) and
@@ -244,13 +243,17 @@ parent) — start with human-pull + UI milestone badges only.
    /api/data links via `_subcards.link`. Install adds a global prompt teaching claude to
    use `stray spawn` for parallel sub-tasks. (Live-untested bit: the `claude --worktree`
    spawn + sid capture — needs a real run.)
-3. ✅ cockpit: nest sub-cards under the parent card + parent status roll-up (⑃ N);
-   ⚠ same-files conflict warning across siblings (DD-022-C folded in: `_worktree.changed_files`
-   per worktree, base=父卡分支 → `_subcards.find_conflicts` → `conflicts_with` → 子卡行 ⚠ 徽标
-   + 父卡 ⚠ N 角标). Plus `stray subtasks` (pull progress, the metadata JSON) + `stray send`
-   (one-shot relay), both in the global prompt. All non-AI/pure pieces unit-tested
-   (test_subcards 7/7, test_worktree 6/6).
+3. ✅ cockpit: nest sub-cards under the parent card + parent status roll-up (⑃ N).
+   Plus `stray subtasks` (pull progress, the metadata JSON) + `stray send` (one-shot
+   relay), both in the global prompt. All non-AI/pure pieces unit-tested
+   (test_subcards 6/6, test_worktree 5/5).
    (Still live-untested: the real `claude --worktree` spawn + sid capture chain.)
+
+   **Dropped: the ⚠ same-files conflict warning** (was wired then reverted). 并行 agent
+   改同一文件是高概率常态而非异常,预警会沦为天天响的噪音;真正的冲突在子任务完成后
+   逐个 CR 合并时解决最自然。代码在 git 历史里(_worktree.changed_files /
+   _subcards.find_conflicts / _attach_conflicts),若日后想要更聪明的「真语义冲突」预警
+   可从那里捡回。
 
 ## Rough plan (after DD-022 phase A lands — worktree data must be mechanical first)
 

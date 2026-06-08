@@ -76,13 +76,6 @@ def test_subtask_metadata():
     assert a["worktree"] == "/w/authz" and a["jsonl"] == "/j/c1.jsonl"
 
 
-def test_find_conflicts():
-    fb = {"a": ["x.py", "y.py"], "b": ["y.py", "z.py"], "c": ["q.py"]}
-    out = _subcards.find_conflicts(fb)
-    assert out == {"a": ["b"], "b": ["a"]}        # a&b share y.py; c alone
-    assert _subcards.find_conflicts({}) == {}
-
-
 def test_link_empty_registry_noop():
     mm = {"workspaces": [{"initiatives": [{"id": "i1", "sessions": ["x"]}]}]}
     assert _subcards.link(mm, {}) == 0
