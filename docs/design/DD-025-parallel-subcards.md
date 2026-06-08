@@ -244,10 +244,13 @@ parent) — start with human-pull + UI milestone badges only.
    /api/data links via `_subcards.link`. Install adds a global prompt teaching claude to
    use `stray spawn` for parallel sub-tasks. (Live-untested bit: the `claude --worktree`
    spawn + sid capture — needs a real run.)
-3. cockpit: nest sub-cards under the parent card + parent status roll-up; ⚠ same-files
-   conflict warning across siblings (DD-022-C folds in here). Plus `stray subtasks`
-   (pull progress, the metadata JSON) + `stray send` (one-shot relay) — add those to the
-   global prompt then.
+3. ✅ cockpit: nest sub-cards under the parent card + parent status roll-up (⑃ N);
+   ⚠ same-files conflict warning across siblings (DD-022-C folded in: `_worktree.changed_files`
+   per worktree, base=父卡分支 → `_subcards.find_conflicts` → `conflicts_with` → 子卡行 ⚠ 徽标
+   + 父卡 ⚠ N 角标). Plus `stray subtasks` (pull progress, the metadata JSON) + `stray send`
+   (one-shot relay), both in the global prompt. All non-AI/pure pieces unit-tested
+   (test_subcards 7/7, test_worktree 6/6).
+   (Still live-untested: the real `claude --worktree` spawn + sid capture chain.)
 
 ## Rough plan (after DD-022 phase A lands — worktree data must be mechanical first)
 
