@@ -11,6 +11,44 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 
+# --- Subcommand: spawn (DD-025) ---------------------------------------------
+# Fan out a sub-card from the CURRENT session: starts an independent claude in a
+# new git worktree, working on <task>, linked as a child of this session (parent
+# = $CLAUDE_SESSION_ID, injected by Claude Code). The cockpit nests it under the
+# current card. Run BY the parent session (or you) — we provide the primitive; we
+# do NOT run an autonomous coordination loop.
+#   Usage: stray spawn "<task>" [--name <slug>] [--no-worktree]
+if [ "${1:-}" = "spawn" ]; then
+  shift || true
+  SPAWN_NAME=""; SPAWN_TASK=""; SPAWN_WT=1
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --name) SPAWN_NAME="${2:-}"; shift 2 ;;
+      --no-worktree) SPAWN_WT=0; shift ;;
+      -h|--help) echo 'Usage: stray spawn "<task>" [--name <slug>] [--no-worktree]'; exit 0 ;;
+      *) SPAWN_TASK="${SPAWN_TASK:+$SPAWN_TASK }$1"; shift ;;
+    esac
+  done
+  [ -n "$SPAWN_TASK" ] || { echo 'stray spawn: 需要任务,例:stray spawn "修鉴权超时"' >&2; exit 1; }
+  python3 - "${STRAY_PORT:-9876}" "$(pwd)" "${CLAUDE_SESSION_ID:-}" "$SPAWN_NAME" "$SPAWN_WT" "$SPAWN_TASK" <<'PY'
+import json, sys, urllib.request
+port, cwd, parent, name, wt, task = sys.argv[1:7]
+body = json.dumps({"cwd": cwd, "worktree": wt == "1", "name": name,
+                   "parent": parent, "prompt": task}).encode()
+try:
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/new-session",
+                                 data=body, headers={"Content-Type": "application/json"})
+    j = json.load(urllib.request.urlopen(req, timeout=10))
+except Exception as e:
+    print("spawn 失败(serve 没在跑?):", e, file=sys.stderr); sys.exit(1)
+if not j.get("url"):
+    print("spawn 失败:", j.get("hint") or j.get("error") or j, file=sys.stderr); sys.exit(1)
+print(f"✓ 子卡已起:{j.get('worktree_name') or '新会话'}  (worktree={j.get('worktree')})")
+print("  几秒后它会作为子卡挂在当前卡下;在驾驶舱里打开它的终端即可驱动。")
+PY
+  exit $?
+fi
+
 DO_REFRESH=0
 DO_HTML=0
 DO_OPEN=0

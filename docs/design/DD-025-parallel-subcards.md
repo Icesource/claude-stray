@@ -237,11 +237,17 @@ parent) — start with human-pull + UI milestone badges only.
 
 ### Slices
 1. ✅ `_subcards.py` registry (load/record/link) + tests — the linkage data layer.
-2. `stray spawn "<task>"`: parent=$CLAUDE_SESSION_ID, generate slug, POST /api/new-session
-   {worktree:true, name:slug, parent}; serve spawns the child, polls for its new sid,
-   `_subcards.record(child_sid, parent)`. (The one live-untested bit: `claude --worktree`.)
+2. ✅ `stray spawn "<task>"`: parent=$CLAUDE_SESSION_ID, slug (or task-<rnd>), POST
+   /api/new-session {worktree:true, name, parent, prompt}; serve runs
+   `claude --worktree <slug> "<task>"`, a bg thread polls the worktree's project dir
+   for the child's new sid (find_session_by_cwd) → `_subcards.record(child_sid, parent)`;
+   /api/data links via `_subcards.link`. Install adds a global prompt teaching claude to
+   use `stray spawn` for parallel sub-tasks. (Live-untested bit: the `claude --worktree`
+   spawn + sid capture — needs a real run.)
 3. cockpit: nest sub-cards under the parent card + parent status roll-up; ⚠ same-files
-   conflict warning across siblings (DD-022-C folds in here).
+   conflict warning across siblings (DD-022-C folds in here). Plus `stray subtasks`
+   (pull progress, the metadata JSON) + `stray send` (one-shot relay) — add those to the
+   global prompt then.
 
 ## Rough plan (after DD-022 phase A lands — worktree data must be mechanical first)
 

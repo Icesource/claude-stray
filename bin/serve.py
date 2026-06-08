@@ -294,6 +294,12 @@ try:
     import _worktree  # DD-022-A: mechanical worktree/branch from cwd (serve.py is in bin/)
 except Exception:
     _worktree = None
+try:
+    import _subcards  # DD-025: parent↔child sub-card registry
+except Exception:
+    _subcards = None
+SUBCARDS_JSON = CACHE_DIR / "subcards.json"
+PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 
 def _attach_code_location(mindmap: dict) -> int:
@@ -314,6 +320,12 @@ def _attach_code_location(mindmap: dict) -> int:
             if cl:
                 init["code_location"] = cl
                 n += 1
+    # DD-025: tag cards that are registered sub-cards with their parent_session_id.
+    if _subcards is not None:
+        try:
+            _subcards.link(mindmap, _subcards.load(str(SUBCARDS_JSON)))
+        except Exception:
+            pass
     return n
 
 
@@ -1364,19 +1376,28 @@ class Handler(BaseHTTPRequestHandler):
         # rebuilding worktree management.
         want_wt = bool(body.get("worktree"))
         wt_name = _worktree.slugify(body.get("name") or "") if _worktree else ""
+        parent = (body.get("parent") or "").strip()        # DD-025: parent session id
+        prompt = (body.get("prompt") or "").strip()        # DD-025: seed the child's task
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
+        wt_path = ""   # the worktree dir we expect claude to create (for sid capture)
         if want_wt:
-            if not (_worktree and _worktree.compute_code_location(cwd)):
+            cl0 = _worktree.compute_code_location(cwd) if _worktree else None
+            if not cl0:
                 return self._reply(400, {"error": "not a git repo",
                                          "hint": "新建 worktree 需要在一个 git 仓库目录里"})
-            parts = ["claude", "--worktree"] + ([wt_name] if wt_name else [])
-            if wt_name:
-                parts += ["--name", wt_name]
-            parts += ["--dangerously-skip-permissions"]
+            # ensure a slug so we know the worktree path (to capture the child sid)
+            if not wt_name:
+                wt_name = "task-" + _uuid.uuid4().hex[:6]
+            wt_path = os.path.join(cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name)
+            parts = ["claude", "--worktree", wt_name, "--name", wt_name,
+                     "--dangerously-skip-permissions"]
+            if prompt:
+                parts += [prompt]
             inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
         else:
-            inner = "cd " + shlex.quote(cwd) + " && claude --dangerously-skip-permissions"
+            parts = ["claude", "--dangerously-skip-permissions"] + ([prompt] if prompt else [])
+            inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
         inner, holder_name = _wrap_in_holder(token, inner)
         import socket as _socket
         s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
@@ -1395,10 +1416,28 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"error": str(e)})
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
         _save_terminals()
+        # DD-025: if this is a parent-spawned sub-card, capture the child's new
+        # session id (it appears in the worktree's project dir within a few seconds)
+        # and record the parent↔child link. Background thread — never blocks/raises.
+        if parent and want_wt and wt_path and _subcards is not None:
+            since = time.time() - 2
+
+            def _capture():
+                for _ in range(20):
+                    time.sleep(1)
+                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
+                    if sid:
+                        try:
+                            _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
+                        except Exception:
+                            pass
+                        return
+            threading.Thread(target=_capture, daemon=True).start()
         time.sleep(0.4)
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token,
                                  "cwd": cwd, "worktree": want_wt,
-                                 "worktree_name": wt_name if want_wt else None})
+                                 "worktree_name": wt_name if want_wt else None,
+                                 "parent": parent or None})
 
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and

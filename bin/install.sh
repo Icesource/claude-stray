@@ -208,7 +208,12 @@ body = ("When you create or reference an external resource through a CLI/skill "
         "print its **full URL** in your reply. When you create or substantially "
         "edit a document, print its **full path**. One short line is enough. "
         "(This lets claude-stray collect the resources a session produced and "
-        "surface them next to the work — do not invent URLs you don't have.)")
+        "surface them next to the work — do not invent URLs you don't have.)\n\n"
+        "When the user asks to run several independent sub-tasks in parallel, "
+        "start each one as its own sub-card with: `stray spawn \"<task>\"` "
+        "(one call per sub-task; each gets its own git worktree and is linked "
+        "under this session). Let the USER decide the split — don't fan out on "
+        "your own.")
 block = (START + "\n<!-- managed by claude-stray; removed on uninstall -->\n"
          + body + "\n" + END + "\n")
 os.makedirs(os.path.dirname(path), exist_ok=True)

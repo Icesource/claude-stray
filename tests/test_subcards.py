@@ -41,6 +41,24 @@ def test_link_sets_parent():
     assert "parent_session_id" not in inits["i4"]
 
 
+def test_find_session_by_cwd():
+    with tempfile.TemporaryDirectory() as d:
+        proj = os.path.join(d, "projects")
+        enc = os.path.join(proj, "-Users-x-repo--claude-worktrees-authz")
+        sub = os.path.join(proj, "subagents")
+        os.makedirs(enc); os.makedirs(sub)
+        # a real child session in the worktree cwd
+        with open(os.path.join(enc, "child-sid.jsonl"), "w") as f:
+            f.write('{"cwd": "/Users/x/repo/.claude/worktrees/authz"}\n')
+        # a teammate in subagents with the SAME cwd → must be ignored
+        with open(os.path.join(sub, "agent-z.jsonl"), "w") as f:
+            f.write('{"cwd": "/Users/x/repo/.claude/worktrees/authz"}\n')
+        got = _subcards.find_session_by_cwd(proj, "/Users/x/repo/.claude/worktrees/authz")
+        assert got == "child-sid", got
+        # non-matching prefix → None
+        assert _subcards.find_session_by_cwd(proj, "/other/path") is None
+
+
 def test_link_empty_registry_noop():
     mm = {"workspaces": [{"initiatives": [{"id": "i1", "sessions": ["x"]}]}]}
     assert _subcards.link(mm, {}) == 0

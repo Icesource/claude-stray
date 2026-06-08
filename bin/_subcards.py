@@ -8,6 +8,7 @@ Linking by the CHILD's session_id (captured at spawn) — not by guessing
 `claude --worktree`'s dir/branch naming — keeps it robust to Claude Code internals.
 Pure + path-injectable so it unit-tests without serve.py.
 """
+import glob
 import json
 import os
 import time
@@ -32,6 +33,42 @@ def record(path, child_sid, parent_sid, slug="", _now=None):
         json.dump(d, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
     return d
+
+
+def _first_cwd(jsonl_path):
+    try:
+        with open(jsonl_path, encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    c = json.loads(line).get("cwd")
+                except Exception:
+                    continue
+                if c:
+                    return c
+    except Exception:
+        pass
+    return None
+
+
+def find_session_by_cwd(projects_dir, cwd_prefix, after_ts=0.0):
+    """session_id of the most-recent `projects_dir/*/*.jsonl` whose first cwd starts
+    with cwd_prefix and mtime >= after_ts (excludes the 'subagents' namespace).
+    None if no match. Used to capture a freshly-spawned child's id — we know the
+    worktree cwd it was started in, so we match on that."""
+    best, best_mt = None, -1.0
+    for f in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+        if os.path.basename(os.path.dirname(f)) == "subagents":
+            continue
+        try:
+            mt = os.path.getmtime(f)
+        except OSError:
+            continue
+        if mt < after_ts or mt <= best_mt:
+            continue
+        cwd = _first_cwd(f)
+        if cwd and cwd.startswith(cwd_prefix):
+            best, best_mt = os.path.basename(f)[:-6], mt
+    return best
 
 
 def link(mindmap, subcards):
