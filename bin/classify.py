@@ -802,6 +802,93 @@ def archived_ids_on_disk() -> set[str]:
     return out
 
 
+def load_subcards_map() -> dict:
+    """cache/subcards.json — {child_sid: {parent, slug, created_at}} (DD-025)."""
+    try:
+        d = json.loads((CACHE_DIR / "subcards.json").read_text())
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def subcard_child_sids() -> set[str]:
+    """Child sids registered as sub-cards in cache/subcards.json (DD-025). They're
+    explicitly user-spawned, so they bypass the MIN_TURNS noise filter — a fresh
+    `claude -p` sub-card does just one turn but must still surface + nest."""
+    return set(load_subcards_map().keys())
+
+
+def _ws_name_for_cwd(cwd: str) -> str:
+    """Workspace label for a cwd. A worktree (…/.claude/worktrees/<slug>) belongs to
+    its MAIN repo, so strip the worktree suffix → the repo's basename."""
+    c = cwd or ""
+    if "/.claude/worktrees/" in c:
+        c = c.split("/.claude/worktrees/")[0]
+    return os.path.basename(c.rstrip("/")) or "misc"
+
+
+def mint_subcard_initiatives(new_mm: dict, all_summaries: list,
+                             subcards: dict, deleted_ids: list[str]) -> int:
+    """DD-025: guarantee every registered sub-card surfaces as a card. A fresh
+    `claude -p` sub-card is 1-turn and the AI tends to drop it, so mint a card from
+    its Layer-1 summary for any sub-card sid not already represented. Placed in the
+    PARENT repo's workspace (worktree cwd → main repo). serve._subcards.link then
+    sets parent_session_id and the cockpit nests it; dedup_by_session later folds in
+    any AI-emitted card for the same session, so no duplicate survives. Idempotent."""
+    if not subcards:
+        return 0
+    deleted_set = set(deleted_ids or [])
+    archived = archived_ids_on_disk()
+    represented: set[str] = set()
+    ws_by_name = {w.get("name"): w for w in (new_mm.get("workspaces") or [])}
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            for s in (init.get("sessions") or []):
+                represented.add(s)
+    by_sid = {sid: (fm, raw_fm) for sid, fm, _b, raw_fm in all_summaries}
+    minted = 0
+    for sid, ent in subcards.items():
+        if sid in represented:
+            continue
+        s = by_sid.get(sid)
+        if not s:
+            continue
+        fm, raw_fm = s
+        cid = "subcard::" + sid
+        if cid in deleted_set or cid in archived:
+            continue
+        cwd = fm.get("cwd") or ""
+        la = fm.get("last_activity_at") or now_utc_iso()
+        status = (fm.get("status_guess") or "active").strip().lower() or "active"
+        init = {
+            "id": cid,
+            "name": (ent or {}).get("slug") or _ws_name_for_cwd(cwd) or "sub-task",
+            "status": status,
+            "level": "card",
+            "sessions": [sid],
+            "linked_cwds": [cwd] if cwd else [],
+            "last_activity_at": la,
+            "tasks": parse_tasks_from_fm(raw_fm),
+            "artifacts": parse_artifacts_from_fm(raw_fm),
+        }
+        if (fm.get("next_step") or "").strip():
+            init["next_step"] = fm["next_step"].strip()
+        if (fm.get("awaiting_user") or "").strip():
+            init["awaiting_user"] = fm["awaiting_user"].strip()
+        ws_name = _ws_name_for_cwd(cwd)
+        ws = ws_by_name.get(ws_name)
+        if ws is None:
+            main_cwd = (cwd.split("/.claude/worktrees/")[0]
+                        if "/.claude/worktrees/" in cwd else cwd)
+            ws = {"name": ws_name, "cwd": main_cwd, "last_activity_at": la, "initiatives": []}
+            (new_mm.setdefault("workspaces", [])).append(ws)
+            ws_by_name[ws_name] = ws
+        ws.setdefault("initiatives", []).append(init)
+        represented.add(sid)
+        minted += 1
+    return minted
+
+
 def archived_session_ids_on_disk() -> dict[str, str]:
     """Map of {session_id: most-recent archived_at} for sessions that
     lived inside a user-archived initiative.
@@ -2057,14 +2144,22 @@ def main() -> int:
     else:
         filtered_archived = 0
 
-    # Filter low-signal sessions: 1-turn (likely automation noise).
+    # Filter low-signal sessions: 1-turn (likely automation noise). EXEMPT
+    # registered sub-cards (DD-025): a fresh `claude -p` sub-card does exactly one
+    # turn (the seeded prompt → response → done) but is explicitly user-spawned,
+    # not noise — it must surface so it can nest under its parent.
     if MIN_TURNS > 1:
-        def has_enough_turns(fm):
+        subcard_sids = subcard_child_sids()
+
+        def keep_turns(tup):
+            sid, fm = tup[0], tup[1]
+            if sid in subcard_sids:
+                return True
             try:
                 return int(fm.get("user_turns", "0") or "0") >= MIN_TURNS
             except (TypeError, ValueError):
                 return True
-        hot = [tup for tup in hot if has_enough_turns(tup[1])]
+        hot = [tup for tup in hot if keep_turns(tup)]
         filtered_thin = hot_total - len(hot) - filtered_archived
     else:
         filtered_thin = 0
@@ -2202,6 +2297,14 @@ def main() -> int:
     sealed_n = mint_sealed_initiatives(new_mm, all_summaries, deleted_ids)
     if sealed_n:
         print(f"[classify] DD-019: minted {sealed_n} sealed historical card(s)")
+
+    # DD-025: guarantee every registered sub-card surfaces (the AI drops trivial
+    # 1-turn `claude -p` sub-cards). Runs BEFORE dedup so any AI-emitted duplicate
+    # for the same session folds in.
+    subcard_n = mint_subcard_initiatives(new_mm, all_summaries,
+                                         load_subcards_map(), deleted_ids)
+    if subcard_n:
+        print(f"[classify] DD-025: minted {subcard_n} sub-card(s) the AI dropped")
 
     # DD-016: auto-merge duplicate cards that share a session (AI minted two
     # slugs for one work unit), then fold user-declared merges. Both run last
