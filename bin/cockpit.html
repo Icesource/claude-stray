@@ -1035,21 +1035,18 @@
     dlg.innerHTML=`<div class="nsbox"><h3>＋ 新建任务</h3><div class="nssub">在选定目录里从头开始一条新的 Claude 会话。开始干活后,几句话之内驾驶舱会自动为它生成一张卡片。</div>`+
       `<label>工作目录</label><input type="text" id="nsCwd" placeholder="~/Code/..." value="${esc(cwds[0]||'')}" spellcheck="false">`+
       (chips?`<div class="nschips">${chips}</div>`:'')+
-      `<label class="nswtrow"><input type="checkbox" id="nsWt"> 在新 git worktree 里开(任务隔离,目录在 .claude/worktrees/)</label>`+
-      `<input type="text" id="nsName" placeholder="worktree 名 · 英文短名如 authz-fix(留空自动命名)" spellcheck="false" disabled>`+
+      `<label class="nswtrow"><input type="checkbox" id="nsWt"> 在新 git worktree 里开(任务隔离,自动命名)</label>`+
       `<div class="nsacts"><button class="btn" id="nsCancel">取消</button><button class="btn primary" id="nsGo">开始 ▸</button></div></div>`;
     document.body.appendChild(dlg);
     const inp=dlg.querySelector('#nsCwd'); inp.focus(); inp.select();
-    const wt=dlg.querySelector('#nsWt'), nm=dlg.querySelector('#nsName');
-    wt.addEventListener('change',()=>{ nm.disabled=!wt.checked; if(wt.checked)nm.focus(); });
+    const wt=dlg.querySelector('#nsWt');
     const close=()=>dlg.remove();
     dlg.querySelectorAll('.nschip').forEach(ch=>ch.addEventListener('click',()=>{inp.value=ch.dataset.cwd;inp.focus();}));
     dlg.addEventListener('click',e=>{ if(e.target===dlg)close(); });
     dlg.querySelector('#nsCancel').addEventListener('click',close);
-    const go=()=>{ const cwd=inp.value.trim(); const o={worktree:wt.checked,name:nm.value.trim()}; close(); startNewSession(cwd,o); };
+    const go=()=>{ const cwd=inp.value.trim(); const o={worktree:wt.checked}; close(); startNewSession(cwd,o); };
     dlg.querySelector('#nsGo').addEventListener('click',go);
     inp.addEventListener('keydown',e=>{ if(e.key==='Enter')go(); if(e.key==='Escape')close(); });
-    nm.addEventListener('keydown',e=>{ if(e.key==='Enter')go(); if(e.key==='Escape')close(); });
   }
   async function startNewSession(cwd,opts){
     opts=opts||{};
