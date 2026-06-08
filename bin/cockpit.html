@@ -526,7 +526,8 @@
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
   function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
-  function refreshUI(force){ const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
+  function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
+    const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
     const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid&&typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); }
   async function loadData(){ try{
@@ -784,7 +785,8 @@
   function bindDnD(){
     board.querySelectorAll('.proj').forEach(p=>{
       p.addEventListener('dragstart',()=>{dragEl=p;p.classList.add('dragging');});
-      p.addEventListener('dragend',()=>{p.classList.remove('dragging');const z=p.closest('.zone');if(z)saveOrder(z);});
+      p.addEventListener('dragend',()=>{p.classList.remove('dragging');const z=p.closest('.zone');if(z)saveOrder(z);
+        dragEl=null; refreshUI(true);});   // clear the drag + apply any data that changed while you dragged
     });
     board.querySelectorAll('.zone').forEach(z=>{
       z.addEventListener('dragover',e=>{e.preventDefault();if(!dragEl||dragEl.closest('.zone')!==z)return;
