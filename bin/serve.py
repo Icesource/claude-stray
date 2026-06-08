@@ -1561,6 +1561,11 @@ class Handler(BaseHTTPRequestHandler):
         if _worktree is None:
             return self._reply(500, {"error": "worktree helper unavailable"})
         cl0 = _worktree.compute_code_location(cwd)
+        if not cl0 and parent:
+            # UI spawn may not know the parent card's cwd — derive it from the
+            # parent session itself (its jsonl's first cwd), then retry.
+            cwd = _resume_cwd_for(parent) or cwd
+            cl0 = _worktree.compute_code_location(cwd)
         if not cl0:
             return self._reply(400, {"error": "not a git repo",
                                      "hint": "子卡要在一个 git 仓库目录里 spawn"})

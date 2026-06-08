@@ -205,6 +205,15 @@
   .subrow .sr-prog{flex:1;min-width:0;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .subrow .sr-go{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:12px}
   .subrow .sr-go:hover{border-color:var(--run);color:var(--run)}
+  .subrow .sr-exp{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:11px;line-height:1;transition:transform .15s}
+  .subrow .sr-exp:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .subwrap.open .sr-exp{transform:rotate(180deg)}
+  .subdetail{display:none;margin:2px 8px 5px 16px;padding:9px 11px;border-left:2px solid var(--hair);background:var(--bg-elev);border-radius:0 7px 7px 0;font-size:11.5px;color:var(--ink-dim);line-height:1.55}
+  .subwrap.open .subdetail{display:block}
+  .subdetail .sd-prog{white-space:pre-wrap}
+  .subdetail .sd-next{margin-top:6px} .subdetail .sd-next b{color:var(--ink-faint);font-weight:600;margin-right:6px}
+  .subdetail .sd-aw b{color:var(--needs)}
+  .subdetail .sd-res{margin-top:8px;display:flex;flex-direction:column;gap:5px}
   .name .ws .lv.subc{color:var(--ink-dim);border-color:var(--hair)}
   .name .ws .lv.subc.needs{color:var(--needs);border-color:var(--needs-edge)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
@@ -288,7 +297,21 @@
   .sugg-opt:hover{border-color:var(--run);background:var(--bg-row-hover)}
   /* embedded ttyd terminal panel (DD-018 §B) — resume a session IN the cockpit */
   .termmask{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:70;display:flex;align-items:center;justify-content:center;padding:26px}
-  .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1120px,95vw);height:min(80vh,880px);display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .termbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;width:min(1120px,95vw);height:min(80vh,880px);display:flex;flex-direction:row;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+  .termmain{flex:1;min-width:0;display:flex;flex-direction:column}
+  /* DD-025: webterminal left sidebar — the current main card's family (主卡 + 子卡)
+     with live status, click to switch/open, + a 「+子卡」 button to fan out a new one. */
+  .termside{width:186px;flex:none;display:flex;flex-direction:column;gap:3px;padding:10px 8px;border-right:1px solid var(--hair);overflow-y:auto;background:var(--bg-row)}
+  .tside-h{font-size:10px;color:var(--ink-faint);letter-spacing:.5px;padding:2px 6px 7px}
+  .tside-item{position:relative;display:flex;align-items:center;gap:7px;width:100%;text-align:left;padding:7px 8px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--ink-dim);cursor:pointer;font-family:var(--sans);font-size:12px}
+  .tside-item:hover{background:var(--bg-row-hover);border-color:var(--hair)}
+  .tside-item.on{border-color:var(--run);color:var(--ink);background:var(--bg-elev)}
+  .tside-item.sub{margin-left:13px;font-size:11.5px}
+  .tside-item.sub::before{content:'';position:absolute;left:-8px;top:50%;width:7px;height:1px;background:var(--connector)}
+  .tside-item .ts-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tside-item .ts-open{width:6px;height:6px;border-radius:50%;background:var(--run);box-shadow:0 0 5px var(--run-glow);flex:none}
+  .tside-add{margin-top:7px;padding:8px;border:1px dashed var(--hair);border-radius:7px;background:transparent;color:var(--ink-faint);cursor:pointer;font-family:var(--sans);font-size:12px}
+  .tside-add:hover{border-color:var(--run);color:var(--run);background:var(--run-bg)}
   .termhead{display:flex;align-items:center;gap:9px;padding:10px 15px;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--ink-dim);font-family:var(--mono)}
   .termhead .tdot{width:7px;height:7px;border-radius:50%;background:var(--run);box-shadow:0 0 0 3px var(--run-bg);flex:none}
   .termhead code{color:var(--ink);font-size:11.5px}
@@ -532,7 +555,7 @@
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
-    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid&&typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); }
+    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid){ if(typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); if(typeof renderTermSide==='function') renderTermSide(tm.dataset.sid); } }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
       fetch(ORIGIN+'/api/data').then(r=>r.json()),
@@ -676,14 +699,29 @@
     h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   // DD-025: a parent's sub-cards rendered as compact rows nested under it.
+  // Row click → terminal; the ⌄ button expands a detail panel (full progress /
+  // next-step / resources) so a sub-card isn't a second-class one-liner.
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
       const sid=esc(c.session||''); const prog=c.progress?firstSent(c.progress):(c.reason||'');
-      return `<div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
+      return `<div class="subwrap"><div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
         `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
-        `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button></div>`;
+        `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
+        `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button></div>`+
+        subDetailEl(c)+`</div>`;
     }).join('');
     return `<div class="subcards">${rows}</div>`;}
+  // expandable detail for a sub-card: full progress + next-step + its resources.
+  function subDetailEl(c){
+    const parts=[];
+    if(c.progress) parts.push(`<div class="sd-prog">${esc(c.progress)}</div>`);
+    if(c.next_step) parts.push(`<div class="sd-next"><b>下一步</b>${esc(c.next_step)}</div>`);
+    if(c.awaiting_user) parts.push(`<div class="sd-next sd-aw"><b>等你</b>${esc(c.awaiting_user)}</div>`);
+    const ea=extArts(c.artifacts||[]), la=codeLocList(c);
+    if(ea.length) parts.push(`<div class="sd-res">`+ea.map(resChip).join('')+`</div>`);
+    if(la.length) parts.push(`<div class="sd-res">`+la.map(resChip).join('')+`</div>`);
+    if(!parts.length) parts.push(`<div class="sd-prog" style="color:var(--ink-faint)">(还没有进度总结)</div>`);
+    return `<div class="subdetail">${parts.join('')}</div>`;}
   function rowEl(r){const lv=LV[r.level]?`<span class="lv">${LV[r.level]}</span>`:'';
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
     let roll='';
@@ -770,7 +808,7 @@
   function wire(){
     board.querySelectorAll('.band-head.clickable').forEach(h=>h.addEventListener('click',()=>h.closest('.band').classList.toggle('collapsed')));
     board.querySelectorAll('.proj-head').forEach(h=>h.addEventListener('click',e=>{if(e.target.closest('.dragh'))return;const sec=h.closest('.proj');sec.classList.toggle('collapsed');PCOLLAPSE[sec.dataset.ws]=sec.classList.contains('collapsed')?'c':'o';}));
-    board.querySelectorAll('.subrow').forEach(sr=>sr.addEventListener('click',e=>{if(e.target.closest('.sr-go'))return;const s=sr.getAttribute('data-sid');if(s)openTerminal(e,s);}));
+    board.querySelectorAll('.subrow').forEach(sr=>sr.addEventListener('click',e=>{if(e.target.closest('.sr-go')||e.target.closest('.sr-exp'))return;const s=sr.getAttribute('data-sid');if(s)openTerminal(e,s);}));
     board.querySelectorAll('.row').forEach(row=>row.addEventListener('click',e=>{if(e.target.closest('a'))return;if(e.target.closest('.go')){e.stopPropagation();const sid=row.getAttribute('data-sid');if(sid)openTerminal(e,sid);else toast('该工作没有关联会话');return;}
       // if you've selected text in this row (e.g. framing the card name to copy),
       // don't treat the mouse-up as a toggle — let the selection stand.
@@ -919,7 +957,7 @@
   function getTermModal(){
     let m=document.getElementById('termModal');
     if(!m){ m=document.createElement('div'); m.id='termModal'; m.className='termmask';
-      m.innerHTML=`<div class="termbox"><div class="termhead"><span class="termtabs"></span><span class="tsp"></span><a class="btn ttnew" target="_blank" rel="noopener" title="若终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留所有终端运行,随时点卡片「终端」秒回">关闭</button></div><div class="termbody"><div class="termstack"><div class="term-loading" hidden><div class="tl-spin"></div><div class="tl-txt"><b class="tl-msg">正在启动终端…</b><span class="tl-sub"></span></div></div></div></div></div><div class="termres" hidden></div>`;
+      m.innerHTML=`<div class="termbox"><div class="termside"></div><div class="termmain"><div class="termhead"><span class="termtabs"></span><span class="tsp"></span><a class="btn ttnew" target="_blank" rel="noopener" title="若终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留所有终端运行,随时点卡片「终端」秒回">关闭</button></div><div class="termbody"><div class="termstack"><div class="term-loading" hidden><div class="tl-spin"></div><div class="tl-txt"><b class="tl-msg">正在启动终端…</b><span class="tl-sub"></span></div></div></div></div></div></div><div class="termres" hidden></div>`;
       document.body.appendChild(m); m.onclick=ev=>{ if(ev.target===m) hideTerm(); }; }
     return m;
   }
@@ -984,11 +1022,54 @@
     if(la.length) html+=`<div class="tr-h tr-h2">代码位置 · ${la.length}</div>`+list(la);
     res.innerHTML=html;
   }
+  // DD-025: the current main card's family for the terminal sidebar — the top-level
+  // parent card + its sub-cards (groupSubcards already nested them as r.children).
+  function termFamily(sid){
+    const top=DATA.rows||[];
+    let root=top.find(r=>r.session===sid||(r.sessions||[]).includes(sid));
+    if(!root) root=top.find(r=>(r.children||[]).some(c=>c.session===sid||(c.sessions||[]).includes(sid)));
+    if(!root) return null;
+    return {root, kids:root.children||[]};
+  }
+  function renderTermSide(sid){
+    const m=document.getElementById('termModal'); if(!m)return;
+    const side=m.querySelector('.termside'); if(!side)return;
+    const fam=termFamily(sid);
+    if(!fam){ side.innerHTML=''; side.style.display='none'; return; }
+    side.style.display='flex';
+    const open=new Set([...m.querySelectorAll('.termstack iframe')].map(f=>f.dataset.sid));
+    const item=(r,isSub)=>{ const s=r.session||(r.sessions||[])[0]||r.origin_session||'';
+      const on=s===sid;
+      return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
+        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+`</button>`; };
+    const rootSid=fam.root.session||(fam.root.sessions||[])[0]||'';
+    let html=`<div class="tside-h">会话族 · ${1+fam.kids.length}</div>`;
+    html+=item(fam.root,false);
+    for(const c of fam.kids) html+=item(c,true);
+    html+=`<button class="tside-add" onclick="spawnSubcardFromUI(event,'${esc(rootSid)}')" title="在这张主卡下起一个新子卡(独立 worktree 里跑 claude -p)">＋ 子卡</button>`;
+    side.innerHTML=html;
+  }
+  async function spawnSubcardFromUI(e,rootSid){ if(e)e.stopPropagation();
+    if(!rootSid){toast('没有可作父卡的会话');return;}
+    const task=(prompt('新子卡的任务(在独立 worktree 里起一条 claude -p 子会话来做):')||'').trim();
+    if(!task)return;
+    const name=(prompt('给子卡起个短名(worktree 名,可留空自动命名):','')||'').trim();
+    const root=(DATA.rows||[]).find(r=>r.session===rootSid||(r.sessions||[]).includes(rootSid));
+    const cwd=(root&&root.code_location&&root.code_location.main_repo)||(LOCATIONS[rootSid]&&LOCATIONS[rootSid].cwd)||'';
+    toast('正在起子卡…');
+    try{
+      const r=await fetch(ORIGIN+'/api/new-session',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({parent:rootSid,cwd,worktree:true,name,prompt:task})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&(j.ok||j.url)) toast('✓ 子卡已起,十几秒后出现在左侧');
+      else toast(j.hint||j.error||'起子卡失败');
+    }catch(_){ toast('起子卡失败'); }
+  }
   function setActiveTerm(sid){
     const m=getTermModal(); m.dataset.sid=sid;
     const frames=[...m.querySelectorAll('.termstack iframe')];
     frames.forEach(f=>{ f.style.display=(f.dataset.sid===sid)?'block':'none'; });
-    renderTermRes(sid);
+    renderTermRes(sid); renderTermSide(sid);
     m.querySelector('.termtabs').innerHTML=frames.map(f=>{ const s=f.dataset.sid;
       // label with the card's NAME (semantic), not the raw session id
       const r=findRowForSid(s), nm=r&&r.name?r.name:'';
