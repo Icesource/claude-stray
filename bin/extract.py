@@ -271,7 +271,14 @@ def main() -> int:
         return 1
 
     state = load_state()
-    files = sorted(PROJECTS_DIR.glob("*/*.jsonl"))
+    # Real Claude Code sessions live under cwd-encoded project dirs (the abs path
+    # with '/'→'-', so they start with '-'). Claude Code's teammate / subagent
+    # transcripts live in a special `subagents/` namespace (and aren't standalone
+    # human sessions) — exclude it so agent-teams mode never leaks junk cards into
+    # the cockpit. (We card only independent, human-drivable sessions.)
+    _SKIP_NS = {"subagents"}
+    files = sorted(f for f in PROJECTS_DIR.glob("*/*.jsonl")
+                   if f.parent.name not in _SKIP_NS)
     total_applied = 0
     touched_files = 0
 
