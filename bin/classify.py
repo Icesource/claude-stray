@@ -2213,6 +2213,26 @@ def main() -> int:
     if merged_n:
         print(f"[classify] DD-016: merged {merged_n} initiative(s) per initiative_links.json")
 
+    # Final tombstone re-strip (race guard): an archive/delete that lands WHILE
+    # this classify is mid-run isn't in the snapshot taken at the top, so the card
+    # can slip back into the output and clobber serve's immediate removal — the
+    # user sees a just-archived card pop back (observed 2026-06-08: an archived
+    # 等你 card reappeared for one cycle). Re-read the tombstones FRESH here, right
+    # before the write, and drop any matching initiative so the freshest user
+    # intent always wins regardless of timing.
+    fresh_tombstoned = archived_ids_on_disk() | set(load_deleted_ids() or [])
+    if fresh_tombstoned:
+        stripped = 0
+        for ws in new_mm.get("workspaces", []) or []:
+            kept = [i for i in (ws.get("initiatives") or [])
+                    if i.get("id") not in fresh_tombstoned]
+            stripped += len(ws.get("initiatives") or []) - len(kept)
+            ws["initiatives"] = kept
+        new_mm["workspaces"] = [w for w in new_mm.get("workspaces", [])
+                                if (w.get("initiatives") or [])]
+        if stripped:
+            print(f"[classify] race-guard: stripped {stripped} just-archived/deleted card(s) at write")
+
     # ---- 6. Write + diff + log ----
     atomic_write_json(output_path, new_mm)
     ws_n = len(new_mm.get("workspaces") or [])
