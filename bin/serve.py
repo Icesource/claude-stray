@@ -1522,6 +1522,19 @@ class Handler(BaseHTTPRequestHandler):
                             _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
                         except Exception:
                             pass
+                        # DD-025 G1: the child is ALREADY live in this spawn ttyd, but
+                        # it's keyed by the ephemeral token (sid was unknown at spawn).
+                        # Re-key token→sid so the cockpit's "open terminal" REUSES this
+                        # live ttyd instead of `claude --resume <sid>` — a second driver
+                        # that forks the session jsonl (DD-018). Without this the running
+                        # child is unreachable from the card and clicking it spawns a fork.
+                        try:
+                            ent = _TERMINALS.pop(token, None)
+                            if ent:
+                                _TERMINALS[sid] = ent
+                                _save_terminals()
+                        except Exception:
+                            pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
         time.sleep(0.4)
