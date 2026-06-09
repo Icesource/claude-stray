@@ -60,6 +60,12 @@ PORTS = [9876, 9877, 9878]
 BIND = "127.0.0.1"
 
 LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
+# A 'running' record whose transcript has been silent this long is a dead turn
+# (Ctrl-C interrupt / crash fire no Stop or SessionEnd) -> downgrade to idle
+# (an interrupted turn leaves the session alive and waiting). Above typical
+# tool-call gaps so a long build doesn't flap; recovers to running the moment
+# the jsonl resumes (see the jsonl-fresh upgrade in live_snapshot).
+RUNNING_STALE_SECS = 300
 # sid -> {"port":int,"pid":int}. ttyd procs are spawned start_new_session so a
 # serve restart (Ctrl-C) does NOT kill them — the embedded terminals (and the
 # claude sessions in them) survive. The map is persisted so a restarted serve
@@ -142,8 +148,22 @@ def live_snapshot() -> dict:
         status = rec.get("status")
         if status == "ended" and age > 3600:
             continue
-        if status == "running" and age > 6 * 3600:
-            rec = {**rec, "status": "unknown"}
+        if status == "running":
+            jp = _session_jsonl_path(sid)
+            jm = 0
+            if jp:
+                try:
+                    jm = os.path.getmtime(jp)
+                except Exception:
+                    jm = 0
+            # With a transcript we can tell a live turn (constant writes) from a
+            # dead one — Ctrl-C/crash fire no Stop/SessionEnd, so the record would
+            # otherwise sit on 'running' indefinitely. Silent past the threshold
+            # -> the turn is gone. No transcript found -> only the slow 6h net.
+            silent = (now - jm) if jm else None
+            if (silent is not None and silent > RUNNING_STALE_SECS) or \
+               (silent is None and age > 6 * 3600):
+                rec = {**rec, "status": "idle", "_inferred": "running-stale"}
         if status == "done_unread" and age > 16 * 3600:
             rec = {**rec, "status": "idle"}  # stale unread -> you've moved on
         # Transcript-mtime override: the event model has a gap — answering an
