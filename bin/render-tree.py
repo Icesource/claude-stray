@@ -2,8 +2,8 @@
 """
 Render cache/dashboard.json as a single-file markmap (mind-map view).
 
-This is the EXPORT/visualization view. The primary UI is the card-based
-dashboard rendered by render-html.py. The tree view is useful for:
+This is the EXPORT/visualization view. The primary UI is the cockpit
+(bin/cockpit.html, served by serve.py). The tree view is useful for:
 - Bird's eye visualization across many initiatives
 - Sharing a snapshot (single HTML file)
 - Presentations / overview screenshots

@@ -4,16 +4,14 @@
 #
 # Flags:
 #   --refresh, -r    Force a full cache refresh before rendering.
-#   --html           Regenerate cache/dashboard.html, do NOT print or open.
-#   --open, -o       Regenerate cache/dashboard.html and open it in browser.
+#   --open, -o       Start the local server and open the cockpit in a browser
+#                    (alias for --serve; the classic static page was retired).
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)"
 
 DO_REFRESH=0
-DO_HTML=0
-DO_OPEN=0
 DO_TREE=0
 DO_SERVE=0
 DO_DIAGNOSE=0
@@ -39,8 +37,7 @@ while [ $# -gt 0 ]; do
   arg="$1"
   case "$arg" in
     --refresh|-r) DO_REFRESH=1; shift ;;
-    --html)       DO_HTML=1; shift ;;
-    --open|-o)    DO_OPEN=1; shift ;;
+    --open|-o)    DO_SERVE=1; shift ;;  # classic static page retired → open the live cockpit
     --tree)       DO_TREE=1; shift ;;
     --serve|-s)   DO_SERVE=1; shift ;;
     --no-open)    NO_OPEN=1; shift ;;
@@ -94,18 +91,17 @@ while [ $# -gt 0 ]; do
       DO_UPDATE=1; shift ;;
     -h|--help)
       cat <<EOF
-Usage: stray [--refresh] [--serve | --open | --html | --tree | --diagnose]
+Usage: stray [--refresh] [--serve | --open | --tree | --diagnose]
 
 Without flags: render the cached stray to stdout as an ANSI tree.
 
   --refresh, -r       Refresh cache (calls Claude) before rendering.
   --serve, -s         RECOMMENDED. Start a local server on 127.0.0.1:9876,
-                      serve the HTML dashboard, and act as the Zellij jump
+                      serve the cockpit, and act as the Zellij jump
                       helper. Auto-opens the browser unless --no-open.
-  --open, -o          Regenerate HTML files and open via file:// (no server,
-                      falls back to File System Access for writes).
+  --open, -o          Alias for --serve (the classic static page was retired;
+                      the cockpit is live and needs the local server).
   --tree              Open the markmap tree view (cache/mindmap-tree.html).
-  --html              Regenerate HTML files only, do not open anything.
   --no-open           With --serve: don't auto-open the browser.
   --diagnose [SID]    Show why a session may not appear in the dashboard.
                       Without SID, picks the most recently active session.
@@ -232,20 +228,16 @@ if [ "$DO_REFRESH" -eq 1 ]; then
   bash "$REPO_ROOT/bin/pipeline-run.sh" --all-dirty --force-classify >&2
 fi
 
-if [ "$DO_HTML" -eq 1 ] || [ "$DO_OPEN" -eq 1 ] || [ "$DO_TREE" -eq 1 ]; then
-  # Always regenerate both so they're in sync.
-  python3 "$REPO_ROOT/bin/render-html.py"
+if [ "$DO_TREE" -eq 1 ]; then
+  # Markmap export view (the classic card dashboard was retired).
   python3 "$REPO_ROOT/bin/render-tree.py"
-  TARGET="$REPO_ROOT/cache/dashboard.html"
-  [ "$DO_TREE" -eq 1 ] && TARGET="$REPO_ROOT/cache/mindmap-tree.html"
-  if [ "$DO_OPEN" -eq 1 ] || [ "$DO_TREE" -eq 1 ]; then
-    if command -v open >/dev/null 2>&1; then
-      open "$TARGET"
-    elif command -v xdg-open >/dev/null 2>&1; then
-      xdg-open "$TARGET"
-    else
-      echo "No browser opener found. File at: $TARGET" >&2
-    fi
+  TARGET="$REPO_ROOT/cache/mindmap-tree.html"
+  if command -v open >/dev/null 2>&1; then
+    open "$TARGET"
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$TARGET"
+  else
+    echo "No browser opener found. File at: $TARGET" >&2
   fi
   exit 0
 fi
