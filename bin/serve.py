@@ -66,9 +66,6 @@ LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
 # tool-call gaps so a long build doesn't flap; recovers to running the moment
 # the jsonl resumes (see the jsonl-fresh upgrade in live_snapshot).
 RUNNING_STALE_SECS = 300
-# A session whose transcript was written within this window is actively working,
-# whatever (possibly stale) status the hooks left — see live_snapshot's override.
-RUNNING_FRESH_SECS = 75
 # sid -> {"port":int,"pid":int}. ttyd procs are spawned start_new_session so a
 # serve restart (Ctrl-C) does NOT kill them — the embedded terminals (and the
 # claude sessions in them) survive. The map is persisted so a restarted serve
@@ -169,17 +166,13 @@ def live_snapshot() -> dict:
                 rec = {**rec, "status": "idle", "_inferred": "running-stale"}
         if status == "done_unread" and age > 16 * 3600:
             rec = {**rec, "status": "idle"}  # stale unread -> you've moved on
-        # Transcript-mtime is the GROUND TRUTH for "actively working". Claude Code
-        # hooks are unreliable — a missed UserPromptSubmit, an answered elicit, an
-        # approved permission, a Stop that didn't fire (Ctrl-C/crash) all leave the
-        # live file stuck on a stale status (idle / done_unread / needs_you / ended)
-        # while the session is in fact alive and writing. So for ANY non-running
-        # status: if the jsonl was written AFTER the last recorded event and within
-        # the freshness window, the session IS running — override the stale hook.
-        # (This is the single fix for the recurring "I talked to it but it won't go
-        # 进行中" — it no longer depends on which hook last fired.)
+        # Transcript-mtime override: the event model has a gap — answering an
+        # elicit / approving a permission / a missed UserPromptSubmit doesn't fire
+        # a `running` event, so a session can stay stuck on needs_you / idle while
+        # actually working. If the jsonl was written AFTER that event and within
+        # the last 45s, the session is actively working → show running.
         st2 = rec.get("status")
-        if st2 != "running":
+        if st2 in ("needs_you", "idle"):
             jp = _session_jsonl_path(sid)
             if jp:
                 try:
@@ -191,7 +184,7 @@ def live_snapshot() -> dict:
                         (rec.get("status_since") or "").replace("Z", "+00:00")).timestamp()
                 except Exception:
                     ss_ep = 0
-                if jm > ss_ep + 3 and (now - jm) < RUNNING_FRESH_SECS:
+                if jm > ss_ep + 5 and (now - jm) < 45:
                     rec = {**rec, "status": "running", "_inferred": "jsonl-fresh"}
         out[sid] = rec
     return out
