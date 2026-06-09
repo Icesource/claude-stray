@@ -1225,6 +1225,62 @@ def parse_ai_output(raw: str) -> dict:
         return json.loads(raw[i:j + 1] if j > i else raw[i:])
 
 
+def stabilize_card_ids_against_prior(new_mm: dict, prior: dict) -> int:
+    """DD-029 — kill AI id-churn so a work unit keeps ONE stable id across runs.
+
+    Problem (observed 2026-06-09): the model assigns a fresh id+slug to the SAME
+    session's card on every classify run — one session cycled
+    `dd-024-dead-code-cleanup` → `render-html-cleanup` → `Classic 清理`. Every
+    identity-keyed pass (carry-forward, deleted_ids tombstones, dedup_by_session)
+    keys on `id`, so a churning id makes a card silently DROP (carry-forward can't
+    match the renamed id), DUPLICATE, or — worse — lets a user-DELETED card
+    RESURRECT under a new name the tombstone no longer matches. This is the engine
+    behind the user-visible "卡莫名其妙改名/重复/消失".
+
+    Fix: anchor identity to the SESSION set, not the AI's slug. If a NEW card's
+    sessions match a PRIOR card's, reuse the prior id (the first id a work unit
+    gets, sticks). Two match tiers: exact sorted-session-tuple, then a
+    single-session sid fallback (only against prior single-session cards, so a
+    session splitting out of an old multi-session thread isn't mis-anchored).
+    Sealed cards (empty sessions[]) are skipped — they carry their own stable
+    artifact-keyed anchor. Names are left to the AI (work focus legitimately
+    evolves); only the id is pinned.
+
+    MUST run BEFORE enforce_carry_forward_initiatives: once the new card's id
+    matches prior, carry-forward sees it as present and won't re-insert a stale
+    duplicate, and the final tombstone re-strip can correctly suppress a card the
+    user deleted even when the AI re-emitted it under a fresh slug.
+
+    Returns the count of ids rewritten.
+    """
+    if not prior:
+        return 0
+    by_tuple: dict[tuple, str] = {}    # sorted-session-tuple -> prior id
+    by_single: dict[str, str] = {}     # sid -> prior id (prior single-session cards only)
+    for ws in (prior.get("workspaces") or []):
+        for i in (ws.get("initiatives") or []):
+            sids = tuple(sorted(i.get("sessions") or []))
+            pid = i.get("id")
+            if not sids or not pid:
+                continue
+            by_tuple.setdefault(sids, pid)
+            if len(sids) == 1:
+                by_single.setdefault(sids[0], pid)
+    n = 0
+    for ws in (new_mm.get("workspaces") or []):
+        for i in (ws.get("initiatives") or []):
+            sids = tuple(sorted(i.get("sessions") or []))
+            if not sids:
+                continue
+            target = by_tuple.get(sids)
+            if target is None and len(sids) == 1:
+                target = by_single.get(sids[0])
+            if target and target != i.get("id"):
+                i["id"] = target
+                n += 1
+    return n
+
+
 def enforce_carry_forward_initiatives(new_mm: dict, prior: dict,
                                        deleted_ids: list[str]) -> int:
     """DD-014 — mechanical guarantee that every PRIOR initiative survives
@@ -2253,6 +2309,12 @@ def main() -> int:
     repaired = repair_short_session_ids(new_mm, hot_sids)
     if repaired:
         print(f"[classify] repaired {repaired} truncated session_ids")
+    # DD-029: pin each card's id to the prior id for the same session set FIRST,
+    # so the AI's per-run id-churn can't make carry-forward/tombstones/dedup miss
+    # their target (the root cause of cards renaming/duplicating/vanishing).
+    stabilized = stabilize_card_ids_against_prior(new_mm, prior)
+    if stabilized:
+        print(f"[classify] DD-029: pinned {stabilized} churned card id(s) to their prior identity")
     # Carry-forward must run FIRST: if AI dropped initiatives, restore
     # them so the downstream monotone/status passes see a complete set.
     restored = enforce_carry_forward_initiatives(new_mm, prior, deleted_ids)
