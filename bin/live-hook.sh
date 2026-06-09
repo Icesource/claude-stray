@@ -6,6 +6,10 @@
 # session's live status (a pure disk write). It returns immediately and
 # never fails, so it is safe on high-frequency events like prompt submit.
 set -u
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve REPO_ROOT to the MAIN worktree (never a linked worktree), so the live
+# write lands in the cache/ the server reads. See bin/_repo-root.sh. The
+# `|| true` + :- fallback keep the hook working even if the helper is missing.
+. "$(dirname "$0")/_repo-root.sh" 2>/dev/null || true
+REPO_ROOT="${STRAY_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 cat 2>/dev/null | python3 "$REPO_ROOT/bin/live-state.py" 2>/dev/null || true
 exit 0

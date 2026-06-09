@@ -15,6 +15,12 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Canonicalize to the MAIN worktree before we register anything: running this
+# installer from inside a linked worktree (.claude/worktrees/<x>) must still
+# wire the global hooks + `stray` symlink to the main checkout, or live writes
+# would land in the worktree's cache/ that serve never reads (cards freeze).
+. "$REPO_ROOT/bin/_repo-root.sh" 2>/dev/null || true
+REPO_ROOT="${STRAY_REPO_ROOT:-$REPO_ROOT}"
 HOME_DIR="$HOME"
 OS="$(uname)"
 

@@ -40,7 +40,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from _repo_root import repo_root
+    REPO_ROOT = repo_root()
+except Exception:
+    REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / "cache"
 TREE_FILE = CACHE_DIR / "mindmap-tree.html"
 DASHBOARD_JSON = CACHE_DIR / "dashboard.json"

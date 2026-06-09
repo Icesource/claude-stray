@@ -34,7 +34,11 @@
 
 set -u
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Canonicalize to the MAIN worktree (honors STRAY_REPO_ROOT from the parent
+# hook) so the pipeline writes summaries/dashboard.json into the cache/ the
+# server reads — never a linked worktree's cache/. See bin/_repo-root.sh.
+. "$(dirname "$0")/_repo-root.sh" 2>/dev/null || true
+REPO_ROOT="${STRAY_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 CACHE_DIR="$REPO_ROOT/cache"
 SESSIONS_DIR="$CACHE_DIR/sessions"
 SUMMARIES_DIR="$CACHE_DIR/summaries"
