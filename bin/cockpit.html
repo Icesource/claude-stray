@@ -207,6 +207,8 @@
   .subrow .sr-go:hover{border-color:var(--run);color:var(--run)}
   .subrow .sr-exp{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:11px;line-height:1;transition:transform .15s}
   .subrow .sr-exp:hover{border-color:var(--ink-dim);color:var(--ink)}
+  .subrow .sr-close{flex:none;width:22px;height:22px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-faint);cursor:pointer;font-size:14px;line-height:1}
+  .subrow .sr-close:hover{border-color:var(--needs-edge);color:var(--needs)}
   .subwrap.open .sr-exp{transform:rotate(180deg)}
   .subdetail{display:none;margin:2px 8px 5px 16px;padding:9px 11px;border-left:2px solid var(--hair);background:var(--bg-elev);border-radius:0 7px 7px 0;font-size:11.5px;color:var(--ink-dim);line-height:1.55}
   .subwrap.open .subdetail{display:block}
@@ -838,7 +840,8 @@
       return `<div class="subwrap"><div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
         `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
-        `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button></div>`+
+        `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button>`+
+        `<button class="sr-close" title="关闭子卡(删除它的 worktree + 分支)" onclick="closeSubcard(event,'${sid}','${esc(c.id||'')}','${esc((c.name||'').replace(/'/g,''))}')">×</button></div>`+
         subDetailEl(c)+`</div>`;
     }).join('');
     return `<div class="subcards">${rows}</div>`;}
@@ -1006,6 +1009,16 @@
   async function deleteInit(e,id,name){ e.stopPropagation(); if(!id)return;
     if(!confirm('删除「'+name+'」?会从看板移除(记录到 deleted_ids)。')) return;
     try{ const r=await fetch(ORIGIN+'/api/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); if(!r.ok)throw 0; OPEN.delete(id); toast('已删除'); setTimeout(()=>loadData(),400);}catch(_){toast('删除失败');}
+  }
+  // DD-025: close a sub-card — removes the card AND deletes its git worktree + branch.
+  async function closeSubcard(e,sid,id,name){ if(e)e.stopPropagation(); if(!sid)return;
+    if(!confirm('关闭子卡「'+name+'」?\n会删除它的 git worktree + 分支(worktree-…),并从看板移除。\n请确保该子卡的工作已经合并回主干 —— 未合并的改动会丢失。')) return;
+    toast('正在关闭子卡 + 删 worktree…');
+    try{ const r=await fetch(ORIGIN+'/api/subcard-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,id})});
+      const j=await r.json().catch(()=>({}));
+      if(r.ok&&j.ok){ toast(j.removed_worktree?'✓ 已关闭 + 删除 worktree':'✓ 已关闭'); setTimeout(()=>loadData(),500); }
+      else toast(j.hint||j.error||'关闭失败');
+    }catch(_){ toast('关闭失败'); }
   }
   // DD-015 Stage 3a: read-only recent conversation
   // Live read-only conversation mirror: reads the session jsonl (which Claude

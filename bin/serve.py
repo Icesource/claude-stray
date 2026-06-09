@@ -1329,6 +1329,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/update": return self._handle_update(body)
         if path == "/api/merge": return self._handle_merge(body)
         if path == "/api/delete": return self._handle_delete(body)
+        if path == "/api/subcard-close": return self._handle_subcard_close(body)
         if path == "/api/archive": return self._handle_archive(body)
         if path == "/api/terminal": return self._handle_terminal(body)
         if path == "/api/new-session": return self._handle_new_session(body)
@@ -1871,6 +1872,63 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(200, {"ok": True})
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+
+    def _handle_subcard_close(self, body: dict):
+        """DD-025: close a sub-card — delete its git worktree + branch, unregister it
+        from subcards.json, kill its terminal, and tombstone its card. (Merge-back is
+        done by the user beforehand; this is the cleanup.) Body: {sid, id?}."""
+        sid = (body.get("sid") or "").strip()
+        iid = (body.get("id") or "").strip()
+        if not sid:
+            return self._reply(400, {"error": "sid required"})
+        removed_wt = None
+        # 1. resolve the worktree + main repo from the child's own cwd, then remove it.
+        try:
+            cwd = _resume_cwd_for(sid)
+            cl = _worktree.compute_code_location(cwd) if (cwd and _worktree) else None
+            if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
+                main_repo, wt_path = cl["main_repo"], cl["worktree"]
+                ent = (_subcards.load(str(SUBCARDS_JSON)).get(sid) if _subcards else None) or {}
+                slug = ent.get("slug") or os.path.basename(wt_path.rstrip("/"))
+                _worktree._git(main_repo, "worktree", "remove", "--force", wt_path, timeout=20)
+                _worktree._git(main_repo, "worktree", "prune", timeout=10)
+                if slug:
+                    _worktree._git(main_repo, "branch", "-D", "worktree-" + slug, timeout=10)
+                removed_wt = wt_path
+        except Exception:
+            pass
+        # 2. kill its embedded terminal (best-effort)
+        try:
+            self._handle_terminal_close({"sid": sid})
+        except Exception:
+            pass
+        # 3. unregister from the sub-card registry
+        try:
+            if _subcards:
+                _subcards.remove(str(SUBCARDS_JSON), sid)
+        except Exception:
+            pass
+        # 4. tombstone the card id + drop it from the dashboard now
+        if iid:
+            try:
+                from datetime import datetime, timezone
+                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                try:
+                    doc = json.loads(DELETED_JSON.read_text())
+                    if not isinstance(doc, dict):
+                        doc = {}
+                except Exception:
+                    doc = {}
+                inits = doc.setdefault("initiatives", [])
+                if not any(x.get("id") == iid for x in inits):
+                    inits.append({"id": iid, "deleted_at": now})
+                doc["version"] = 1
+                doc["updated_at"] = now
+                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+                self._remove_from_dashboard(iid)
+            except Exception:
+                pass
+        return self._reply(200, {"ok": True, "removed_worktree": removed_wt})
 
     def _handle_archive(self, body: dict):
         iid = (body.get("id") or "").strip()

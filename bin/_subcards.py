@@ -35,6 +35,19 @@ def record(path, child_sid, parent_sid, slug="", _now=None):
     return d
 
 
+def remove(path, child_sid):
+    """Unregister a sub-card (on close). Atomic write. Returns True if it existed."""
+    d = load(path)
+    if child_sid not in d:
+        return False
+    d.pop(child_sid, None)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+    return True
+
+
 def _first_cwd(jsonl_path):
     try:
         with open(jsonl_path, encoding="utf-8") as fh:
