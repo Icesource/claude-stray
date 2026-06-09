@@ -13,13 +13,28 @@ sys.path.insert(0, os.path.join(REPO, "bin"))
 import _worktree  # noqa: E402
 
 
+def _main_checkout(cwd):
+    """The MAIN checkout of this repo, even when the suite is run from inside a
+    linked worktree (e.g. .claude/worktrees/*). main_repo = parent of the shared
+    git-common-dir. Without this, the tests below would falsely assume REPO is a
+    main checkout and break whenever run from a worktree."""
+    common = subprocess.run(["git", "-C", cwd, "rev-parse", "--git-common-dir"],
+                            capture_output=True, text=True).stdout.strip()
+    if not os.path.isabs(common):
+        common = os.path.abspath(os.path.join(cwd, common))
+    return os.path.dirname(common)
+
+
+MAIN_REPO = _main_checkout(REPO)
+
+
 def test_main_checkout():
     """cwd = this repo's main checkout → worktree==repo root, is_worktree False."""
-    cl = _worktree.compute_code_location(REPO)
+    cl = _worktree.compute_code_location(MAIN_REPO)
     assert cl is not None, "this repo should be a git repo"
-    assert os.path.samefile(cl["worktree"], REPO), cl
+    assert os.path.samefile(cl["worktree"], MAIN_REPO), cl
     assert cl["is_worktree"] is False, cl
-    assert os.path.samefile(cl["main_repo"], REPO), cl
+    assert os.path.samefile(cl["main_repo"], MAIN_REPO), cl
     assert cl["branch"], "branch should be non-empty"
 
 
@@ -35,24 +50,24 @@ def test_linked_worktree():
     with tempfile.TemporaryDirectory() as base:
         wt = os.path.join(base, "wt-test")
         branch = "stray-test-wt-DD022"
-        add = subprocess.run(["git", "-C", REPO, "worktree", "add", "-b", branch, wt],
+        add = subprocess.run(["git", "-C", MAIN_REPO, "worktree", "add", "-b", branch, wt],
                              capture_output=True, text=True)
         if add.returncode != 0:
             # don't fail the suite if a stale branch exists; clean and retry once
-            subprocess.run(["git", "-C", REPO, "branch", "-D", branch], capture_output=True)
-            add = subprocess.run(["git", "-C", REPO, "worktree", "add", "-b", branch, wt],
+            subprocess.run(["git", "-C", MAIN_REPO, "branch", "-D", branch], capture_output=True)
+            add = subprocess.run(["git", "-C", MAIN_REPO, "worktree", "add", "-b", branch, wt],
                                  capture_output=True, text=True)
         assert add.returncode == 0, "git worktree add failed: " + add.stderr
         try:
             cl = _worktree.compute_code_location(wt)
             assert cl is not None and cl["is_worktree"] is True, cl
             assert os.path.samefile(cl["worktree"], wt), cl
-            assert os.path.samefile(cl["main_repo"], REPO), cl
+            assert os.path.samefile(cl["main_repo"], MAIN_REPO), cl
             assert cl["branch"] == branch, cl
         finally:
-            subprocess.run(["git", "-C", REPO, "worktree", "remove", "--force", wt],
+            subprocess.run(["git", "-C", MAIN_REPO, "worktree", "remove", "--force", wt],
                            capture_output=True)
-            subprocess.run(["git", "-C", REPO, "branch", "-D", branch], capture_output=True)
+            subprocess.run(["git", "-C", MAIN_REPO, "branch", "-D", branch], capture_output=True)
 
 
 def test_slugify():

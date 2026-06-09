@@ -4,8 +4,8 @@ Unified local server for claude-stray.
 
 Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
 
-  GET  /                  -> serves cache/dashboard.html
-  GET  /mindmap-tree.html -> serves cache/mindmap-tree.html
+  GET  /                  -> serves bin/cockpit.html (the cockpit UI)
+  GET  /mindmap-tree.html -> serves cache/mindmap-tree.html (markmap export view)
   GET  /cache/...         -> serves files from cache/ (json data, etc.)
   GET  /ping              -> health check + capabilities
   GET  /api/data          -> current dashboard.json + locations + overrides + lifecycle
@@ -42,7 +42,6 @@ from urllib.parse import urlparse, parse_qs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CACHE_DIR = REPO_ROOT / "cache"
-HTML_FILE = CACHE_DIR / "dashboard.html"
 TREE_FILE = CACHE_DIR / "mindmap-tree.html"
 DASHBOARD_JSON = CACHE_DIR / "dashboard.json"
 LOCATIONS_JSON = CACHE_DIR / "session_locations.json"
@@ -50,7 +49,6 @@ OVERRIDES_JSON = CACHE_DIR / "user_overrides.json"
 DELETED_JSON = CACHE_DIR / "deleted_ids.json"
 ARCHIVE_DIR = CACHE_DIR / "archive"
 COCKPIT_FILE = REPO_ROOT / "bin" / "cockpit.html"  # DD-015 cockpit (live, real data)
-RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
 RENDER_TREE = REPO_ROOT / "bin" / "render-tree.py"
 PIPELINE_RUN = REPO_ROOT / "bin" / "pipeline-run.sh"
 DERIVED_DIR = CACHE_DIR / "derived"
@@ -648,10 +646,10 @@ def run_cmd(argv: list[str], background: bool = False) -> tuple[int, str, str]:
 
 
 def regenerate_html() -> None:
-    """Re-run render-html.py + render-tree.py. Called after data writes."""
+    """Re-run render-tree.py (the markmap export view) after data writes.
+    The classic card dashboard (render-html.py) was retired — the cockpit
+    is the only live UI now."""
     try:
-        subprocess.run([sys.executable, str(RENDER_HTML)], check=False,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
         subprocess.run([sys.executable, str(RENDER_TREE)], check=False,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
     except Exception:
@@ -848,15 +846,15 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _maybe_regen_html(self, path: Path) -> None:
-        """If serving mindmap.html / mindmap-tree.html, regenerate it when
-        the source JSON is newer. Keeps the page automatically in sync
-        with the underlying data even if the pipeline bumped the JSON
-        without re-running render-html."""
+        """If serving mindmap-tree.html, regenerate it when the source JSON
+        is newer. Keeps the export view automatically in sync with the
+        underlying data even if the pipeline bumped the JSON without
+        re-running render-tree."""
         try:
             if not DASHBOARD_JSON.exists():
                 return
             data_mtime = DASHBOARD_JSON.stat().st_mtime
-            if path == HTML_FILE or path == TREE_FILE:
+            if path == TREE_FILE:
                 html_mtime = path.stat().st_mtime if path.exists() else 0
                 if data_mtime > html_mtime:
                     regenerate_html()
@@ -1080,8 +1078,6 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index", "/index.html", "/cockpit", "/cockpit.html"):
             return self._serve_file(COCKPIT_FILE, "text/html")  # cockpit is the default page now
-        if path in ("/dashboard.html", "/classic"):
-            return self._serve_file(HTML_FILE, "text/html")  # legacy card dashboard
         if path == "/mindmap-tree.html":
             return self._serve_file(TREE_FILE, "text/html")
         if path == "/favicon.ico":
@@ -2223,7 +2219,7 @@ def serve(open_browser: bool = True):
         url = f"http://{BIND}:{port}/"
         print(f"\n  ▸ {url}\n")
         print(f"[serve] endpoints:")
-        print(f"        GET  /            (dashboard)")
+        print(f"        GET  /            (cockpit)")
         print(f"        GET  /mindmap-tree.html  (markmap export view)")
         print(f"        GET  /ping        /api/data    /api/version")
         print(f"        POST /api/save    /api/refresh  /api/lifecycle  /api/update  /focus  /newpane")

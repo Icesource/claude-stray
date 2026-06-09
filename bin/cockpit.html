@@ -181,7 +181,7 @@
   .chips{display:flex;gap:5px;align-items:center;justify-self:end;flex-wrap:nowrap}
   .chip{font-family:var(--mono);font-size:10.5px;line-height:1;padding:3px 6px;border:1px solid var(--hair);border-radius:4px;color:var(--ink-dim);white-space:nowrap;display:inline-flex;gap:4px;align-items:center}
   .chip .k{font-weight:700} .chip.mr .k{color:var(--mr)} .chip.cr .k{color:var(--cr)} .chip.cd .k{color:var(--cd)}
-  .chip.link:hover{border-color:var(--ink-faint);color:var(--ink)} .chip.more{color:var(--ink-faint);border-style:dashed}
+  .chip.link:hover{border-color:var(--ink-faint);color:var(--ink)}
   .timer{font-family:var(--mono);font-size:11.5px;color:var(--ink-faint);text-align:right;justify-self:end}
   .row[data-band="needs_you"] .timer{color:var(--needs)}
   .go{justify-self:center;width:26px;height:26px;border-radius:6px;border:1px solid var(--hair);color:var(--ink-faint);display:flex;align-items:center;justify-content:center;font-size:14px;transition:all .12s}
@@ -447,6 +447,56 @@
   .aw-items{display:flex;flex-wrap:wrap;gap:6px;flex:1}
   .aw-item{font-size:12px;color:var(--ink-dim);border:1px solid var(--hair);border-radius:6px;padding:3px 9px;background:var(--bg)}
   .aw-item.done{color:var(--done)}
+
+  /* ── 桌宠 + tips 气泡 (DD-006, 从 classic 页迁移) ──────────────────
+     一只走动的像素猫蹲在驾驶舱右下角,旁边的气泡轮播 AI 生成的提示
+     (work/wisdom/rest/curiosity 四类)。点一下换下一句,拖动可移动,
+     位置存 localStorage。气泡始终是浅色(像真的对话气泡),所以气泡内
+     文字用固定深色,不跟随驾驶舱的明暗主题。猫的精灵图(CC0,见
+     bin/assets/pet/README.md)直接内联成 data: URL —— cockpit.html 是
+     静态文件,不像 classic 那样在渲染期注入。 */
+  .tips-bubble{position:fixed;left:24px;bottom:22px;z-index:14;width:300px;
+    display:flex;align-items:flex-end;gap:4px;cursor:grab;user-select:none;background:transparent}
+  .tips-bubble[hidden]{display:none}
+  .tips-bubble.dragging{cursor:grabbing}
+  .tips-bubble.dragging .tt-balloon{box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .tips-bubble .tt-source{display:inline-block;margin-left:6px;text-decoration:none;font-size:13px;
+    color:#9a9aa6;opacity:.7;border-radius:6px;padding:0 4px;transition:opacity .15s,background .15s,color .15s}
+  .tips-bubble .tt-source[hidden]{display:none}
+  .tips-bubble .tt-source:hover{opacity:1;background:rgba(0,0,0,.08);color:#333}
+  .tips-bubble .tt-pet{flex-shrink:0;width:72px;height:60px;
+    background-image:url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAbAAAAA8CAYAAAAHS+89AAADKUlEQVR4nO3dwY3bMBAFUG/gQ4rwPS2ok7SwJW0L6cQt5K4icgiQnM2DBIISxU+/d9tdwJZGwx1wBrQ/bpNZluXf1t+fz+dHv6uh9nld/XzS8qd3/NLiw1iOzp9vzVcEABdQwACIpIABEOk+e4/759/P118st6aZwV58Ro9X7+ebnk9H589s8ROfV9ZX3/yxAwMgkgIGQCQFDIBIH7XnSEY7t9M6oyqV99N6v6PFq7yesgf96/51m+l+r86f1vcbLX5p8bn6nNzV62sZbD0enT92YABEUsAAiKSAATDHObA0tT3VH59/Xn7+/fW96fX2XN1z3lP25Efvoaflz9Ez1d7S43N1fK2v5dT8sQMDIJICBkAkBQyA95iBXd1TblX2VGfXe4Yxu3fLn1rvFp/R19czbH3W5o8dGACRFDAAIilgAES6n/3Zf7VqP9vraGmfLTbaDKM1n2bPH/GZa72kzQiXydaXHRgAkRQwACIpYABE2u1Hn93TvFrv77uarQe9R/6IT0u+maHKn9sGOzAAIilgAERSwACIVN2fnm2m0XqOa7Z4lI4+5zZbvMTn3PjMli8l+dMWHzswACIpYABEUsAAiNQ830jvUetB941PSf6IzzvlS8n62mYGBsCUtBABiKSAARDpfnszZ/ec977viWyzff/b0awveuaPHRgAkRQwACIpYABEersZGNvMeMSjxrqullQF6+vYeNiBARBJAQMgkgIGwHvOwFrPPZU99HVdN3uij8dj8/Ufj8fm+5XXpyd9rfL57z2/0t7zK/Nl7/VHy4fyelrzf+/+9tbv3syrvL699Ty7tBnhWvn/uDZfjs4HOzAAIilgAERSwACIdJ+tBzzaZxG2Xk/tjGdP2ozw6vcfXe3MsFU5w6jNv7T11TrTH21GuJ48k+rNDgyASAoYAJEUMAAiHd7/7H0u4OxzMa1az9W0ziBaz3GcHa/e57TSz4X1vv7W/D17xtK6/ltnakfPqI+O19L5/3Hv97MDAyCSAgZAJAUMgEjdvw+s97mD0WYYo52rGe3cHFnnekY/R3R1fl+9vmdnBwZAJAUMgEgKGAC3RP8B6zNbvkbG5QoAAAAASUVORK5CYII=");
+    background-repeat:no-repeat;background-position:0 0;background-size:432px 60px;
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    animation:pet-walk .9s steps(6) infinite;transform-origin:bottom center;transition:transform .15s ease}
+  @keyframes pet-walk{from{background-position:0 0}to{background-position:-432px 0}}
+  .tips-bubble:hover .tt-pet{transform:scale(1.1)}
+  .tips-bubble.cycling .tt-pet{animation:pet-hop .55s cubic-bezier(.34,1.56,.64,1),pet-walk .9s steps(6) infinite .55s}
+  @keyframes pet-hop{0%{transform:translateY(0) scale(1)}40%{transform:translateY(-10px) scale(1.05)}
+    70%{transform:translateY(0) scale(1,.95)}100%{transform:translateY(0) scale(1)}}
+  .tips-bubble .tt-balloon{position:relative;flex:1;min-width:0;padding:10px 14px;background:#fff;
+    border-radius:16px 16px 16px 4px;box-shadow:0 4px 16px rgba(0,0,0,.28),0 1px 3px rgba(0,0,0,.2);
+    font-size:13px;line-height:1.5;color:#22232b;word-break:break-word}
+  .tips-bubble .tt-balloon::before{content:"";position:absolute;bottom:0;left:-8px;width:0;height:0;
+    border-style:solid;border-width:0 0 12px 12px;border-color:transparent transparent #fff transparent;
+    filter:drop-shadow(-1px 1px 1px rgba(0,0,0,.1))}
+  .tips-bubble .tt-lead{display:block;margin-bottom:2px;font-weight:600;color:#666;font-size:12px;letter-spacing:.02em}
+  .tips-bubble .tt-text{display:block}
+  .tips-bubble[data-kind="work"] .tt-balloon,.tips-bubble[data-kind="work"] .tt-balloon::before{background:#eef2ff}
+  .tips-bubble[data-kind="work"] .tt-balloon::before{border-bottom-color:#eef2ff}
+  .tips-bubble[data-kind="work"] .tt-lead{color:#4338ca}
+  .tips-bubble[data-kind="wisdom"] .tt-balloon,.tips-bubble[data-kind="wisdom"] .tt-balloon::before{background:#fef9e0}
+  .tips-bubble[data-kind="wisdom"] .tt-balloon::before{border-bottom-color:#fef9e0}
+  .tips-bubble[data-kind="wisdom"] .tt-lead{color:#92400e}
+  .tips-bubble[data-kind="rest"] .tt-balloon,.tips-bubble[data-kind="rest"] .tt-balloon::before{background:#e6f9ee}
+  .tips-bubble[data-kind="rest"] .tt-balloon::before{border-bottom-color:#e6f9ee}
+  .tips-bubble[data-kind="rest"] .tt-lead{color:#065f46}
+  .tips-bubble[data-kind="curiosity"] .tt-balloon,.tips-bubble[data-kind="curiosity"] .tt-balloon::before{background:#fdeef5}
+  .tips-bubble[data-kind="curiosity"] .tt-balloon::before{border-bottom-color:#fdeef5}
+  .tips-bubble[data-kind="curiosity"] .tt-lead{color:#9d174d}
+  .tips-bubble.cycling .tt-balloon{animation:tipPop .35s cubic-bezier(.34,1.56,.64,1)}
+  @keyframes tipPop{0%{opacity:.4;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}
+  @media (max-width:900px){.tips-bubble{width:230px;left:14px}}
 </style>
 </head>
 <body>
@@ -459,7 +509,6 @@
       <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill · 快捷键 r">⟳</button>
       <button class="iconbtn" id="themetog" title="切换昼夜模式 · 快捷键 t">☾</button>
       <div class="viewtog" id="viewtog"><button data-v="project" title="按项目 · 快捷键 1">按项目</button><button data-v="attention" title="按注意力 · 快捷键 2">按注意力</button><button data-v="archive" title="归档 · 快捷键 3">归档</button></div>
-      <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
       <span class="clock" id="clock"></span>
       
     </div>
@@ -469,7 +518,18 @@
   <div class="disc" id="disc"></div>
   <div class="toast" id="toast"></div>
 
-  
+  <!-- 桌宠 + tips 气泡 (DD-006,从 classic 迁移)。loadDerived() 填充,
+       至少有一条 tip 才显示。点击换下一句,拖动可移动。 -->
+  <div class="tips-bubble" id="tips-ticker" hidden title="点一下听下一句 · 拖动可移动">
+    <div class="tt-pet" id="tt-kind" aria-hidden="true"></div>
+    <div class="tt-balloon">
+      <span class="tt-lead" id="tt-lead"></span>
+      <span class="tt-text" id="tt-text"></span>
+      <a class="tt-source" id="tt-source" target="_blank" rel="noopener noreferrer"
+         hidden title="查看来源">↗</a>
+    </div>
+  </div>
+
   <script>
   const ORIGIN = location.origin;
   let DATA = {counts:{}, rows:[]};
@@ -705,7 +765,6 @@
   const extArts=arts=>dedupe((arts||[]).filter(isExternal));
   const locArts=arts=>dedupe((arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase())));
   const noiseCount=arts=>(arts||[]).length-(arts||[]).filter(isExternal).length-(arts||[]).filter(a=>RES_CODELOC.has((a.type||'').toLowerCase())).length;
-  const chipsRow=arts=>{const s=extArts(arts);return !s.length?'':s.slice(0,3).map(chip).join('')+(s.length>3?`<span class="chip more">+${s.length-3}</span>`:'');};
   // code-location item: name/path is local (no URL) → click to copy so you can
   // cd / git checkout it. data-copy carries the raw value (esc-safe in attr).
   function locItem(a){const t=(a.type||'ref').toLowerCase(),v=a.ref_id||a.title||'';
@@ -1376,6 +1435,94 @@
     }
   });
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
+
+  // ── 桌宠 + tips 气泡引擎 (DD-006,从 render-html.py/classic 迁移) ─────────
+  // 走动的像素猫 + 轮播 AI tips。数据来自 /api/derived 的 tips 字段(serve.py
+  // 的 DD-006 derived 调度器生成,与页面无关)。点击换下一句,拖动可移动,
+  // 位置存 localStorage。猫纯 CSS 动画,JS 只换气泡颜色(data-kind)+ 文案。
+  (function(){
+    const $bubble=document.getElementById('tips-ticker');
+    if(!$bubble) return;
+    const $lead=document.getElementById('tt-lead');
+    const $text=document.getElementById('tt-text');
+    const $source=document.getElementById('tt-source');
+    const TIP_LEAD={work:'嘿,顺手说一句:',wisdom:'嗯…',rest:'歇会儿?',curiosity:'你知道吗:'};
+    const HINT='点一下听下一句';
+    let pool=[], idx=0, timer=null;
+
+    // Fisher-Yates 洗牌:走完一轮乱序池前每条只出现一次,且避免跨边界同类相邻。
+    function shuffle(prevKind){
+      for(let i=pool.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+      if(prevKind&&pool.length>1&&pool[0].kind===prevKind){
+        for(let i=1;i<pool.length;i++){if(pool[i].kind!==prevKind){[pool[0],pool[i]]=[pool[i],pool[0]];break;}}
+      }
+    }
+    function renderAt(i){
+      if(!pool.length) return;
+      if(i>=pool.length) shuffle(pool[idx]&&pool[idx].kind);
+      idx=((i%pool.length)+pool.length)%pool.length;
+      const t=pool[idx], kind=t.kind||'wisdom';
+      $bubble.setAttribute('data-kind',kind);
+      const lead=TIP_LEAD[kind]||'';
+      $lead.textContent=lead; $lead.style.display=lead?'block':'none';
+      $text.textContent=t.text||'';
+      const url=t.source_url||'';
+      if(url&&/^https?:\/\//i.test(url)){ $source.href=url; $source.hidden=false; }
+      else { $source.removeAttribute('href'); $source.hidden=true; }
+      $bubble.title=(t.text||'')+'  ·  '+HINT;
+      $bubble.classList.remove('cycling'); void $bubble.offsetWidth; $bubble.classList.add('cycling');
+    }
+    function schedule(){ if(timer)clearInterval(timer); if(pool.length<2)return; timer=setInterval(()=>renderAt(idx+1),25*1000); }
+
+    // 拖动定位(left/top,存 localStorage)+ 点击换句。>4px 才算拖动。
+    const POS_KEY='cockpit-tips-pos', THRESH=4;
+    function clamp(left,top){const r=$bubble.getBoundingClientRect();
+      return {left:Math.min(Math.max(0,left),Math.max(0,innerWidth-r.width-4)),
+              top:Math.min(Math.max(0,top),Math.max(0,innerHeight-r.height-4))};}
+    function place(left,top){const c=clamp(left,top);
+      $bubble.style.left=c.left+'px'; $bubble.style.top=c.top+'px';
+      $bubble.style.right='auto'; $bubble.style.bottom='auto';}
+    try{const s=JSON.parse(localStorage.getItem(POS_KEY)||'null');
+      if(s&&Number.isFinite(s.left)&&Number.isFinite(s.top)) requestAnimationFrame(()=>place(s.left,s.top));
+    }catch(e){}
+    let drag=null, suppressClick=false;
+    $bubble.addEventListener('mousedown',ev=>{
+      if(ev.target.closest('.tt-source'))return; if(ev.button!==0)return;
+      const r=$bubble.getBoundingClientRect();
+      drag={startX:ev.clientX,startY:ev.clientY,origLeft:r.left,origTop:r.top,moved:false}; ev.preventDefault();});
+    document.addEventListener('mousemove',ev=>{
+      if(!drag)return; const dx=ev.clientX-drag.startX, dy=ev.clientY-drag.startY;
+      if(!drag.moved&&(Math.abs(dx)>THRESH||Math.abs(dy)>THRESH)){drag.moved=true;$bubble.classList.add('dragging');}
+      if(drag.moved) place(drag.origLeft+dx,drag.origTop+dy);});
+    document.addEventListener('mouseup',()=>{
+      if(!drag)return;
+      if(drag.moved){$bubble.classList.remove('dragging');
+        try{const r=$bubble.getBoundingClientRect();localStorage.setItem(POS_KEY,JSON.stringify({left:r.left,top:r.top}));}catch(e){}
+        suppressClick=true; setTimeout(()=>{suppressClick=false;},0);}
+      drag=null;});
+    $bubble.addEventListener('click',ev=>{
+      if(suppressClick)return; if(ev.target.closest('.tt-source'))return; if(!pool.length)return;
+      renderAt(idx+1); schedule();});
+    addEventListener('resize',()=>{ if(!$bubble.style.left)return;
+      const l=parseFloat($bubble.style.left), t=parseFloat($bubble.style.top);
+      if(Number.isFinite(l)&&Number.isFinite(t)) place(l,t);});
+
+    // 拉取函数。只取 /api/derived 的 tips 片段(驾驶舱没有 classic 的其它
+    // sidebar widgets)。失败/无数据时气泡保持隐藏。
+    async function loadTips(){
+      try{
+        const r=await fetch(ORIGIN+'/api/derived'); if(!r.ok)return;
+        const d=await r.json();
+        let tips=null;
+        if(d.tips&&Array.isArray(d.tips.tips)&&d.tips.tips.length) tips=d.tips.tips.slice();
+        else if(d.tips&&d.tips.tip) tips=[{kind:d.tips.pattern?'work':'wisdom',text:d.tips.tip}];  // v1 兼容
+        if(!tips){ $bubble.hidden=true; return; }
+        pool=tips; shuffle(); idx=0; renderAt(0); schedule(); $bubble.hidden=false;
+      }catch(e){ /* 网络/解析失败 → 不显示桌宠,不报错 */ }
+    }
+    // 首屏拉一次,之后每 10min 刷新池子(tips 由 serve.py 每 2h 生成)。
+    loadTips(); setInterval(loadTips, 10*60*1000);
+  })();
   </script>
 </body>
 </html>
