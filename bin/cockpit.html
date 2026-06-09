@@ -258,6 +258,8 @@
   .nsbox label{display:block;font-size:11px;font-family:var(--mono);letter-spacing:.05em;color:var(--ink-faint);text-transform:uppercase;margin:0 0 6px}
   .nsbox input[type=text]{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:13px;padding:10px 12px;border:1px solid var(--hair);border-radius:8px;background:var(--bg-row);color:var(--ink)}
   .nsbox input[type=text]:focus{outline:none;border-color:var(--run)}
+  .nsbox .nstext{width:100%;box-sizing:border-box;font-family:var(--sans);font-size:13px;line-height:1.5;padding:10px 12px;border:1px solid var(--hair);border-radius:8px;background:var(--bg-row);color:var(--ink);resize:vertical;min-height:62px}
+  .nsbox .nstext:focus{outline:none;border-color:var(--run)}
   .nschips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
   .nschip{font-family:var(--mono);font-size:11px;padding:4px 9px;border:1px solid var(--hair-soft);border-radius:6px;background:var(--bg-row);color:var(--ink-dim);cursor:pointer;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .nschip:hover{border-color:var(--run);color:var(--ink)}
@@ -1062,21 +1064,35 @@
     html+=`<button class="tside-add" onclick="spawnSubcardFromUI(event,'${esc(rootSid)}')" title="在这张主卡下起一个新子卡(独立 worktree 里跑 claude -p)">＋ 子卡</button>`;
     side.innerHTML=html;
   }
-  async function spawnSubcardFromUI(e,rootSid){ if(e)e.stopPropagation();
+  // 一个整洁的弹框替代之前连续两个 prompt():任务(多行)+ 可选名字,一次填完。
+  function spawnSubcardFromUI(e,rootSid){ if(e)e.stopPropagation();
     if(!rootSid){toast('没有可作父卡的会话');return;}
-    const task=(prompt('新子卡的任务(在独立 worktree 里起一条 claude -p 子会话来做):')||'').trim();
-    if(!task)return;
-    const name=(prompt('给子卡起个短名(worktree 名,可留空自动命名):','')||'').trim();
     const root=(DATA.rows||[]).find(r=>r.session===rootSid||(r.sessions||[]).includes(rootSid));
+    const pname=(root&&root.name)||'当前卡';
     const cwd=(root&&root.code_location&&root.code_location.main_repo)||(LOCATIONS[rootSid]&&LOCATIONS[rootSid].cwd)||'';
-    toast('正在起子卡…');
-    try{
-      const r=await fetch(ORIGIN+'/api/new-session',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({parent:rootSid,cwd,worktree:true,name,prompt:task})});
-      const j=await r.json().catch(()=>({}));
-      if(r.ok&&(j.ok||j.url)) toast('✓ 子卡已起,十几秒后出现在左侧');
-      else toast(j.hint||j.error||'起子卡失败');
-    }catch(_){ toast('起子卡失败'); }
+    if(document.getElementById('scDlg'))return;
+    const dlg=document.createElement('div'); dlg.className='nsdlg'; dlg.id='scDlg';
+    dlg.innerHTML=`<div class="nsbox"><h3>＋ 子卡</h3><div class="nssub">在「${esc(pname)}」下起一个独立 worktree 的子任务(后台 <code>claude -p</code> 跑,跑完在左侧 resume 接管)。</div>`+
+      `<label>任务</label><textarea id="scTask" class="nstext" rows="3" placeholder="要这个子卡去做的事,例:把鉴权超时改成可配置并补测试" spellcheck="false"></textarea>`+
+      `<label style="margin-top:13px">名字 · worktree 名(可留空自动命名)</label><input type="text" id="scName" placeholder="如 authz-timeout(留空则 task-xxxx)" spellcheck="false">`+
+      `<div class="nsacts"><button class="btn" id="scCancel">取消</button><button class="btn primary" id="scGo">起子卡 ▸</button></div></div>`;
+    document.body.appendChild(dlg);
+    const ta=dlg.querySelector('#scTask'); ta.focus();
+    const close=()=>dlg.remove();
+    dlg.addEventListener('click',ev=>{ if(ev.target===dlg)close(); });
+    dlg.querySelector('#scCancel').addEventListener('click',close);
+    const go=async()=>{ const task=ta.value.trim(); if(!task){ta.focus();return;}
+      const name=dlg.querySelector('#scName').value.trim(); close(); toast('正在起子卡…');
+      try{
+        const r=await fetch(ORIGIN+'/api/new-session',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({parent:rootSid,cwd,worktree:true,name,prompt:task})});
+        const j=await r.json().catch(()=>({}));
+        if(r.ok&&(j.ok||j.url)) toast('✓ 子卡已起,十几秒后出现在左侧');
+        else toast(j.hint||j.error||'起子卡失败');
+      }catch(_){ toast('起子卡失败'); } };
+    dlg.querySelector('#scGo').addEventListener('click',go);
+    // Cmd/Ctrl+Enter 提交;Esc 取消(textarea 里单 Enter 换行)
+    ta.addEventListener('keydown',ev=>{ if(ev.key==='Enter'&&(ev.metaKey||ev.ctrlKey))go(); if(ev.key==='Escape')close(); });
   }
   function setActiveTerm(sid){
     const m=getTermModal(); m.dataset.sid=sid;
