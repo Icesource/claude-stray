@@ -1,7 +1,7 @@
 # DD-024 cleanup audit — what is actually dead vs. only *looks* dead
 
-**Status**: Audit complete (evidence-based)
-**Author**: Claude (tech-debt worktree, branch `feat/dd-022-worktree`)
+**Status**: Audit complete; classic page retired per user decision (2026-06-09)
+**Author**: Claude (tech-debt worktree, branch `worktree-tech-debt`)
 **Date**: 2026-06-09
 **Companion to**: [DD-024-test-system-and-cleanup.md](DD-024-test-system-and-cleanup.md)
 
@@ -12,20 +12,56 @@ The DD-024 design doc *hypothesized* a long list of dead code (the 6957-line
 `dedup_by_session`, `apply_initiative_links`, `initiative_links.json`,
 `mint_sealed_initiatives`, `repair_short_session_ids`, the `thread` level).
 
-**I grepped every one. None of them are dead.** They are all still wired into the
-live `classify.py` pipeline and/or `serve.py` HTTP routes. Removing them is a real
-refactor with behavioral risk — **not** a safe "confirmed-zero-reference" delete —
-so per the worktree brief they are **left in place** and documented here for a human
-to decide.
+**None of it was mechanically dead** — every item was still wired into the live
+`classify.py` pipeline and/or `serve.py` routes. So none of it qualified for a
+"confirmed-zero-reference" auto-delete. The split that followed:
 
-**What WAS safely deleted** (separate commits, each grep-proven zero-reference):
+- **`render-html.py` / `/classic`** — live, but the **user then decided to retire it**
+  (the cockpit is the only UI). Done as a deliberate refactor: pet feature migrated
+  first, then deleted. See *"Retired (user-approved)"* below.
+- **Pivot debris** (`dedup_by_session`, `apply_initiative_links`, …, `thread` level) —
+  still live, **left in place**, documented under *"DO NOT DELETE"* for a human.
 
-| Item | Commit | Evidence |
+**What WAS deleted** (separate commits, each grep-proven before cutting):
+
+| Item | Commit | Note |
 |---|---|---|
-| `chipsRow` JS + orphaned `.chip.more` CSS in `cockpit.html` | `771c044` | `grep -n chipsRow bin/cockpit.html` → only the definition line; `chip()` itself still used at line 636 so it stays |
+| `chipsRow` JS + orphaned `.chip.more` CSS in `cockpit.html` | `771c044` | defined, zero callers; `chip()` still used so it stays |
+| `render-html.py` (6957 lines) + `/classic` + `/dashboard.html` routes + their serve.py/classify.py wiring | `560f032` | user-approved retirement; cockpit is the only UI |
+| `bin/stray --html` flag; `--open` repointed to `--serve` | `080e484` | both were classic static-page entry points; `--open` now opens the live cockpit |
 
-Plus a test-system fix (not a deletion): `test_worktree.py` was brittle to running
-inside a worktree — fixed in `7ac42b5` so `bin/test` is 9/9 green here.
+Plus non-deletions: `test_worktree.py` made worktree-robust (`7ac42b5`, `bin/test`
+now 9/9); the pet/tips feature migrated into `cockpit.html` (`c52cc9d`).
+
+---
+
+## Retired (user-approved) — `render-html.py` + `/classic`
+
+This was live (regenerated after every data write, served on `/classic` and
+`/dashboard.html`), so it never qualified for an automatic delete. The user decided
+on 2026-06-09 that the classic page is unused and the **cockpit is the only UI**, so it
+was retired as a deliberate, verified refactor:
+
+1. **Migrated the 桌宠 (pet + tips bubble)** — the one classic-only feature worth
+   keeping — into `cockpit.html` (`c52cc9d`). Sprite inlined as base64 (cockpit is a
+   static file); data still comes from the existing `/api/derived`. Verified headless:
+   bubble renders, click cycles, no JS errors, no overlap with `.disc`/toast.
+2. **Deleted `render-html.py`** and removed its wiring (`560f032`): `/classic` +
+   `/dashboard.html` routes, `RENDER_HTML`/`HTML_FILE`, the render-html call in
+   `regenerate_html()`/`regen_html()`, and the `HTML_FILE` branch of `_maybe_regen_html`.
+3. **Fixed `bin/stray`** (`080e484`): `--html`/`--open` had `exec`'d the now-deleted
+   script. `--html` removed; `--open`/`-o` repointed to `--serve` (cockpit is dynamic
+   and needs the server); `--tree` kept (render-tree only).
+
+**Kept on purpose:**
+- **`render-tree.py` + `/mindmap-tree.html`** — a *separate* markmap export view, not
+  part of "classic". It does not import `render-html.py` (has its own internal
+  `render_html()`), reads `dashboard.json` directly. `regenerate_html()`/`regen_html()`
+  now run only it. Future cleanup candidate if the export view is also unwanted, but the
+  user only scoped "classic", so it stays.
+- **`bin/assets/pet/` (cat-walk.png + README)** — no longer read at runtime (cockpit
+  inlines the base64), but it's the **source sprite + CC0 attribution record**. Deleting
+  it would lose provenance, so it stays.
 
 ---
 
@@ -33,35 +69,21 @@ inside a worktree — fixed in `7ac42b5` so `bin/test` is 9/9 green here.
 
 Each entry: the claim, the grep, and *why it's still load-bearing*.
 
-### 1. `render-html.py` (6957 lines) + `render-tree.py` + the `/classic` route
+### 1. (historical) `render-html.py` + `/classic` — now retired, see section above
 
-**Claim (DD-024):** legacy static views, "almost certainly mostly dead now that
-`cockpit.html` is THE UI."
-
-**Reality: live.** It is regenerated after *every* data write and served on two routes.
+Originally documented here as "live, do not auto-delete." The user has since approved
+its retirement; it was removed as a deliberate refactor (above). The original evidence
+that proved it was *not* mechanically dead:
 
 ```
-bin/serve.py:53    RENDER_HTML = REPO_ROOT / "bin" / "render-html.py"
-bin/serve.py:555   def regenerate_html(): subprocess.run([sys.executable, str(RENDER_HTML)] ...)
-bin/serve.py:1440  threading.Thread(target=regenerate_html, daemon=True).start()
-bin/serve.py:1519  threading.Thread(target=regenerate_html, daemon=True).start()
-bin/serve.py:1639  threading.Thread(target=regenerate_html, daemon=True).start()
-bin/serve.py:1960  regenerate_html()
-bin/serve.py:988   if path in ("/dashboard.html", "/classic"):  -> serves HTML_FILE
-bin/classify.py:1945 def regen_html(): for script in ("render-html.py","render-tree.py"): subprocess.run(...)
-bin/classify.py:2226 regen_html()      # end of every classify run
+bin/serve.py    RENDER_HTML constant + regenerate_html() (4 call sites) + /classic route
+bin/classify.py regen_html() ran render-html.py at the end of every classify run
 ```
 
-So the classic dashboard is still produced by the pipeline and still reachable at
-`/classic` and `/dashboard.html`. The cockpit (`/`) is the *default* page, but classic
-is a live fallback, not dead code.
-
-**Why not delete:** it's the single biggest LOC win, but it's wired into the pipeline
-and a user-facing URL. DD-024 itself says retiring it "needs the user's OK." Decision
-for a human: do we drop `/classic` + stop calling `regen_html()`/`regenerate_html()`
-and delete both renderers? If yes it's a coordinated change across `serve.py` (routes +
-`regenerate_html` + 4 call sites + `_maybe_regen_html`), `classify.py` (`regen_html`),
-and docs.
+The remaining entries below (sections 2–6) are the card=session "pivot debris" — **still
+live and still in the tree**, left for a human. Each is wired into the live `classify.py`
+assembly run and/or a `serve.py` endpoint, so retiring any of them is a behavioral
+refactor (do it under the DD-024 characterization tests), not a mechanical delete.
 
 ### 2. `dedup_by_session` (classify.py)
 
@@ -179,8 +201,15 @@ defined-but-unreferenced scan of top-level `def`s in `classify.py`/`serve.py`/`s
 
 ## Recommendation for the human
 
-The real LOC win (retire `render-html.py`/`render-tree.py`/`/classic`) and the pivot-code
-consolidation are **deliberate refactors**, each behind a working route or pipeline step —
+The big LOC win is **done**: `render-html.py` + `/classic` retired (−6957 lines), with the
+one feature worth keeping (the pet) migrated to the cockpit first. What remains is the
+**pivot-code consolidation** (sections 2–6) — `dedup_by_session`, `apply_initiative_links`/
+`initiative_links.json`, `mint_sealed_initiatives`, `repair_short_session_ids`, the `thread`
+level. Those are **deliberate refactors**, each behind a working route or pipeline step —
 exactly the kind DD-024 says to do *under the test net*. Sequence: (1) land the
 characterization tests DD-024 proposes, (2) then cut, re-running snapshots. This audit is
 that net's blast-radius map.
+
+Smaller open items: `render-tree.py`/`/mindmap-tree.html` (the markmap export — kept, since
+the user only scoped "classic") and the one-shot migration scripts / ad-hoc
+`_test_task_persistence.py` (see the borderline section above).
