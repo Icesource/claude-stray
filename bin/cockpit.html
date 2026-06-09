@@ -1017,9 +1017,23 @@
   // DD-025: close a sub-card — removes the card AND deletes its git worktree + branch.
   async function closeSubcard(e,sid,id,name){ if(e)e.stopPropagation(); if(!sid)return;
     if(!confirm('关闭子卡「'+name+'」?\n会删除它的 git worktree + 分支(worktree-…),并从看板移除。\n请确保该子卡的工作已经合并回主干 —— 未合并的改动会丢失。')) return;
-    toast('正在关闭子卡 + 删 worktree…');
-    try{ const r=await fetch(ORIGIN+'/api/subcard-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,id})});
+    await _closeSubcardReq(sid,id,false);
+  }
+  // Two-phase close: the first request is NOT forced. The server live-guard
+  // refuses (409 needs_confirm) when the session is still running / has a live
+  // terminal / has uncommitted changes — irreversible loss the small × button
+  // shouldn't cause on a misclick. Only an explicit hard-confirm retries forced.
+  async function _closeSubcardReq(sid,id,force){
+    toast(force?'强制关闭子卡 + 删 worktree…':'正在关闭子卡 + 删 worktree…');
+    try{ const r=await fetch(ORIGIN+'/api/subcard-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,id,force})});
       const j=await r.json().catch(()=>({}));
+      if(r.status===409&&j.needs_confirm){
+        const why=j.hint||'该子卡还在使用中';
+        if(confirm('⚠️ 这张子卡还不该删:\n  '+why+'\n\n仍要强制删除 worktree + 分支吗?未提交的改动将永久丢失,正在运行的会话会被终止。')){
+          return _closeSubcardReq(sid,id,true);
+        }
+        toast('已取消'); return;
+      }
       if(r.ok&&j.ok){ toast(j.removed_worktree?'✓ 已关闭 + 删除 worktree':'✓ 已关闭'); setTimeout(()=>loadData(),500); }
       else toast(j.hint||j.error||'关闭失败');
     }catch(_){ toast('关闭失败'); }

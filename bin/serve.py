@@ -1947,33 +1947,90 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
+    def _subcard_close_blockers(self, sid: str, wt_path: str | None) -> dict:
+        """Reasons NOT to silently destroy a sub-card's worktree. `git worktree
+        remove --force` + `branch -D` are irreversible, so before doing it we check
+        for live work the user almost certainly doesn't mean to nuke:
+          - live:  the session is actively running, OR an embedded terminal (ttyd)
+                   is still attached to it (= a claude is alive inside the worktree).
+          - dirty: the worktree has uncommitted changes (would be lost forever).
+        Returns {"live": bool, "dirty": bool, "reasons": [str], "hint": str};
+        the caller turns a non-empty result into a 409 needs-confirm unless the
+        client explicitly retries with force=True."""
+        live = dirty = False
+        reasons: list[str] = []
+        try:
+            if (live_snapshot().get(sid) or {}).get("status") == "running":
+                live = True
+                reasons.append("会话正在运行(AI 正在生成)")
+        except Exception:
+            pass
+        try:
+            ent = _TERMINALS.get(sid)
+            if ent and _pid_alive(ent.get("pid")):
+                live = True
+                reasons.append("有一个嵌入终端正连着这个会话")
+        except Exception:
+            pass
+        if wt_path and os.path.isdir(wt_path):
+            try:
+                out = _worktree._git(wt_path, "status", "--porcelain", timeout=10)
+                if (out or "").strip():
+                    dirty = True
+                    reasons.append("worktree 有未提交的改动")
+            except Exception:
+                pass
+        return {"live": live, "dirty": dirty, "reasons": reasons,
+                "hint": "；".join(reasons)}
+
     def _handle_subcard_close(self, body: dict):
         """DD-025: close a sub-card — delete its git worktree + branch, unregister it
         from subcards.json, kill its terminal, and tombstone its card. (Merge-back is
-        done by the user beforehand; this is the cleanup.) Body: {sid, id?}."""
+        done by the user beforehand; this is the cleanup.) Body: {sid, id?, force?}.
+
+        Live-guard: a sub-card whose session is still running / has a live terminal /
+        has uncommitted changes is NOT destroyed on the first request — we return
+        409 {needs_confirm} so the cockpit can hard-confirm; only force=True proceeds
+        (and only force=True passes `--force` to `git worktree remove`)."""
         sid = (body.get("sid") or "").strip()
         iid = (body.get("id") or "").strip()
+        force = bool(body.get("force"))
         if not sid:
             return self._reply(400, {"error": "sid required"})
-        removed_wt = None
-        # 1. resolve the worktree + main repo from the child's own cwd, then remove it.
+        # resolve the worktree + main repo from the child's own cwd up front, so the
+        # guard can inspect it and the removal below can reuse it.
+        main_repo = wt_path = None
         try:
             cwd = _resume_cwd_for(sid)
             cl = _worktree.compute_code_location(cwd) if (cwd and _worktree) else None
             if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
                 main_repo, wt_path = cl["main_repo"], cl["worktree"]
+        except Exception:
+            pass
+        if not force:
+            blk = self._subcard_close_blockers(sid, wt_path)
+            if blk["live"] or blk["dirty"]:
+                return self._reply(409, {"needs_confirm": True, **blk})
+        removed_wt = None
+        # 1. kill its embedded terminal FIRST — so the claude inside isn't writing
+        #    into a directory we're about to pull out from under it.
+        try:
+            self._handle_terminal_close({"sid": sid})
+        except Exception:
+            pass
+        # 2. remove the worktree + branch. Plain `remove` (no --force) when not
+        #    confirmed: git itself refuses on a dirty/locked worktree — a backstop
+        #    behind our own guard. force=True (user accepted the loss) → --force.
+        try:
+            if main_repo and wt_path:
                 ent = (_subcards.load(str(SUBCARDS_JSON)).get(sid) if _subcards else None) or {}
                 slug = ent.get("slug") or os.path.basename(wt_path.rstrip("/"))
-                _worktree._git(main_repo, "worktree", "remove", "--force", wt_path, timeout=20)
+                rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt_path]
+                _worktree._git(main_repo, *rm, timeout=20)
                 _worktree._git(main_repo, "worktree", "prune", timeout=10)
                 if slug:
                     _worktree._git(main_repo, "branch", "-D", "worktree-" + slug, timeout=10)
                 removed_wt = wt_path
-        except Exception:
-            pass
-        # 2. kill its embedded terminal (best-effort)
-        try:
-            self._handle_terminal_close({"sid": sid})
         except Exception:
             pass
         # 3. unregister from the sub-card registry
