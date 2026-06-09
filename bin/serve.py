@@ -219,13 +219,16 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
     h = _terminal_holder()
     name = "stray-" + sid[:8]
     if h == "tmux":
-        # Keep mouse ON — wheel-scroll, no page-scroll-through, and Ctrl-C all stay
-        # intact. To ALSO copy: a mouse drag-select, on release, pipes the selected
-        # text straight to the OS clipboard. tmux/ttyd/the browser all run on this
-        # same machine, so the browser reads the very same clipboard → drag, let go,
-        # ⌘V. (For a persistent visible highlight instead, Shift+drag does a native
-        # browser selection you can ⌘C.) No reliable clipboard tool → fall back to
-        # OSC 52 (set-clipboard), which routes through ttyd's terminal clipboard.
+        # Mouse ON so the WHEEL scrolls tmux scrollback. Two copy gestures coexist so
+        # the user is never stuck (mouse on / mouse off can't both have ⌘C AND scroll,
+        # so we give both routes under mouse-on instead):
+        #   • plain drag → tmux copy-mode → copy-pipe-and-cancel to the OS clipboard
+        #     (pbcopy/wl-copy/xclip). Same machine, so the browser ⌘V reads it.
+        #   • Shift+drag → xterm holds it back as a native browser selection (xterm's
+        #     shouldForceSelection on shiftKey), which the patched ttyd index copies to
+        #     the browser clipboard on select AND on ⌘C (see _ttyd_patched_index).
+        # No reliable clipboard tool → fall back to OSC 52 (set-clipboard) for the
+        # plain-drag route.
         clip = ("pbcopy" if sys.platform == "darwin"
                 else "wl-copy" if shutil.which("wl-copy")
                 else "xclip -selection clipboard" if shutil.which("xclip")
@@ -281,7 +284,7 @@ def _ttyd_patched_index():
     stamp = CACHE_DIR / "ttyd-index.ver"
     # bump when the injected script below changes, so an old cache regenerates
     # even on the same ttyd version
-    PATCH_REV = "2-copy-async"
+    PATCH_REV = "3-select-copy"
     try:
         r = subprocess.run([ttyd, "--version"], capture_output=True, text=True)
         ver = (r.stdout + r.stderr).strip() + "|" + PATCH_REV
@@ -305,15 +308,30 @@ def _ttyd_patched_index():
             "<script>(function(){"
             "function cp(t){try{if(t&&navigator.clipboard)"
             "navigator.clipboard.writeText(t).catch(function(){});}catch(e){}}"
-            # ttyd exposes the xterm instance as window.term; hook its selection
-            # change and copy via the async API (execCommand('copy') is blocked in
-            # this cross-origin iframe). Poll briefly until window.term exists.
+            # tmux runs with mouse OFF, so a drag is a real xterm selection. ttyd
+            # exposes the xterm instance as window.term; copy via the async Clipboard
+            # API (execCommand('copy') is blocked in this cross-origin iframe). Poll
+            # briefly until window.term exists.
             "var n=0;(function h(){var t=window.term;"
-            "if(t&&t.onSelectionChange){t.onSelectionChange(function(){"
-            "var s='';try{s=t.getSelection();}catch(e){}if(s)cp(s);});return;}"
+            "if(t&&t.onSelectionChange){"
+            # copy-on-select: the moment you finish a drag-selection it's on the
+            # browser clipboard (so a bare drag → ⌘V works, no extra step).
+            "t.onSelectionChange(function(){"
+            "var s='';try{s=t.getSelection();}catch(e){}if(s)cp(s);});"
+            # ⌘C (or Ctrl-Shift-C) WITH a selection → copy + swallow, so it doesn't
+            # reach the app. Plain Ctrl-C (no selection, or no shift) falls through to
+            # claude as SIGINT — interrupt must keep working.
+            "if(t.attachCustomKeyEventHandler){t.attachCustomKeyEventHandler(function(e){"
+            "if(e.type==='keydown'&&(e.metaKey||(e.ctrlKey&&e.shiftKey))&&(e.key==='c'||e.key==='C')){"
+            "var s='';try{s=t.getSelection();}catch(_){}if(s){cp(s);return false;}}"
+            "return true;});}"
+            "return;}"
             "if(n++<200)setTimeout(h,50);})();"
-            # keep the page's own context menu from popping over the selection
-            "window.addEventListener('contextmenu',function(e){e.preventDefault();},true);"
+            # right-click on a selection copies it too (the native menu can't see
+            # xterm's own selection, so wire it manually) and is otherwise suppressed.
+            "window.addEventListener('contextmenu',function(e){"
+            "try{var t=window.term,s=t&&t.getSelection&&t.getSelection();if(s)cp(s);}catch(_){}"
+            "e.preventDefault();},true);"
             "})();</script>")
         html = html.replace("</body>", inject + "</body>", 1) if "</body>" in html else html + inject
         out.write_text(html)
