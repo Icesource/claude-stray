@@ -1487,13 +1487,21 @@ class Handler(BaseHTTPRequestHandler):
                 wt_name = "task-" + _uuid.uuid4().hex[:6]
             # realpath: the child session records its cwd resolved (e.g. /tmp →
             # /private/tmp on macOS), so the prefix we match against must be too.
-            wt_path = os.path.realpath(os.path.join(
-                cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
-            parts = ["claude", "--worktree", wt_name, "--name", wt_name,
-                     "--dangerously-skip-permissions"]
-            if prompt:
-                parts += [prompt]
-            inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
+            main_repo = cl0.get("main_repo") or cwd
+            wt_path = os.path.realpath(os.path.join(main_repo, ".claude", "worktrees", wt_name))
+            branch = "worktree-" + wt_name
+            # DD-022-B: create the worktree OURSELVES with git, then run plain
+            # interactive claude in it. `claude --worktree` is a "create + open in a
+            # NEW iTerm2/tmux window" command (verified 2026-06-09): embedded in our
+            # ttyd it just exits without creating the worktree. git worktree add is
+            # reliable, and plain `claude` works in the ttyd like the resume terminals.
+            mk = ("git -C " + shlex.quote(main_repo) + " worktree add -b "
+                  + shlex.quote(branch) + " " + shlex.quote(wt_path)
+                  + " || git -C " + shlex.quote(main_repo) + " worktree add "
+                  + shlex.quote(wt_path))
+            parts = ["claude", "--dangerously-skip-permissions"] + ([prompt] if prompt else [])
+            inner = (mk + " ; cd " + shlex.quote(wt_path) + " && "
+                     + " ".join(shlex.quote(p) for p in parts))
         else:
             parts = ["claude", "--dangerously-skip-permissions"] + ([prompt] if prompt else [])
             inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
@@ -1515,10 +1523,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"error": str(e)})
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
         _save_terminals()
-        # DD-025: if this is a parent-spawned sub-card, capture the child's new
-        # session id (it appears in the worktree's project dir within a few seconds)
-        # and record the parent↔child link. Background thread — never blocks/raises.
-        if parent and want_wt and wt_path and _subcards is not None:
+        # DD-022-B / DD-025: a worktree session's sid is unknown at launch (claude
+        # mints it). Capture it from the worktree's project dir, then re-key the ttyd
+        # token→sid so the cockpit's "open terminal" REUSES this live ttyd instead of
+        # `claude --resume <sid>` (a second driver → forks the jsonl, DD-018). If it's
+        # a parent-spawned sub-card, also record the parent↔child link.
+        if want_wt and wt_path and _subcards is not None:
             since = time.time() - 2
 
             def _capture():
@@ -1526,16 +1536,12 @@ class Handler(BaseHTTPRequestHandler):
                     time.sleep(1)
                     sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
                     if sid:
-                        try:
-                            _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
-                        except Exception:
-                            pass
-                        # DD-025 G1: the child is ALREADY live in this spawn ttyd, but
-                        # it's keyed by the ephemeral token (sid was unknown at spawn).
-                        # Re-key token→sid so the cockpit's "open terminal" REUSES this
-                        # live ttyd instead of `claude --resume <sid>` — a second driver
-                        # that forks the session jsonl (DD-018). Without this the running
-                        # child is unreachable from the card and clicking it spawns a fork.
+                        if parent:
+                            try:
+                                _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
+                            except Exception:
+                                pass
+                        # re-key token→sid so "open terminal" reuses this live ttyd.
                         try:
                             ent = _TERMINALS.pop(token, None)
                             if ent:
