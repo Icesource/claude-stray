@@ -197,10 +197,28 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
     h = _terminal_holder()
     name = "stray-" + sid[:8]
     if h == "tmux":
+        # Keep mouse ON — wheel-scroll, no page-scroll-through, and Ctrl-C all stay
+        # intact. To ALSO copy: a mouse drag-select, on release, pipes the selected
+        # text straight to the OS clipboard. tmux/ttyd/the browser all run on this
+        # same machine, so the browser reads the very same clipboard → drag, let go,
+        # ⌘V. (For a persistent visible highlight instead, Shift+drag does a native
+        # browser selection you can ⌘C.) No reliable clipboard tool → fall back to
+        # OSC 52 (set-clipboard), which routes through ttyd's terminal clipboard.
+        clip = ("pbcopy" if sys.platform == "darwin"
+                else "wl-copy" if shutil.which("wl-copy")
+                else "xclip -selection clipboard" if shutil.which("xclip")
+                else "")
+        lines = ["set -g status off", "set -g mouse on", "set -g escape-time 10"]
+        if clip:
+            for tbl in ("copy-mode", "copy-mode-vi"):
+                lines.append("bind -T " + tbl + " MouseDragEnd1Pane send-keys -X "
+                             "copy-pipe-and-cancel " + shlex.quote(clip))
+        else:
+            lines.append("set -g set-clipboard on")
+        conf = "\n".join(lines) + "\n"
         try:
-            if not _TMUX_CONF.exists():
-                _TMUX_CONF.write_text("set -g status off\nset -g mouse on\n"
-                                      "set -g escape-time 10\n")
+            if (not _TMUX_CONF.exists()) or _TMUX_CONF.read_text() != conf:
+                _TMUX_CONF.write_text(conf)
         except Exception:
             pass
         return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))

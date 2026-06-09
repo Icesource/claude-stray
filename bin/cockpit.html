@@ -288,6 +288,15 @@
   .histfoot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
   .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
   .histin:focus{outline:none;border-color:var(--ink-faint)}
+  /* 键盘快捷键帮助 (交互优化) */
+  .kbdbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:392px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .kbdhead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:13px;color:var(--ink-dim);font-family:var(--mono)}
+  .kbdbody{padding:8px 16px 14px;display:flex;flex-direction:column}
+  .kbdrow{display:flex;align-items:center;gap:14px;padding:7px 0;border-bottom:1px solid var(--hair-soft)}
+  .kbdrow:last-child{border-bottom:none}
+  .kbdkeys{flex:none;min-width:120px;display:flex;gap:5px;align-items:center}
+  .kbddesc{font-size:12.5px;color:var(--ink-dim)}
+  kbd{font-family:var(--mono);font-size:11px;line-height:1;padding:4px 7px;border:1px solid var(--hair);border-bottom-width:2px;border-radius:5px;background:var(--bg-row);color:var(--ink);white-space:nowrap}
   /* AI 建议下一句 (DD-020 B) */
   .suggbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:640px;width:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
   .sugghead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--ink-dim);font-family:var(--mono)}
@@ -337,6 +346,28 @@
   .ttab.on{border-color:var(--run);color:var(--ink)}
   .ttab b{color:var(--ink-faint);font-weight:600;cursor:pointer;font-size:12px;line-height:1}
   .ttab b:hover{color:var(--needs)}
+  .ttab .tt-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+  .ttab .sic{flex:none}
+  .ttab.closed{opacity:.62;border-style:dashed}   /* 一级卡片在册但终端未开 — 点开 */
+  /* 左侧会话族:一级卡片标题 + 二级(子卡)分组小标题 */
+  .tside-h{display:flex;align-items:center;gap:6px}
+  .tside-h .tside-h-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:600}
+  .tside-sub-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-faint);text-transform:uppercase;font-weight:700;margin:7px 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+  .tside-empty{font-size:11px;color:var(--ink-faint);padding:4px 2px 2px;font-family:var(--mono)}
+  /* #3 当前卡片进度时间线 — 横在终端顶部的一条 */
+  .termtl{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--hair);background:color-mix(in srgb,var(--bg-row) 60%,transparent);overflow:hidden}
+  .termtl[hidden]{display:none}
+  .termtl .ttl-cap{flex:none;font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+  .ttl-track{display:flex;align-items:center;gap:0;overflow-x:auto;min-width:0;flex:1;padding-bottom:2px}
+  .ttl-node{position:relative;display:flex;align-items:center;gap:6px;flex:none;padding-right:14px;color:var(--ink-faint)}
+  .ttl-node:not(:last-child)::after{content:'';width:18px;height:1.5px;background:var(--connector);flex:none;margin-left:2px}
+  .ttl-node .ttl-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink-faint);background:var(--bg-elev);flex:none;box-sizing:border-box}
+  .ttl-node.done .ttl-dot{background:var(--run);border-color:var(--run)}
+  .ttl-node.live .ttl-dot{box-shadow:0 0 0 3px var(--run-bg);animation:pulse 1.9s ease-in-out infinite}
+  .ttl-node.next .ttl-dot{border-color:var(--needs);border-style:dashed;background:transparent}
+  .ttl-node .ttl-lbl{font-size:11px;color:var(--ink-dim);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+  .ttl-node.live .ttl-lbl{color:var(--ink)}
+  .ttl-node.next .ttl-lbl{color:var(--needs)}
   .empty-state{max-width:560px;margin:64px auto;text-align:center;padding:28px;border:1px solid var(--hair-soft);border-radius:12px;background:var(--bg-row)}
   .empty-state.err{border-color:var(--needs-edge);background:var(--needs-bg)}
   .empty-state .es-t{font-size:15px;font-weight:600;color:var(--ink);margin-bottom:8px}
@@ -423,11 +454,11 @@
     <div class="brand"><span class="mark"></span><span class="name">claude-stray</span><span class="sub">· 注意力驾驶舱</span></div>
     <div class="hud" id="hud"></div>
     <div class="right">
-      <button class="newbtn" id="newTaskBtn" title="在选定目录里从头开始一条新的 Claude 会话(几句话之后会自动出现一张卡片)">＋ 新建任务</button>
-      <button class="iconbtn" id="collapseAllBtn" title="收起所有展开的卡片">⊟</button>
-      <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill">⟳</button>
-      <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
-      <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button><button data-v="archive">归档</button></div>
+      <button class="newbtn" id="newTaskBtn" title="在选定目录里从头开始一条新的 Claude 会话(几句话之后会自动出现一张卡片) · 快捷键 n">＋ 新建任务</button>
+      <button class="iconbtn" id="collapseAllBtn" title="收起所有展开的卡片 · 快捷键 c">⊟</button>
+      <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill · 快捷键 r">⟳</button>
+      <button class="iconbtn" id="themetog" title="切换昼夜模式 · 快捷键 t">☾</button>
+      <div class="viewtog" id="viewtog"><button data-v="project" title="按项目 · 快捷键 1">按项目</button><button data-v="attention" title="按注意力 · 快捷键 2">按注意力</button><button data-v="archive" title="归档 · 快捷键 3">归档</button></div>
       <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
       <span class="clock" id="clock"></span>
       
@@ -540,6 +571,16 @@
     for(const r of rows){ const p=r.parent_session_id;
       if(p&&bySid.has(p)&&bySid.get(p)!==r){ const par=bySid.get(p);
         (par.children=par.children||[]).push(r); childIds.add(r.id); r.is_subcard=true; } }
+    // 交互优化: a parent's PLACEMENT band rolls up its sub-cards. If the parent's
+    // own turn ended (done_unread) while a sub-card is still running, the whole
+    // card belongs in 进行中 — not 待查看. needs_you stays top (most actionable).
+    // We keep the parent's own band in _own_band for its detail content.
+    for(const r of rows){ if(r.children&&r.children.length){
+      let best=r.band;
+      for(const c of r.children){ if((FAM_RANK[c.band]??9)<(FAM_RANK[best]??9)) best=c.band; }
+      if(best!==r.band){ r._own_band=r.band; r.band=best;
+        if(best==='running') r.activity=r.activity||'子卡进行中';
+        else if(best==='needs_you'){ const cn=r.children.find(c=>c.band==='needs_you'); if(cn&&!r.reason) r.reason=cn.reason||'子卡等你确认'; } } } }
     return rows.filter(r=>!childIds.has(r.id));
   }
   // roll-up of a parent's children: counts by band for the parent's badge
@@ -573,7 +614,7 @@
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
-    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid){ if(typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); if(typeof renderTermSide==='function') renderTermSide(tm.dataset.sid); } }
+    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid){ if(typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); if(typeof renderTermSide==='function') renderTermSide(tm.dataset.sid); if(typeof renderTermTimeline==='function') renderTermTimeline(tm.dataset.sid); } }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
       fetch(ORIGIN+'/api/data').then(r=>r.json()),
@@ -600,6 +641,9 @@
   const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'done_unread',glyph:'✅',label:'完成 · 待查看',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
     {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'本周完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
   const RANK={needs_you:0,done_unread:1,running:2,idle:3,done:4,paused:5};
+  // family roll-up rank: like RANK but running OUTRANKS done_unread — if anything
+  // in the card family is still running, the whole card is 进行中, not 待查看.
+  const FAM_RANK={needs_you:0,running:1,done_unread:2,idle:3,done:4,paused:5};
   const LV={thread:'主线',card:'卡',chip:'片'};
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
   const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
@@ -627,7 +671,7 @@
     `<div class="stat k-run"><span class="n">${c.running||0}</span><span class="lbl">AI在跑</span></div>`+
     `<div class="stat k-idle"><span class="n">${c.idle||0}</span><span class="lbl">闲置</span></div>`;
   const _cl=document.getElementById('clock'); if(_cl)_cl.textContent='实时 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-  const _dc=document.getElementById('disc'); if(_dc)_dc.innerHTML=`<b>实时</b>:状态由 Claude Code hooks 驱动(running/idle/needs-you)。「主线/支线」「优先级」为示例,可拖拽。`;
+  const _dc=document.getElementById('disc'); if(_dc)_dc.innerHTML=`<b>实时</b>:状态由 Claude Code hooks 驱动(running/idle/needs-you)。「主线/支线」「优先级」为示例,可拖拽。 · 按 <b>?</b> 看快捷键`;
   }
 
   // shared pieces
@@ -685,7 +729,7 @@
     return `<div class="mid ${cls}"${tip}><span class="rtext">${p?esc(p):fallback}</span></div>`;}
   function midCell(r){
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
-    if(r.band==='running'){const p=r.pct||0;return `<div class="mid running"><span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span><span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
+    if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
     if(r.band==='idle')return progMid('idle', r, esc(r.idle)+' 未动');
     if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
@@ -975,7 +1019,7 @@
   function getTermModal(){
     let m=document.getElementById('termModal');
     if(!m){ m=document.createElement('div'); m.id='termModal'; m.className='termmask';
-      m.innerHTML=`<div class="termside" hidden></div><div class="termbox"><div class="termhead"><span class="termtabs"></span><span class="tsp"></span><a class="btn ttnew" target="_blank" rel="noopener" title="若终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留所有终端运行,随时点卡片「终端」秒回">关闭</button></div><div class="termbody"><div class="termstack"><div class="term-loading" hidden><div class="tl-spin"></div><div class="tl-txt"><b class="tl-msg">正在启动终端…</b><span class="tl-sub"></span></div></div></div></div></div><div class="termres" hidden></div>`;
+      m.innerHTML=`<div class="termside" hidden></div><div class="termbox"><div class="termhead"><span class="termtabs"></span><span class="tsp"></span><a class="btn ttnew" target="_blank" rel="noopener" title="若终端空白(ttyd 拒绝被内嵌),用此在新标签打开">↗ 新标签</a><button class="btn" onclick="hideTerm()" title="保留所有终端运行,随时点卡片「终端」秒回">关闭</button></div><div class="termtl" hidden></div><div class="termbody"><div class="termstack"><div class="term-loading" hidden><div class="tl-spin"></div><div class="tl-txt"><b class="tl-msg">正在启动终端…</b><span class="tl-sub"></span></div></div></div></div></div><div class="termres" hidden></div>`;
       document.body.appendChild(m); m.onclick=ev=>{ if(ev.target===m) hideTerm(); }; }
     return m;
   }
@@ -1068,13 +1112,42 @@
     const now=Date.now();
     PENDING_SUB=PENDING_SUB.filter(p=>now-p.since<120000);                  // expire stale
     const myPending=PENDING_SUB.filter(p=>p.parent===rootSid && fam.kids.length<=p.baseKids);
-    let html=`<div class="tside-h">会话族 · ${1+fam.kids.length+myPending.length}</div>`;
-    html+=item(fam.root,false);
+    // 交互优化: the 一级卡片 (parent) is the header tab; the LEFT panel is its 二级
+    // (sub-cards). Header line names the active family; the list below is subcards.
+    const nSub=fam.kids.length+myPending.length;
+    let html=`<div class="tside-h" title="当前一级卡片">${statusIcon(fam.root.band,11)}<span class="tside-h-n">${esc(fam.root.name||rootSid.slice(0,8))}</span></div>`;
+    html+=`<div class="tside-sub-h">二级 · 子卡 ${nSub}</div>`;
     for(const c of fam.kids) html+=item(c,true);
     for(const p of myPending) html+=`<div class="tside-item sub pending" title="子卡正在后台创建+总结,稍候自动出现并可点击">`+
       `<span class="ts-spin"></span><span class="ts-name">${esc(p.label)} · 创建中…</span></div>`;
+    if(!nSub) html+=`<div class="tside-empty">还没有子卡</div>`;
     html+=`<button class="tside-add" onclick="spawnSubcardFromUI(event,'${esc(rootSid)}')" title="在这张主卡下起一个新子卡(独立 worktree 里跑 claude -p)">＋ 子卡</button>`;
     side.innerHTML=html;
+  }
+  // 交互优化 / #3: a horizontal progress timeline for the ACTIVE card, shown atop
+  // the terminal. Completed nodes = the card's progress sentences; the trailing
+  // hollow node = its next-step (if any). Pure-ish (reads DATA + the modal).
+  function termTLNodes(r){
+    if(!r) return [];
+    const segs=((r.progress||'').match(/[^。!?;；\n]+[。!?;；]?/g)||[])
+      .map(s=>s.trim()).filter(s=>s.length>=4);
+    const nodes=segs.map(s=>({t:s.length>34?s.slice(0,34)+'…':s, done:true}));
+    const nx=r.next_step||r.awaiting_user;
+    if(nx) nodes.push({t:(nx.length>34?nx.slice(0,34)+'…':nx), done:false, next:true});
+    return nodes;
+  }
+  function renderTermTimeline(sid){
+    const m=document.getElementById('termModal'); if(!m)return;
+    const tl=m.querySelector('.termtl'); if(!tl)return;
+    const r=findRowForSid(sid);
+    const nodes=termTLNodes(r);
+    if(!nodes.length){ tl.hidden=true; tl.innerHTML=''; return; }
+    tl.hidden=false;
+    const cur=nodes.filter(n=>n.done).length;   // index of the live edge
+    tl.innerHTML=`<span class="ttl-cap" title="当前卡片的进度时间线">进度</span><div class="ttl-track">`+
+      nodes.map((n,i)=>`<div class="ttl-node${n.done?' done':''}${n.next?' next':''}${i===cur-1?' live':''}" title="${esc(n.t)}">`+
+        `<span class="ttl-dot"></span><span class="ttl-lbl">${esc(n.t)}</span></div>`).join('')+
+      `</div>`;
   }
   // 一个整洁的弹框替代之前连续两个 prompt():任务(多行)+ 可选名字,一次填完。
   function spawnSubcardFromUI(e,rootSid){ if(e)e.stopPropagation();
@@ -1111,19 +1184,42 @@
     // Cmd/Ctrl+Enter 提交;Esc 取消(textarea 里单 Enter 换行)
     ta.addEventListener('keydown',ev=>{ if(ev.key==='Enter'&&(ev.metaKey||ev.ctrlKey))go(); if(ev.key==='Escape')close(); });
   }
+  // the 一级卡片 (top-level parent) session id for any session in its family.
+  function familyRootSid(sid){ const fam=termFamily(sid); if(!fam) return sid;
+    return fam.root.session||(fam.root.sessions||[])[0]||sid; }
   function setActiveTerm(sid){
     const m=getTermModal(); m.dataset.sid=sid;
     const frames=[...m.querySelectorAll('.termstack iframe')];
     frames.forEach(f=>{ f.style.display=(f.dataset.sid===sid)?'block':'none'; });
-    renderTermRes(sid); renderTermSide(sid);
-    m.querySelector('.termtabs').innerHTML=frames.map(f=>{ const s=f.dataset.sid;
-      // label with the card's NAME (semantic), not the raw session id
-      const r=findRowForSid(s), nm=r&&r.name?r.name:'';
-      const lbl=s.indexOf('new-')===0?'🆕 新会话':esc(nm?(nm.length>16?nm.slice(0,16)+'…':nm):s.slice(0,8));
-      return `<span class="ttab${s===sid?' on':''}" onclick="setActiveTerm('${esc(s)}')" title="${esc(nm?nm+' · '+s:s)}">${lbl}<b onclick="endTermOne(event,'${esc(s)}')" title="结束此终端进程">×</b></span>`;
+    renderTermRes(sid); renderTermSide(sid); renderTermTimeline(sid);
+    // 交互优化: the header lists 一级卡片 (families) ONLY — one tab per top-level
+    // card. Every open terminal maps to its family root; sub-cards (二级) live in
+    // the left 会话族 panel, never the header. The active family's root always
+    // shows, even when only one of its sub-cards is open.
+    const openSids=new Set(frames.map(f=>f.dataset.sid));
+    const activeRoot=familyRootSid(sid);
+    const roots=[], seen=new Set();
+    const pushRoot=rs=>{ if(rs&&!seen.has(rs)){ seen.add(rs); roots.push(rs); } };
+    for(const f of frames) pushRoot(familyRootSid(f.dataset.sid));
+    pushRoot(activeRoot);
+    m.querySelector('.termtabs').innerHTML=roots.map(rs=>{
+      const r=findRowForSid(rs), nm=r&&r.name?r.name:'';
+      const rootOpen=openSids.has(rs), on=rs===activeRoot;
+      const icon=r?statusIcon(r.band,11):'';   // r.band is the family-rolled-up band
+      const lbl=rs.indexOf('new-')===0?'🆕 新会话':esc(nm?(nm.length>16?nm.slice(0,16)+'…':nm):rs.slice(0,8));
+      // focus the root terminal if it's open, else resume/open it
+      const click=rootOpen?`setActiveTerm('${esc(rs)}')`:`openTerminal(event,'${esc(rs)}')`;
+      return `<span class="ttab${on?' on':''}${rootOpen?'':' closed'}" onclick="${click}" title="${esc((nm||rs)+' · 一级卡片')}">${icon}<span class="tt-l">${lbl}</span><b onclick="endTermFamily(event,'${esc(rs)}')" title="关闭这张卡片(及其已开的子卡终端)">×</b></span>`;
     }).join('');
     const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
     if(nt&&act) nt.href=act.src;
+  }
+  // close a whole 一级卡片 family: end every open terminal whose family root matches.
+  function endTermFamily(e,rootSid){ if(e)e.stopPropagation();
+    const m=document.getElementById('termModal'); if(!m)return;
+    const sids=[...m.querySelectorAll('.termstack iframe')].map(f=>f.dataset.sid)
+      .filter(s=>familyRootSid(s)===rootSid);
+    sids.forEach(s=>endTermOne(null,s));
   }
   // 关闭:只隐藏面板,所有 iframe + WebSocket 保持连接 → 各自的 claude 继续跑,秒回。
   function hideTerm(){ const m=document.getElementById('termModal'); if(m)m.style.display='none'; }
@@ -1236,6 +1332,49 @@
   }
   (function(){ const nb=document.getElementById('newTaskBtn'); if(nb)nb.addEventListener('click',newSession); })();
   (function(){ const b=document.getElementById('collapseAllBtn'); if(b)b.addEventListener('click',()=>{ OPEN.clear(); document.querySelectorAll('.row.open').forEach(r=>r.classList.remove('open')); toast('已收起全部卡片'); }); })();
+  // ── 键盘交互层 (交互优化) ──────────────────────────────────────────────
+  // Esc 关掉最上层的弹层;不打字 / 不在内嵌终端里时,单键直驱高频操作。
+  // 注意:焦点在终端 iframe 内时,keydown 进不了父文档 —— 所以在终端里敲
+  // Esc / 单键不会误触(vim 用户安全),要关终端就点「关闭」或背景。
+  function topOverlay(){
+    const k=document.getElementById('kbdHelp'); if(k) return ()=>k.remove();
+    const ns=document.getElementById('nsDlg'); if(ns) return ()=>ns.remove();
+    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none') return hideTerm;
+    if(document.getElementById('suggModal')) return closeSugg;
+    if(document.getElementById('histModal')) return closeHist;
+    return null;
+  }
+  function typingInField(){ const a=document.activeElement;
+    return !!a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable); }
+  function showKbdHelp(){
+    let m=document.getElementById('kbdHelp');
+    if(m){ m.remove(); return; }   // 再按一次 ? 关掉
+    m=document.createElement('div'); m.id='kbdHelp'; m.className='histmask';
+    const rows=[['n','新建任务'],['r','刷新(重新分析最近会话)'],['c','收起全部卡片'],
+      ['t','切换昼夜'],['1 / 2 / 3','按项目 / 按注意力 / 归档'],
+      ['Esc','关闭弹层(终端 / 对话 / 建议 / 新建)'],['?','显示 / 关闭本帮助']];
+    m.innerHTML=`<div class="kbdbox"><div class="kbdhead"><span>键盘快捷键</span><button class="btn" onclick="document.getElementById('kbdHelp').remove()">关闭</button></div><div class="kbdbody">`+
+      rows.map(([k,d])=>`<div class="kbdrow"><span class="kbdkeys">${k.split(' / ').map(x=>`<kbd>${esc(x)}</kbd>`).join('<span style="color:var(--ink-faint)">/</span>')}</span><span class="kbddesc">${esc(d)}</span></div>`).join('')+
+      `</div></div>`;
+    m.onclick=ev=>{ if(ev.target===m) m.remove(); };
+    document.body.appendChild(m);
+  }
+  document.addEventListener('keydown',e=>{
+    if(e.metaKey||e.ctrlKey||e.altKey) return;          // 留给浏览器 / 系统快捷键
+    if(e.key==='Escape'){ const c=topOverlay(); if(c){ e.preventDefault(); c(); } return; }
+    if(typingInField()) return;                          // 输入框里只走 Esc
+    if(e.key==='?'){ e.preventDefault(); showKbdHelp(); return; }
+    if(topOverlay()) return;                             // 有弹层时不触发其余加速键
+    switch(e.key){
+      case 'n': e.preventDefault(); newSession(); break;
+      case 'r': e.preventDefault(); document.getElementById('refreshBtn')?.click(); break;
+      case 'c': e.preventDefault(); document.getElementById('collapseAllBtn')?.click(); break;
+      case 't': e.preventDefault(); document.getElementById('themetog')?.click(); break;
+      case '1': e.preventDefault(); setView('project'); break;
+      case '2': e.preventDefault(); setView('attention'); break;
+      case '3': e.preventDefault(); setView('archive'); break;
+    }
+  });
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
 </body>
