@@ -14,8 +14,7 @@ Calls Haiku with prompts/classify-cross-session.md.
 Writes:
   - cache/dashboard.json               (replaces; atomic tmp+rename)
   - cache/cost_log.jsonl             (via _cost_log helper)
-  - cache/dashboard.html (regen)       (best-effort, non-fatal)
-  - cache/mindmap-tree.html (regen)
+  - cache/mindmap-tree.html (regen)    (best-effort, non-fatal)
 
 Concurrency:
   - One process at a time. Use bin/layer2-trigger.sh to launch
@@ -1943,8 +1942,10 @@ def atomic_write_json(path: Path, data: dict) -> None:
 
 
 def regen_html() -> None:
-    """Best-effort HTML regeneration. Failures here don't fail the run."""
-    for script in ("render-html.py", "render-tree.py"):
+    """Best-effort regeneration of the markmap export view (render-tree.py).
+    The classic card dashboard (render-html.py) was retired — the cockpit is
+    the only live UI now. Failures here don't fail the run."""
+    for script in ("render-tree.py",):
         try:
             subprocess.run(
                 ["python3", str(REPO_ROOT / "bin" / script)],
