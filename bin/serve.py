@@ -197,26 +197,10 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
     h = _terminal_holder()
     name = "stray-" + sid[:8]
     if h == "tmux":
-        # mouse OFF: let the BROWSER do native drag-to-select + copy and let
-        # xterm handle its own wheel-scroll. With `mouse on`, tmux grabs every
-        # drag/click — the browser can't select text and tmux clears its own
-        # copy-mode selection on mouse-up, which looks exactly like "selection
-        # vanishes / a phantom left-click". The holder exists only to survive WS
-        # drops (it replays the screen on reattach), not for mouse handling.
-        conf = ("set -g status off\nset -g mouse off\n"
-                "set -g escape-time 10\n")
         try:
-            if (not _TMUX_CONF.exists()) or _TMUX_CONF.read_text() != conf:
-                _TMUX_CONF.write_text(conf)
-        except Exception:
-            pass
-        # A `-f conf` is only read when the tmux server first starts, so a server
-        # left running with mouse ON from an earlier launch would keep it. `set -g`
-        # retargets the LIVE server immediately; best-effort (no server yet → the
-        # -f conf covers the first start).
-        try:
-            subprocess.run(["tmux", "-L", "stray", "set", "-g", "mouse", "off"],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+            if not _TMUX_CONF.exists():
+                _TMUX_CONF.write_text("set -g status off\nset -g mouse on\n"
+                                      "set -g escape-time 10\n")
         except Exception:
             pass
         return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))
@@ -1436,14 +1420,18 @@ class Handler(BaseHTTPRequestHandler):
         # it makes ttyd's shell a fresh client that can attach/mirror.
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
         # rendererType=dom → terminal is real selectable DOM text (canvas/webgl
-        #   is pixels → unselectable). With tmux mouse OFF this gives native
-        #   drag-select + ⌘C, and we let the BROWSER's own right-click menu pop
-        #   (its "Copy" acts on the current selection). We deliberately no longer
-        #   pass `-I` (which suppressed that menu) or rightClickSelectsWord (which
-        #   would collapse a drag-selection to a single word on right-click).
+        #   is pixels → unselectable). Enables drag-select + ⌘C / right-click Copy.
+        # rightClickSelectsWord=true → right-click selects the word under cursor.
+        # -I patched index → suppresses the browser's own context menu so it no
+        #   longer pops over the selection (the rightClickSelectsWord option alone
+        #   does NOT stop it). Falls back to no -I if patching fails.
         args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
                 "-t", "titleFixed=" + sid[:8],
-                "-t", "rendererType=dom"]
+                "-t", "rendererType=dom",
+                "-t", "rightClickSelectsWord=true"]
+        idx = _ttyd_patched_index()
+        if idx:
+            args += ["-I", idx]
         args += ["bash", "-lc", inner]
         try:
             proc = subprocess.Popen(
@@ -1522,7 +1510,11 @@ class Handler(BaseHTTPRequestHandler):
         s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
         args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
-                "-t", "titleFixed=new", "-t", "rendererType=dom"]
+                "-t", "titleFixed=new", "-t", "rendererType=dom",
+                "-t", "rightClickSelectsWord=true"]
+        idx = _ttyd_patched_index()
+        if idx:
+            args += ["-I", idx]
         args += ["bash", "-lc", inner]
         try:
             proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
