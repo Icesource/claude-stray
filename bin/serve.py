@@ -256,23 +256,37 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
 
 
 def _ttyd_patched_index():
-    """Path to a cached copy of ttyd's index.html with the browser context menu
-    suppressed, or None. Right-click inside the terminal otherwise pops the
-    page's default menu over the selection; xterm's rightClickSelectsWord does
-    NOT stop it. ttyd's index is a single self-contained file, so we fetch it
-    once from a throwaway ttyd, inject a contextmenu preventDefault, cache it,
-    and pass it via `-I`. Regenerated when the ttyd version changes. Any failure
-    → None (caller launches ttyd without -I, unchanged behavior)."""
+    """Path to a cached copy of ttyd's index.html with copy-on-select fixed for
+    the embedded (cross-origin iframe) case, or None.
+
+    Two problems the stock page has when embedded in the cockpit:
+      1. Copy. ttyd copies the selection with document.execCommand('copy'), which
+         browsers REFUSE inside a cross-origin iframe (cockpit is :9876, each ttyd
+         is a random port → different origins) — so selecting text never reaches
+         the clipboard. The cockpit iframe is granted clipboard-write, so we wire
+         copy-on-select to the async Clipboard API (navigator.clipboard.writeText),
+         which honors that delegation. ttyd exposes the xterm instance as
+         window.term, so we hook term.onSelectionChange directly.
+      2. Context menu. Right-click otherwise pops the page's default menu over the
+         selection (rightClickSelectsWord does NOT stop it), so we preventDefault.
+
+    ttyd's index is a single self-contained file, so we fetch it once from a
+    throwaway ttyd, inject the script, cache it, and pass it via `-I`. Regenerated
+    when the ttyd version OR our patch revision changes. Any failure → None
+    (caller launches ttyd without -I, unchanged behavior)."""
     ttyd = shutil.which("ttyd")
     if not ttyd:
         return None
     out = CACHE_DIR / "ttyd-index.html"
     stamp = CACHE_DIR / "ttyd-index.ver"
+    # bump when the injected script below changes, so an old cache regenerates
+    # even on the same ttyd version
+    PATCH_REV = "2-copy-async"
     try:
         r = subprocess.run([ttyd, "--version"], capture_output=True, text=True)
-        ver = (r.stdout + r.stderr).strip()
+        ver = (r.stdout + r.stderr).strip() + "|" + PATCH_REV
     except Exception:
-        ver = ""
+        ver = "|" + PATCH_REV
     try:
         if out.exists() and stamp.exists() and stamp.read_text().strip() == ver:
             return str(out)
@@ -281,13 +295,26 @@ def _ttyd_patched_index():
     import socket as _socket, urllib.request as _ureq
     proc = None
     try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
         s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
         proc = subprocess.Popen([ttyd, "-p", str(port), "-i", "127.0.0.1", "bash", "-lc", "sleep 6"],
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         time.sleep(0.6)
         html = _ureq.urlopen(f"http://127.0.0.1:{port}/", timeout=3).read().decode("utf-8", "replace")
-        inject = ("<script>window.addEventListener('contextmenu',"
-                  "function(e){e.preventDefault();},true);</script>")
+        inject = (
+            "<script>(function(){"
+            "function cp(t){try{if(t&&navigator.clipboard)"
+            "navigator.clipboard.writeText(t).catch(function(){});}catch(e){}}"
+            # ttyd exposes the xterm instance as window.term; hook its selection
+            # change and copy via the async API (execCommand('copy') is blocked in
+            # this cross-origin iframe). Poll briefly until window.term exists.
+            "var n=0;(function h(){var t=window.term;"
+            "if(t&&t.onSelectionChange){t.onSelectionChange(function(){"
+            "var s='';try{s=t.getSelection();}catch(e){}if(s)cp(s);});return;}"
+            "if(n++<200)setTimeout(h,50);})();"
+            # keep the page's own context menu from popping over the selection
+            "window.addEventListener('contextmenu',function(e){e.preventDefault();},true);"
+            "})();</script>")
         html = html.replace("</body>", inject + "</body>", 1) if "</body>" in html else html + inject
         out.write_text(html)
         stamp.write_text(ver)
