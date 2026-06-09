@@ -1688,31 +1688,70 @@ class Handler(BaseHTTPRequestHandler):
         # realpath so the captured child cwd (resolved, e.g. /tmp→/private/tmp) matches
         wt_path = os.path.realpath(os.path.join(
             cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
-        parts = [claude, "-p", "--worktree", wt_name, "--name", wt_name,
-                 "--dangerously-skip-permissions", prompt]
+        # DD-025 (interactive substrate): no `claude -p`. Create the worktree, then run
+        # INTERACTIVE claude (seeded with the task) in a DETACHED tmux session — it runs
+        # immediately and stays alive, so you attach to it and DRIVE it (resume model),
+        # and its sid is captured promptly. The cockpit "open terminal" attaches to this
+        # same tmux (sole driver → single-driver safe, never a `--resume` fork).
+        tmux = shutil.which("tmux")
+        if not tmux:
+            return self._reply(503, {"error": "tmux not found", "hint": "子卡交互式底层需要 tmux"})
+        ttyd = shutil.which("ttyd")
+        token = "new-" + _uuid.uuid4().hex[:8]
+        holder = "stray-" + token[:8]
+        main_repo = cl0.get("main_repo") or cwd
+        branch = "worktree-" + wt_name
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
+        inner = ("git -C " + shlex.quote(main_repo) + " worktree add -b " + shlex.quote(branch)
+                 + " " + shlex.quote(wt_path) + " 2>/dev/null || git -C " + shlex.quote(main_repo)
+                 + " worktree add " + shlex.quote(wt_path) + " 2>/dev/null ; cd "
+                 + shlex.quote(wt_path) + " && exec " + shlex.quote(claude)
+                 + " --dangerously-skip-permissions " + shlex.quote(prompt))
         try:
-            proc = subprocess.Popen(parts, cwd=cwd, env=child_env,
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    stdin=subprocess.DEVNULL, start_new_session=True)
+            if not _TMUX_CONF.exists():
+                _TMUX_CONF.write_text("set -g status off\nset -g mouse off\nset -g escape-time 10\n")
+        except Exception:
+            pass
+        try:
+            subprocess.run([tmux, "-L", "stray", "-f", str(_TMUX_CONF), "new-session", "-d",
+                            "-s", holder, "bash", "-lc", inner], env=child_env,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
         except Exception as e:
-            return self._reply(500, {"error": str(e)})
-        # DD-027: register the sub-card placeholder INSTANTLY (covers both the UI
-        # "+子卡" and the CLI `stray spawn`, which both reach here), so it shows up
-        # nested under the parent as "准备中" immediately instead of after classify.
-        pkey = "sub-" + _uuid.uuid4().hex[:8]
+            return self._reply(500, {"error": "tmux start failed: " + str(e)})
+        # a ttyd that ATTACHES to that tmux when the cockpit opens the sub-card
+        port = None
+        if ttyd:
+            import socket as _socket
+            s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
+            attach = (shlex.quote(tmux) + " -L stray -f " + shlex.quote(str(_TMUX_CONF))
+                      + " new-session -A -s " + shlex.quote(holder))
+            args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
+                    "-t", "titleFixed=" + wt_name, "-t", "rendererType=dom",
+                    "-t", "rightClickSelectsWord=true"]
+            idx = _ttyd_patched_index()
+            if idx:
+                args += ["-I", idx]
+            args += ["bash", "-lc", attach]
+            try:
+                tproc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                         env=child_env, start_new_session=True)
+                _TERMINALS[token] = {"port": port, "pid": tproc.pid, "holder": "tmux"}
+                _save_terminals()
+            except Exception:
+                port = None
+        # DD-027: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
         if _pending is not None:
             try:
-                _pending.register(str(PENDING_JSON), pkey, name=name, cwd=cwd,
-                                  worktree_path=wt_path, worktree_name=wt_name,
-                                  parent=parent or None)
+                _pending.register(str(PENDING_JSON), token, name=name, cwd=cwd,
+                                  worktree_path=wt_path, worktree_name=wt_name, parent=parent or None)
             except Exception:
                 pass
+        # capture the child sid → record parent link + align placeholder + re-key terminal
         if _subcards is not None:
             since = time.time() - 2
 
             def _capture():
-                for _ in range(40):     # -p spins up the worktree + first write
+                for _ in range(60):
                     time.sleep(1)
                     sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
                     if sid:
@@ -1722,13 +1761,21 @@ class Handler(BaseHTTPRequestHandler):
                             pass
                         if _pending is not None:
                             try:
-                                _pending.capture_sid(str(PENDING_JSON), pkey, sid)
+                                _pending.capture_sid(str(PENDING_JSON), token, sid)
                             except Exception:
                                 pass
+                        try:
+                            ent = _TERMINALS.pop(token, None)
+                            if ent:
+                                _TERMINALS[sid] = ent
+                                _save_terminals()
+                        except Exception:
+                            pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
-        return self._reply(200, {"ok": True, "detached": True, "worktree_name": wt_name,
-                                 "worktree": True, "parent": parent, "pid": proc.pid})
+        url = ("http://127.0.0.1:" + str(port) + "/") if port else None
+        return self._reply(200, {"ok": True, "worktree_name": wt_name, "worktree": True,
+                                 "parent": parent, "url": url, "token": token})
 
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and
