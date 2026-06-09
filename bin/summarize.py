@@ -184,6 +184,26 @@ def build_turns_block(jsonl_path: Path) -> tuple[str, int]:
     return block, len(selected)
 
 
+LOCK_PRUNE_SECS = 3600  # a held lock is re-touched <2min ago; older files are abandoned
+
+
+def prune_stale_locks() -> None:
+    """Delete leaked summary-*.lock files. flock RELEASES on process exit, but the
+    FILE lingers — one per sid ever summarized (observed: 1863 piled up since May).
+    Any lock whose mtime is older than LOCK_PRUNE_SECS can't be held (no summarize
+    runs that long), so removing it is safe. Best-effort; never raises."""
+    try:
+        cutoff = time.time() - LOCK_PRUNE_SECS
+        for f in LOCKS_DIR.glob("summary-*.lock"):
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
 def acquire_lock(sid: str):
     """flock per-sid. Returns the open file handle (caller keeps it open
     until done). Blocks until acquired."""
@@ -642,6 +662,7 @@ def main() -> int:
     if not args or args[0] in ("-h", "--help"):
         print(__doc__.strip())
         return 0
+    prune_stale_locks()   # sweep leaked summary-*.lock files (best-effort)
     sid = args[0]
     force = "--force" in args[1:]
     dry_run = "--dry-run" in args[1:]
