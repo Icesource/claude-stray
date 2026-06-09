@@ -288,6 +288,15 @@
   .histfoot{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--hair)}
   .histin{flex:1;background:var(--bg-row);border:1px solid var(--hair);border-radius:8px;padding:9px 12px;color:var(--ink);font-size:13px;font-family:var(--sans)}
   .histin:focus{outline:none;border-color:var(--ink-faint)}
+  /* 键盘快捷键帮助 (交互优化) */
+  .kbdbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:392px;width:100%;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+  .kbdhead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:13px;color:var(--ink-dim);font-family:var(--mono)}
+  .kbdbody{padding:8px 16px 14px;display:flex;flex-direction:column}
+  .kbdrow{display:flex;align-items:center;gap:14px;padding:7px 0;border-bottom:1px solid var(--hair-soft)}
+  .kbdrow:last-child{border-bottom:none}
+  .kbdkeys{flex:none;min-width:120px;display:flex;gap:5px;align-items:center}
+  .kbddesc{font-size:12.5px;color:var(--ink-dim)}
+  kbd{font-family:var(--mono);font-size:11px;line-height:1;padding:4px 7px;border:1px solid var(--hair);border-bottom-width:2px;border-radius:5px;background:var(--bg-row);color:var(--ink);white-space:nowrap}
   /* AI 建议下一句 (DD-020 B) */
   .suggbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:640px;width:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
   .sugghead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--ink-dim);font-family:var(--mono)}
@@ -423,11 +432,11 @@
     <div class="brand"><span class="mark"></span><span class="name">claude-stray</span><span class="sub">· 注意力驾驶舱</span></div>
     <div class="hud" id="hud"></div>
     <div class="right">
-      <button class="newbtn" id="newTaskBtn" title="在选定目录里从头开始一条新的 Claude 会话(几句话之后会自动出现一张卡片)">＋ 新建任务</button>
-      <button class="iconbtn" id="collapseAllBtn" title="收起所有展开的卡片">⊟</button>
-      <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill">⟳</button>
-      <button class="iconbtn" id="themetog" title="切换昼夜模式">☾</button>
-      <div class="viewtog" id="viewtog"><button data-v="project">按项目</button><button data-v="attention">按注意力</button><button data-v="archive">归档</button></div>
+      <button class="newbtn" id="newTaskBtn" title="在选定目录里从头开始一条新的 Claude 会话(几句话之后会自动出现一张卡片) · 快捷键 n">＋ 新建任务</button>
+      <button class="iconbtn" id="collapseAllBtn" title="收起所有展开的卡片 · 快捷键 c">⊟</button>
+      <button class="iconbtn" id="refreshBtn" title="刷新(增量):抓取新会话 + 最近更新的会话并重新分类。全量导入历史用 stray --backfill · 快捷键 r">⟳</button>
+      <button class="iconbtn" id="themetog" title="切换昼夜模式 · 快捷键 t">☾</button>
+      <div class="viewtog" id="viewtog"><button data-v="project" title="按项目 · 快捷键 1">按项目</button><button data-v="attention" title="按注意力 · 快捷键 2">按注意力</button><button data-v="archive" title="归档 · 快捷键 3">归档</button></div>
       <a class="iconbtn" href="/classic" title="经典卡片视图" style="text-decoration:none">⊞</a>
       <span class="clock" id="clock"></span>
       
@@ -627,7 +636,7 @@
     `<div class="stat k-run"><span class="n">${c.running||0}</span><span class="lbl">AI在跑</span></div>`+
     `<div class="stat k-idle"><span class="n">${c.idle||0}</span><span class="lbl">闲置</span></div>`;
   const _cl=document.getElementById('clock'); if(_cl)_cl.textContent='实时 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
-  const _dc=document.getElementById('disc'); if(_dc)_dc.innerHTML=`<b>实时</b>:状态由 Claude Code hooks 驱动(running/idle/needs-you)。「主线/支线」「优先级」为示例,可拖拽。`;
+  const _dc=document.getElementById('disc'); if(_dc)_dc.innerHTML=`<b>实时</b>:状态由 Claude Code hooks 驱动(running/idle/needs-you)。「主线/支线」「优先级」为示例,可拖拽。 · 按 <b>?</b> 看快捷键`;
   }
 
   // shared pieces
@@ -1236,6 +1245,49 @@
   }
   (function(){ const nb=document.getElementById('newTaskBtn'); if(nb)nb.addEventListener('click',newSession); })();
   (function(){ const b=document.getElementById('collapseAllBtn'); if(b)b.addEventListener('click',()=>{ OPEN.clear(); document.querySelectorAll('.row.open').forEach(r=>r.classList.remove('open')); toast('已收起全部卡片'); }); })();
+  // ── 键盘交互层 (交互优化) ──────────────────────────────────────────────
+  // Esc 关掉最上层的弹层;不打字 / 不在内嵌终端里时,单键直驱高频操作。
+  // 注意:焦点在终端 iframe 内时,keydown 进不了父文档 —— 所以在终端里敲
+  // Esc / 单键不会误触(vim 用户安全),要关终端就点「关闭」或背景。
+  function topOverlay(){
+    const k=document.getElementById('kbdHelp'); if(k) return ()=>k.remove();
+    const ns=document.getElementById('nsDlg'); if(ns) return ()=>ns.remove();
+    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none') return hideTerm;
+    if(document.getElementById('suggModal')) return closeSugg;
+    if(document.getElementById('histModal')) return closeHist;
+    return null;
+  }
+  function typingInField(){ const a=document.activeElement;
+    return !!a&&(a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT'||a.isContentEditable); }
+  function showKbdHelp(){
+    let m=document.getElementById('kbdHelp');
+    if(m){ m.remove(); return; }   // 再按一次 ? 关掉
+    m=document.createElement('div'); m.id='kbdHelp'; m.className='histmask';
+    const rows=[['n','新建任务'],['r','刷新(重新分析最近会话)'],['c','收起全部卡片'],
+      ['t','切换昼夜'],['1 / 2 / 3','按项目 / 按注意力 / 归档'],
+      ['Esc','关闭弹层(终端 / 对话 / 建议 / 新建)'],['?','显示 / 关闭本帮助']];
+    m.innerHTML=`<div class="kbdbox"><div class="kbdhead"><span>键盘快捷键</span><button class="btn" onclick="document.getElementById('kbdHelp').remove()">关闭</button></div><div class="kbdbody">`+
+      rows.map(([k,d])=>`<div class="kbdrow"><span class="kbdkeys">${k.split(' / ').map(x=>`<kbd>${esc(x)}</kbd>`).join('<span style="color:var(--ink-faint)">/</span>')}</span><span class="kbddesc">${esc(d)}</span></div>`).join('')+
+      `</div></div>`;
+    m.onclick=ev=>{ if(ev.target===m) m.remove(); };
+    document.body.appendChild(m);
+  }
+  document.addEventListener('keydown',e=>{
+    if(e.metaKey||e.ctrlKey||e.altKey) return;          // 留给浏览器 / 系统快捷键
+    if(e.key==='Escape'){ const c=topOverlay(); if(c){ e.preventDefault(); c(); } return; }
+    if(typingInField()) return;                          // 输入框里只走 Esc
+    if(e.key==='?'){ e.preventDefault(); showKbdHelp(); return; }
+    if(topOverlay()) return;                             // 有弹层时不触发其余加速键
+    switch(e.key){
+      case 'n': e.preventDefault(); newSession(); break;
+      case 'r': e.preventDefault(); document.getElementById('refreshBtn')?.click(); break;
+      case 'c': e.preventDefault(); document.getElementById('collapseAllBtn')?.click(); break;
+      case 't': e.preventDefault(); document.getElementById('themetog')?.click(); break;
+      case '1': e.preventDefault(); setView('project'); break;
+      case '2': e.preventDefault(); setView('attention'); break;
+      case '3': e.preventDefault(); setView('archive'); break;
+    }
+  });
   if(location.hash.indexOf('hist=')>=0){ const s=decodeURIComponent(location.hash.split('hist=')[1]); setTimeout(()=>viewHistory({stopPropagation(){}}, s), 900); }
   </script>
 </body>
