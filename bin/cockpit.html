@@ -636,6 +636,13 @@
     // card belongs in 进行中 — not 待查看. needs_you stays top (most actionable).
     // We keep the parent's own band in _own_band for its detail content.
     for(const r of rows){ if(r.children&&r.children.length){
+      // A more-urgent child may bubble up onto a CALM parent so a buried needy
+      // sub-card isn't missed. But if the parent is itself active — running (you're
+      // talking to it) or needs_you (its OWN awaiting_user) — its own band WINS;
+      // child attention then shows only via the ⑃ badge, never by masking the
+      // parent's own state. (Fix: a sub-card's needs_you used to hijack a running
+      // main card so it never showed 进行中 while you worked in it.)
+      if(r.band==='running'||r.band==='needs_you') continue;
       let best=r.band;
       for(const c of r.children){ if((FAM_RANK[c.band]??9)<(FAM_RANK[best]??9)) best=c.band; }
       if(best!==r.band){ r._own_band=r.band; r.band=best;
