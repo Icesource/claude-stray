@@ -1209,12 +1209,21 @@ def parse_ai_output(raw: str) -> dict:
     # Strip surrounding code fence if present
     m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", raw, re.DOTALL)
     if m:
-        raw = m.group(1)
-    if not raw.startswith("{"):
-        i, j = raw.find("{"), raw.rfind("}")
-        if i != -1 and j != -1:
-            raw = raw[i:j + 1]
-    return json.loads(raw)
+        raw = m.group(1).strip()
+    # Decode the FIRST complete JSON object starting at the first '{', tolerating any
+    # preamble or TRAILING text the model adds. Observed 2026-06-09: the model appended
+    # an explanation after the JSON → plain json.loads raised "Extra data" → classify
+    # exited 1 → the whole dashboard froze. raw_decode stops at the object's end.
+    i = raw.find("{")
+    if i == -1:
+        return json.loads(raw)   # no object at all — raise a clear error
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(raw[i:])
+        return obj
+    except json.JSONDecodeError:
+        # fallback: slice to the last '}' (handles odd mid-object noise)
+        j = raw.rfind("}")
+        return json.loads(raw[i:j + 1] if j > i else raw[i:])
 
 
 def enforce_carry_forward_initiatives(new_mm: dict, prior: dict,
