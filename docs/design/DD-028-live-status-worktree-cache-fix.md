@@ -1,4 +1,4 @@
-# DD-027 — 会话状态不更新的根治:hook 写错了 worktree 的 cache
+# DD-028 — 会话状态不更新的根治:hook 写错了 worktree 的 cache
 
 **一句话结论:** 卡片状态卡死的根因不是 hook 漏发,而是 hook 脚本各自用「自己所在文件位置」算
 `cache/` 路径——一旦 `install.sh` 从某个 worktree 里跑过(开发 DD-022 时常发生),全局 hook
