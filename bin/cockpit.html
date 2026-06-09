@@ -451,6 +451,8 @@
     let s=(Date.now()-u)/1000; if(s<0)s=0;
     if(s<3600) return Math.floor(s/60)+'m'; if(s<86400) return Math.floor(s/3600)+'h'; return Math.floor(s/86400)+'天'; }
   function idleSecs(iso){ const u=Date.parse(iso); return isNaN(u)?0:Math.max(0,(Date.now()-u)/1000); }
+  // ms-timestamp of this week's Monday 00:00 (local) — the 本周完成 cutoff.
+  function weekStartTs(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getTime(); }
   // band = real status + live telemetry + blocker text (DD-015)
   function bandFor(init){
     // DD-019: sealed historical cards are frozen achievements (no live
@@ -504,12 +506,12 @@
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
-    // Archiving a card = "done & filed away". Surface the RECENTLY-archived ones
-    // (≤36h) in the done band so 今天完成 reflects what you just archived. Older
-    // archives stay only in the 归档 weekly view, to avoid flooding the band.
-    const _seen=new Set(rows.map(r=>r.id)), DAY36=36*3600;
+    // Archiving a card = "done & filed away". Surface THIS WEEK's archived ones in
+    // the 本周完成 band so it reflects what you finished this week. Older archives
+    // stay only in the 归档 weekly view, to avoid flooding the band.
+    const _seen=new Set(rows.map(r=>r.id)), weekStart=weekStartTs();
     for(const a of (ARCHIVED||[])){ const init=a.init||{}; if(!init.id||_seen.has(init.id))continue;
-      const iso=a.archived_at||init.last_activity_at; if(idleSecs(iso)>DAY36)continue;
+      const iso=a.archived_at||init.last_activity_at; if(Date.parse(iso)<weekStart)continue;
       const tasks=init.tasks||[];
       rows.push({ id:init.id, name:init.name, ws:a.ws_name||'', status:'archived', level:init.level,
         band:'done', reason:'已归档', idle:humanIdle(iso), idle_secs:idleSecs(iso),
@@ -591,7 +593,7 @@
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ loadData(); if(!_es) startLive(); }});
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   const BANDS=[{key:'needs_you',glyph:'⚠',label:'等你',collapse:false},{key:'done_unread',glyph:'✅',label:'完成 · 待查看',collapse:false},{key:'running',glyph:'◐',label:'AI 在跑',collapse:false},
-    {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'今天完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
+    {key:'idle',glyph:'○',label:'闲置',collapse:false},{key:'done',glyph:'✓',label:'本周完成',collapse:true},{key:'paused',glyph:'⏸',label:'搁置',collapse:true}];
   const RANK={needs_you:0,done_unread:1,running:2,idle:3,done:4,paused:5};
   const LV={thread:'主线',card:'卡',chip:'片'};
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
