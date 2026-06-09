@@ -11,7 +11,11 @@
 
 set -u
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# Resolve REPO_ROOT to the MAIN worktree (never a linked worktree), so live
+# writes land in the cache/ the server reads. See bin/_repo-root.sh. The
+# `|| true` + :- fallback keep the hook working even if the helper is missing.
+. "$(dirname "$0")/_repo-root.sh" 2>/dev/null || true
+REPO_ROOT="${STRAY_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 # Platform-aware log location.
 if [ "$(uname)" = "Darwin" ]; then

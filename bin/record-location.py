@@ -25,7 +25,12 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+try:
+    from _repo_root import repo_root
+    REPO_ROOT = repo_root()
+except Exception:
+    # Hooks must never fail; fall back to the naive (pre-fix) derivation.
+    REPO_ROOT = Path(__file__).resolve().parent.parent
 LOC_FILE = REPO_ROOT / "cache" / "session_locations.json"
 
 
