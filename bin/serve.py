@@ -338,7 +338,12 @@ try:
     import _resources  # DD-026: mechanical url resolution (backfill + reconstruct)
 except Exception:
     _resources = None
+try:
+    import _pending  # DD-027: instant-citizen placeholder cards (先创建后丰富)
+except Exception:
+    _pending = None
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
+PENDING_JSON = CACHE_DIR / "pending-cards.json"
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 _RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
@@ -428,6 +433,26 @@ def _attach_code_location(mindmap: dict) -> int:
         except Exception:
             pass
     return n
+
+
+def _merge_pending_cards(mindmap: dict) -> int:
+    """DD-027: overlay instant-citizen placeholder cards onto the dashboard at
+    render time, and prune any whose real card has arrived (or that expired).
+    Returns how many placeholders were merged in. Best-effort."""
+    if _pending is None or not mindmap:
+        return 0
+    doc = _pending.load(str(PENDING_JSON))
+    if not doc:
+        return 0
+    added, stale = _pending.merge_into_mindmap(mindmap, doc)
+    if stale:
+        try:
+            for k in stale:
+                doc.pop(k, None)
+            _pending._write(str(PENDING_JSON), doc)
+        except Exception:
+            pass
+    return added
 
 
 def _summary_section(body: str, *titles: str) -> str | None:
@@ -1172,6 +1197,14 @@ class Handler(BaseHTTPRequestHandler):
                 _attach_resource_urls(data.get("mindmap"))  # DD-026: backfill/reconstruct urls
             except Exception:
                 pass
+            # DD-027: merge in placeholder cards for work created since the last
+            # pipeline run, so the dashboard shows it INSTANTLY (marked _pending →
+            # "准备中"). Once the real card arrives (aligned by session_id /
+            # worktree path) the placeholder is dropped + pruned from the file.
+            try:
+                _merge_pending_cards(data.get("mindmap"))
+            except Exception:
+                pass
             # Sync health for the empty/first-run state: is the background
             # analysis running / done / failed, and is claude even available.
             data["sync"] = _read_sync_status()
@@ -1557,13 +1590,25 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(500, {"error": str(e)})
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
         _save_terminals()
+        # DD-027: register the placeholder card the INSTANT the session is created,
+        # so the dashboard shows it at once (instead of a void until classify runs).
+        if _pending is not None:
+            try:
+                _pending.register(str(PENDING_JSON), token,
+                                  name=(body.get("name") or "").strip(), cwd=cwd,
+                                  worktree_path=wt_path or None,
+                                  worktree_name=wt_name if want_wt else None,
+                                  parent=parent or None)
+            except Exception:
+                pass
+        since = time.time() - 2
         # DD-022-B / DD-025: a worktree session's sid is unknown at launch (claude
         # mints it). Capture it from the worktree's project dir, then re-key the ttyd
         # token→sid so the cockpit's "open terminal" REUSES this live ttyd instead of
         # `claude --resume <sid>` (a second driver → forks the jsonl, DD-018). If it's
-        # a parent-spawned sub-card, also record the parent↔child link.
+        # a parent-spawned sub-card, also record the parent↔child link. DD-027: the
+        # captured sid is also the placeholder's alignment key, so backfill it.
         if want_wt and wt_path and _subcards is not None:
-            since = time.time() - 2
 
             def _capture():
                 for _ in range(20):
@@ -1573,6 +1618,11 @@ class Handler(BaseHTTPRequestHandler):
                         if parent:
                             try:
                                 _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
+                            except Exception:
+                                pass
+                        if _pending is not None:
+                            try:
+                                _pending.capture_sid(str(PENDING_JSON), token, sid)
                             except Exception:
                                 pass
                         # re-key token→sid so "open terminal" reuses this live ttyd.
@@ -1585,6 +1635,20 @@ class Handler(BaseHTTPRequestHandler):
                             pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
+        elif _pending is not None and _subcards is not None:
+            # DD-027: a no-worktree new session has no wt_path to align on, so capture
+            # its sid (newest session whose first cwd is this cwd) as the alignment key.
+            def _capture_plain():
+                for _ in range(20):
+                    time.sleep(1)
+                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), cwd, since)
+                    if sid:
+                        try:
+                            _pending.capture_sid(str(PENDING_JSON), token, sid)
+                        except Exception:
+                            pass
+                        return
+            threading.Thread(target=_capture_plain, daemon=True).start()
         time.sleep(0.4)
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token,
                                  "cwd": cwd, "worktree": want_wt,
@@ -1628,6 +1692,17 @@ class Handler(BaseHTTPRequestHandler):
                                     stdin=subprocess.DEVNULL, start_new_session=True)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
+        # DD-027: register the sub-card placeholder INSTANTLY (covers both the UI
+        # "+子卡" and the CLI `stray spawn`, which both reach here), so it shows up
+        # nested under the parent as "准备中" immediately instead of after classify.
+        pkey = "sub-" + _uuid.uuid4().hex[:8]
+        if _pending is not None:
+            try:
+                _pending.register(str(PENDING_JSON), pkey, name=name, cwd=cwd,
+                                  worktree_path=wt_path, worktree_name=wt_name,
+                                  parent=parent or None)
+            except Exception:
+                pass
         if _subcards is not None:
             since = time.time() - 2
 
@@ -1640,6 +1715,11 @@ class Handler(BaseHTTPRequestHandler):
                             _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
                         except Exception:
                             pass
+                        if _pending is not None:
+                            try:
+                                _pending.capture_sid(str(PENDING_JSON), pkey, sid)
+                            except Exception:
+                                pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
         return self._reply(200, {"ok": True, "detached": True, "worktree_name": wt_name,

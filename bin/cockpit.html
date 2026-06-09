@@ -551,6 +551,9 @@
   function weekStartTs(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getTime(); }
   // band = real status + live telemetry + blocker text (DD-015)
   function bandFor(init){
+    // DD-027: a placeholder ("instant citizen") card — created this very moment,
+    // AI summary still pending. It belongs in 进行中 and reads "准备中…".
+    if(init._pending) return {band:'running', activity:'准备中…', pending:true};
     // DD-019: sealed historical cards are frozen achievements (no live
     // session); they live in the collapsible done/archive band.
     if(init.sealed) return {band:'done'};
@@ -598,7 +601,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
-        parent_session_id:init.parent_session_id||null,
+        parent_session_id:init.parent_session_id||null, pending:!!b.pending,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -788,7 +791,7 @@
     return `<div class="mid ${cls}"${tip}><span class="rtext">${p?esc(p):fallback}</span></div>`;}
   function midCell(r){
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
-    if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
+    if(r.band==='running'){if(r.pending)return `<div class="mid running"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`;const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
     if(r.band==='idle')return progMid('idle', r, esc(r.idle)+' 未动');
     if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
@@ -824,7 +827,7 @@
   // next-step / resources) so a sub-card isn't a second-class one-liner.
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
-      const sid=esc(c.session||''); const prog=c.progress?firstSent(c.progress):(c.reason||'');
+      const sid=esc(c.session||''); const prog=c.pending?'准备中…':(c.progress?firstSent(c.progress):(c.reason||''));
       return `<div class="subwrap"><div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
         `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
@@ -1236,6 +1239,7 @@
           PENDING_SUB.push({parent:rootSid, label:(j.worktree_name||name||'新子卡'), since:Date.now(),
                             baseKids:((termFamily(rootSid)||{}).kids||[]).length});
           const tm=document.getElementById('termModal'); if(tm&&tm.dataset.sid) renderTermSide(tm.dataset.sid);
+          loadData();   // DD-027: 子卡占位卡即时上板(嵌套在父卡下)
           toast('✓ 子卡已起,正在创建…');
         } else toast(j.hint||j.error||'起子卡失败');
       }catch(_){ toast('起子卡失败'); } };
@@ -1383,7 +1387,7 @@
     try{
       const r=await fetch(ORIGIN+'/api/new-session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cwd,worktree:!!opts.worktree,name:opts.name||''})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok&&j.url){ addTerm(j.token,j.url); setActiveTerm(j.token); return; }
+      if(r.ok&&j.url){ addTerm(j.token,j.url); setActiveTerm(j.token); loadData(); return; }  // DD-027: 占位卡即时上板
       hideTermLoading();
       if(String(j.error||'').indexOf('ttyd')>=0){ toast('未装 ttyd:brew install ttyd'); return; }
       toast((j.error==='not a directory'?'目录不存在:':'')+(j.hint||j.error||'新建会话失败'));
