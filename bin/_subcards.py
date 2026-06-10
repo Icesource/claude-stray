@@ -8,10 +8,44 @@ Linking by the CHILD's session_id (captured at spawn) — not by guessing
 `claude --worktree`'s dir/branch naming — keeps it robust to Claude Code internals.
 Pure + path-injectable so it unit-tests without serve.py.
 """
+import contextlib
 import glob
 import json
 import os
 import time
+
+try:
+    import fcntl  # POSIX (macOS/Linux) — present on the user's targets
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
+
+
+@contextlib.contextmanager
+def _locked(path):
+    """Serialize the load→mutate→write critical section across processes.
+
+    DD-029: record()/remove() are read-modify-write. The atomic os.replace only
+    prevents a TORN file, NOT a LOST UPDATE: two concurrent writers each load the
+    old map, each add their own entry, and the second replace clobbers the first
+    — observed 2026-06-09 when a `stray spawn` raced a re-register and silently
+    dropped 3 sub-card entries (→ those sub-cards floated to the top level). We
+    hold an exclusive flock on ONE fixed sibling lockfile (reused forever, so it
+    can't leak like summarize.py's per-sid locks) for the whole section.
+    """
+    if fcntl is None:
+        yield
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    lock_path = path + ".lock"
+    fh = open(lock_path, "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+        finally:
+            fh.close()
 
 
 def load(path):
@@ -22,29 +56,33 @@ def load(path):
         return {}
 
 
-def record(path, child_sid, parent_sid, slug="", _now=None):
-    """Register child_sid as a sub-card of parent_sid. Atomic write."""
-    d = load(path)
-    d[child_sid] = {"parent": parent_sid, "slug": slug,
-                    "created_at": _now if _now is not None else time.time()}
+def _atomic_dump(path, d):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
+def record(path, child_sid, parent_sid, slug="", _now=None):
+    """Register child_sid as a sub-card of parent_sid. Atomic + lost-update safe."""
+    with _locked(path):
+        d = load(path)
+        d[child_sid] = {"parent": parent_sid, "slug": slug,
+                        "created_at": _now if _now is not None else time.time()}
+        _atomic_dump(path, d)
     return d
 
 
 def remove(path, child_sid):
-    """Unregister a sub-card (on close). Atomic write. Returns True if it existed."""
-    d = load(path)
-    if child_sid not in d:
-        return False
-    d.pop(child_sid, None)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    """Unregister a sub-card (on close). Atomic + lost-update safe.
+    Returns True if it existed."""
+    with _locked(path):
+        d = load(path)
+        if child_sid not in d:
+            return False
+        d.pop(child_sid, None)
+        _atomic_dump(path, d)
     return True
 
 
