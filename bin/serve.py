@@ -402,6 +402,11 @@ try:
     import _created  # DD-030: unified created-cards registry (取代 pending+subcards)
 except Exception:
     _created = None
+try:
+    import _merge  # DD-031: sub-card merge-closure orchestration
+except Exception:
+    _merge = None
+MERGE_JOBS_JSON = CACHE_DIR / "merge-jobs.json"
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"
@@ -1393,6 +1398,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/merge": return self._handle_merge(body)
         if path == "/api/delete": return self._handle_delete(body)
         if path == "/api/subcard-close": return self._handle_subcard_close(body)
+        if path == "/api/subcard-merge": return self._handle_subcard_merge(body)
+        if path == "/api/subcard-land": return self._handle_subcard_land(body)
         if path == "/api/archive": return self._handle_archive(body)
         if path == "/api/terminal": return self._handle_terminal(body)
         if path == "/api/new-session": return self._handle_new_session(body)
@@ -1608,7 +1615,7 @@ class Handler(BaseHTTPRequestHandler):
         # later cockpit "open terminal" resume is the SOLE driver (single-driver
         # safe, no fork). No ttyd is spawned for the child.
         if parent and want_wt:
-            return self._spawn_subcard(cwd, body.get("name") or "", parent, prompt)
+            return self._reply(*self._spawn_subcard(cwd, body.get("name") or "", parent, prompt))
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
         wt_path = ""   # the worktree dir we expect claude to create (for sid capture)
@@ -1743,15 +1750,19 @@ class Handler(BaseHTTPRequestHandler):
                                  "worktree_name": wt_name if want_wt else None,
                                  "parent": parent or None})
 
-    def _spawn_subcard(self, cwd: str, name: str, parent: str, prompt: str):
+    def _spawn_subcard(self, cwd: str, name: str, parent: str, prompt: str,
+                       *, wt_name=None, branch=None, base=None, on_capture=None):
         """DD-025: fan out a sub-card — run `claude -p --worktree <slug>` DETACHED.
+        DD-031: wt_name/branch/base let a MERGE-AGENT spawn on `merge-<slug>` off the
+        target branch; on_capture(sid) fires when the child sid is captured (the
+        merge orchestration records merge_sid through it).
         It creates .claude/worktrees/<slug>/ + branch worktree-<slug> + a resumable
         session, runs the seeded task headless, then exits. A bg thread captures the
         child's session id (its first cwd == the worktree) and records the parent
         link. The cockpit shows it nested under the parent; "open terminal" resumes
         it (sole driver — the -p process already exited). No ttyd for the child."""
         if _worktree is None:
-            return self._reply(500, {"error": "worktree helper unavailable"})
+            return (500, {"error": "worktree helper unavailable"})
         cl0 = _worktree.compute_code_location(cwd)
         if not cl0 and parent:
             # UI spawn may not know the parent card's cwd — derive it from the
@@ -1759,15 +1770,15 @@ class Handler(BaseHTTPRequestHandler):
             cwd = _resume_cwd_for(parent) or cwd
             cl0 = _worktree.compute_code_location(cwd)
         if not cl0:
-            return self._reply(400, {"error": "not a git repo",
+            return (400, {"error": "not a git repo",
                                      "hint": "子卡要在一个 git 仓库目录里 spawn"})
         if not prompt:
-            return self._reply(400, {"error": "empty task", "hint": "子卡需要一个任务描述"})
+            return (400, {"error": "empty task", "hint": "子卡需要一个任务描述"})
         claude = shutil.which("claude")
         if not claude:
-            return self._reply(503, {"error": "claude not found", "hint": "claude 不在 PATH 上"})
+            return (503, {"error": "claude not found", "hint": "claude 不在 PATH 上"})
         import uuid as _uuid
-        wt_name = _worktree.slugify(name) or ("task-" + _uuid.uuid4().hex[:6])
+        wt_name = wt_name or _worktree.slugify(name) or ("task-" + _uuid.uuid4().hex[:6])
         # realpath so the captured child cwd (resolved, e.g. /tmp→/private/tmp) matches
         wt_path = os.path.realpath(os.path.join(
             cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
@@ -1778,15 +1789,16 @@ class Handler(BaseHTTPRequestHandler):
         # same tmux (sole driver → single-driver safe, never a `--resume` fork).
         tmux = shutil.which("tmux")
         if not tmux:
-            return self._reply(503, {"error": "tmux not found", "hint": "子卡交互式底层需要 tmux"})
+            return (503, {"error": "tmux not found", "hint": "子卡交互式底层需要 tmux"})
         ttyd = shutil.which("ttyd")
         token = "new-" + _uuid.uuid4().hex[:8]
         holder = "stray-" + token[:8]
         main_repo = cl0.get("main_repo") or cwd
-        branch = "worktree-" + wt_name
+        branch = branch or ("worktree-" + wt_name)
+        base_arg = (" " + shlex.quote(base)) if base else ""   # DD-031: branch off target
         child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
         inner = ("git -C " + shlex.quote(main_repo) + " worktree add -b " + shlex.quote(branch)
-                 + " " + shlex.quote(wt_path) + " 2>/dev/null || git -C " + shlex.quote(main_repo)
+                 + " " + shlex.quote(wt_path) + base_arg + " 2>/dev/null || git -C " + shlex.quote(main_repo)
                  + " worktree add " + shlex.quote(wt_path) + " 2>/dev/null ; cd "
                  + shlex.quote(wt_path) + " && exec " + shlex.quote(claude)
                  + " --dangerously-skip-permissions " + shlex.quote(prompt))
@@ -1800,7 +1812,7 @@ class Handler(BaseHTTPRequestHandler):
                             "-s", holder, "bash", "-lc", inner], env=child_env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
         except Exception as e:
-            return self._reply(500, {"error": "tmux start failed: " + str(e)})
+            return (500, {"error": "tmux start failed: " + str(e)})
         # a ttyd that ATTACHES to that tmux when the cockpit opens the sub-card
         port = None
         if ttyd:
@@ -1866,10 +1878,15 @@ class Handler(BaseHTTPRequestHandler):
                                 _save_terminals()
                         except Exception:
                             pass
+                        if on_capture:                 # DD-031: record merge_sid
+                            try:
+                                on_capture(sid)
+                            except Exception:
+                                pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
         url = ("http://127.0.0.1:" + str(port) + "/") if port else None
-        return self._reply(200, {"ok": True, "worktree_name": wt_name, "worktree": True,
+        return (200, {"ok": True, "worktree_name": wt_name, "worktree": True,
                                  "parent": parent, "url": url, "token": token})
 
     def _handle_merge(self, body: dict):
@@ -2171,6 +2188,199 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 pass
         return self._reply(200, {"ok": True, "removed_worktree": removed_wt})
+
+    # ---- DD-031: sub-card merge closure -----------------------------------
+
+    def _parent_of_sid(self, sid: str) -> str:
+        for mod, path, idx in ((_created, CREATED_JSON, lambda d: _created.by_sid(d)),
+                               (_subcards, SUBCARDS_JSON, lambda d: d)):
+            try:
+                if mod:
+                    ent = (idx(mod.load(str(path))) or {}).get(sid)
+                    if ent and ent.get("parent"):
+                        return ent["parent"]
+            except Exception:
+                pass
+        return ""
+
+    def _card_id_for_sid(self, sid: str) -> str:
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text())
+            for ws in d.get("workspaces", []):
+                for i in (ws.get("initiatives") or []):
+                    if sid in (i.get("sessions") or []):
+                        return i.get("id") or ""
+        except Exception:
+            pass
+        return ""
+
+    def _tombstone_card(self, iid: str, sid: str):
+        if not iid:
+            return
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
+            try:
+                doc = json.loads(DELETED_JSON.read_text())
+                if not isinstance(doc, dict):
+                    doc = {}
+            except Exception:
+                doc = {}
+            inits = doc.setdefault("initiatives", [])
+            if not any(x.get("id") == iid for x in inits):
+                inits.append({"id": iid, "deleted_at": now, "sessions": [sid] if sid else []})
+            doc["version"] = 1
+            doc["updated_at"] = now
+            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            self._remove_from_dashboard(iid)
+        except Exception:
+            pass
+
+    def _teardown_worktree_card(self, sid: str, force: bool = True):
+        """Remove a worktree card's worktree+branch, unregister, tombstone. Reused by
+        merge auto-close (original sub-card AND the merge-agent)."""
+        try:
+            self._handle_terminal_close({"sid": sid})
+        except Exception:
+            pass
+        cl = None
+        try:
+            cwd = _resume_cwd_for(sid)
+            cl = _worktree.compute_code_location(cwd) if (cwd and _worktree) else None
+        except Exception:
+            cl = None
+        removed = None
+        if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
+            main_repo, wt, branch = cl["main_repo"], cl["worktree"], cl.get("branch")
+            try:
+                rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt]
+                _worktree._git(main_repo, *rm, timeout=20)
+                _worktree._git(main_repo, "worktree", "prune", timeout=10)
+                if branch:
+                    _worktree._git(main_repo, "branch", "-D", branch, timeout=10)
+                removed = wt
+            except Exception:
+                pass
+        try:
+            if _subcards:
+                _subcards.remove(str(SUBCARDS_JSON), sid)
+        except Exception:
+            pass
+        try:
+            if _created:
+                _created.remove_by_sid(str(CREATED_JSON), sid)
+        except Exception:
+            pass
+        self._tombstone_card(self._card_id_for_sid(sid), sid)
+        return removed
+
+    def _start_merge_job(self, job: dict):
+        """Spawn the merge-agent sub-card for a queued job (on merge-<slug> off target,
+        seeded with the merge task). Sets state=resolving + records merge_sid on capture."""
+        sub_slug, target, main_repo = job["sub_slug"], job["target_branch"], job["main_repo"]
+        merge_slug = job["merge_slug"]
+        sub_branch = "worktree-" + sub_slug
+        parent = self._parent_of_sid(job["sub_sid"]) or ""
+        prompt = (
+            "你是一个「合并 agent」。当前 worktree 在分支 " + merge_slug
+            + "(基于目标分支 " + target + ")。任务:把子卡分支 " + sub_branch + " 合并进来。\n"
+            "步骤:\n"
+            "1) 运行: git merge " + sub_branch + "\n"
+            "2) 若有冲突,逐个解决 —— 理解双方代码的语义,合出正确的结果(不是简单二选一)。\n"
+            "3) 解决后: git add -A && git commit(默认合并提交信息即可)。\n"
+            "4) 若某处冲突你拿不准怎么解才对,【停下来,把冲突点和你的疑问清楚地告诉用户,等用户回答】,不要瞎猜。\n"
+            "5) 全部解决并 commit 后,告诉用户:「合并完成,可以落地了」。\n"
+            "只做这一件事,不要改与本次合并无关的东西。")
+        sub_sid = job["sub_sid"]
+        code, _payload = self._spawn_subcard(
+            main_repo, "合并 ⊳ " + sub_slug, parent, prompt,
+            wt_name=merge_slug, branch=merge_slug, base=target,
+            on_capture=lambda msid: _merge.update_job(str(MERGE_JOBS_JSON), sub_sid, merge_sid=msid))
+        _merge.update_job(str(MERGE_JOBS_JSON), sub_sid, state="resolving")
+        return code
+
+    def _handle_subcard_merge(self, body: dict):
+        """Start (or queue) a merge of a sub-card back to a target branch. DD-031."""
+        if _merge is None or _worktree is None:
+            return self._reply(503, {"error": "merge unavailable"})
+        sid = (body.get("sid") or "").strip()
+        target = (body.get("target") or "").strip()
+        force = bool(body.get("force"))
+        if not sid:
+            return self._reply(400, {"error": "sid required"})
+        cwd = _resume_cwd_for(sid)
+        cl = _worktree.compute_code_location(cwd) if cwd else None
+        if not cl or not cl.get("is_worktree"):
+            return self._reply(400, {"error": "不是子卡 worktree", "hint": "只有 worktree 子卡能合并"})
+        main_repo, sub_wt, sub_branch = cl["main_repo"], cl["worktree"], cl.get("branch") or ""
+        sub_slug = (sub_branch[len("worktree-"):] if sub_branch.startswith("worktree-")
+                    else os.path.basename(sub_wt.rstrip("/")))
+        if not target:
+            target = (_worktree._git(main_repo, "branch", "--show-current") or "").strip() or "main"
+        target_exists = _worktree._git(main_repo, "rev-parse", "--verify", "--quiet", target) is not None
+        commits_ahead = 0
+        if target_exists and sub_branch:
+            try:
+                commits_ahead = int((_worktree._git(
+                    main_repo, "rev-list", "--count", target + ".." + sub_branch) or "0") or "0")
+            except (TypeError, ValueError):
+                commits_ahead = 0
+        sub_dirty = bool((_worktree._git(sub_wt, "status", "--porcelain") or "").strip())
+        dec = _merge.evaluate_precheck(commits_ahead, sub_dirty, target_exists)
+        if not dec["ok"]:
+            return self._reply(400, {"error": dec["reason"]})
+        if dec["warn"] and not force:
+            return self._reply(409, {"needs_confirm": True, "warn": dec["warn"]})
+        job, started = _merge.add_job(str(MERGE_JOBS_JSON), sub_sid=sid, sub_slug=sub_slug,
+                                      target_branch=target, main_repo=main_repo)
+        if started and job.get("state") == "queued":
+            self._start_merge_job(job)
+        return self._reply(200, {"ok": True, "queued": not started, "target": target,
+                                 "merge_slug": _merge.merge_branch(sub_slug)})
+
+    def _handle_subcard_land(self, body: dict):
+        """Fast-forward target to the conflict-free merge branch, auto-close the
+        original sub-card + merge-agent, then start the next queued merge. DD-031."""
+        if _merge is None or _worktree is None:
+            return self._reply(503, {"error": "merge unavailable"})
+        msid = (body.get("merge_sid") or "").strip()
+        sub_sid = (body.get("sub_sid") or "").strip()
+        force = bool(body.get("force"))
+        job = _merge.job_by_merge_sid(str(MERGE_JOBS_JSON), msid) if msid else None
+        if not job and sub_sid:
+            job = next((j for j in _merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
+                        if j.get("sub_sid") == sub_sid), None)
+        if not job:
+            return self._reply(404, {"error": "找不到合并任务"})
+        main_repo, target, merge_slug = job["main_repo"], job["target_branch"], job["merge_slug"]
+        if _worktree._git(main_repo, "rev-parse", "--verify", "--quiet", merge_slug) is None:
+            return self._reply(400, {"error": "合并分支还不存在(合并 agent 可能还没建好/没提交)"})
+        cur = (_worktree._git(main_repo, "branch", "--show-current") or "").strip()
+        checked_out_here = (cur == target)
+        main_dirty = bool((_worktree._git(main_repo, "status", "--porcelain") or "").strip())
+        plan = _merge.landing_plan(checked_out_here, main_dirty)
+        if plan == "blocked_wip" and not force:
+            return self._reply(409, {"needs_confirm": True,
+                                     "reason": "主卡有未提交改动 —— 先 commit/stash 再落地(或强制)"})
+        if plan == "ff_here" or (plan == "blocked_wip" and force):
+            out = _worktree._git(main_repo, "merge", "--ff-only", merge_slug, timeout=40)
+        else:  # ff_ref: target not checked out here → advance the ref (FF-enforced)
+            out = _worktree._git(main_repo, "push", ".", merge_slug + ":" + target, timeout=40)
+        if out is None:
+            return self._reply(409, {"error": "落地失败(不是 fast-forward?目标可能已前进)",
+                                     "hint": "让合并 agent 先 `git merge " + target + "` 追上再落地"})
+        self._teardown_worktree_card(job["sub_sid"], force=True)
+        if job.get("merge_sid"):
+            self._teardown_worktree_card(job["merge_sid"], force=True)
+        _merge.remove_job(str(MERGE_JOBS_JSON), job["sub_sid"])
+        nxt = _merge.next_queued(str(MERGE_JOBS_JSON))
+        if nxt:
+            try:
+                self._start_merge_job(nxt)
+            except Exception:
+                pass
+        threading.Thread(target=regenerate_html, daemon=True).start()
+        return self._reply(200, {"ok": True, "target": target, "landed": merge_slug})
 
     def _handle_archive(self, body: dict):
         iid = (body.get("id") or "").strip()

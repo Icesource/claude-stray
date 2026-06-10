@@ -332,6 +332,12 @@
   .tside-item .ts-close{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;color:var(--ink-faint);font-size:15px;line-height:1;opacity:.35;transition:opacity .12s,color .12s,background .12s}
   .tside-item:hover .ts-close{opacity:.75}
   .tside-item .ts-close:hover{opacity:1;color:var(--needs);background:var(--needs-bg)}
+  .tside-item .ts-merge{flex:none;font-size:10.5px;padding:1px 6px;border-radius:5px;border:1px solid var(--hair);color:var(--ink-dim);opacity:.55;transition:opacity .12s,color .12s,border-color .12s}
+  .tside-item:hover .ts-merge{opacity:.9}
+  .tside-item .ts-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
+  .sr-merge{flex:none;font-size:10.5px;padding:1px 7px;margin-left:2px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-dim);cursor:pointer;opacity:.6;transition:opacity .12s,color .12s,border-color .12s}
+  .subrow:hover .sr-merge{opacity:.95}
+  .sr-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
   .tside-item.pending{border-style:dashed;border-left-color:var(--run);color:var(--ink-faint);cursor:default}
   .tside-item.pending:hover{transform:none;border-color:var(--hair);box-shadow:0 4px 13px rgba(0,0,0,.38)}
   .tside-item.pending .ts-spin{width:11px;height:11px;flex:none;border:1.6px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
@@ -850,6 +856,7 @@
         `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
         `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button>`+
+        mergeOrLandBtn(c,sid)+
         `<button class="sr-close" title="关闭子卡(删除它的 worktree + 分支)" onclick="closeSubcard(event,'${sid}','${esc(c.id||'')}','${esc((c.name||'').replace(/'/g,''))}')">×</button></div>`+
         subDetailEl(c)+`</div>`;
     }).join('');
@@ -1043,6 +1050,43 @@
       else toast(j.hint||j.error||'关闭失败');
     }catch(_){ toast('关闭失败'); }
   }
+  // DD-031: a merge-agent sub-card is named "合并 ⊳ <子卡>"; it shows 「落地」 instead of 「合并」.
+  function isMergeAgent(c){ return ((c&&c.name)||'').indexOf('合并 ⊳')===0; }
+  function mergeOrLandBtn(c,sid){
+    if(isMergeAgent(c)) return `<button class="sr-merge" title="落地:把这次合并 fast-forward 到目标分支(干完了再点)" onclick="event.stopPropagation();landSubcard(event,'${sid}')">落地▸</button>`;
+    return `<button class="sr-merge" title="合并这张子卡回主干(起一个合并 agent 解冲突)" onclick="event.stopPropagation();mergeSubcard(event,'${sid}','${esc((c.name||'').replace(/'/g,''))}')">合并</button>`;
+  }
+  // DD-031: start a merge — spawns a merge-agent that does git merge + resolves conflicts.
+  async function mergeSubcard(e,sid,name){ if(e)e.stopPropagation(); if(!sid)return;
+    const t=prompt('把子卡「'+name+'」合并到哪个分支?\n留空 = 主卡所在分支(默认)。合并 agent 会解决冲突,拿不准会问你。','');
+    if(t===null) return;   // cancelled
+    await _mergeReq(sid,(t||'').trim(),false);
+  }
+  async function _mergeReq(sid,target,force){
+    toast('正在起合并 agent…');
+    try{ const r=await fetch(ORIGIN+'/api/subcard-merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,target,force})});
+      const j=await r.json().catch(()=>({}));
+      if(r.status===409&&j.needs_confirm){
+        if(confirm('⚠️ '+(j.warn||'有未提交改动')+'\n\n仍要合并(只合已提交的部分)吗?')) return _mergeReq(sid,target,true);
+        toast('已取消'); return;
+      }
+      if(r.ok&&j.ok){ toast(j.queued?('已排队,等前一个合并落地…'):('合并 agent 已起 → 合并到 '+j.target+',干完点「落地」')); setTimeout(()=>loadData(),600); }
+      else toast(j.error||j.hint||'合并失败');
+    }catch(_){ toast('合并失败'); }
+  }
+  // DD-031: land — FF the target branch to the conflict-free merge branch, then auto-close.
+  async function landSubcard(e,sid,force){ if(e)e.stopPropagation(); if(!sid)return;
+    toast('正在落地(fast-forward 目标分支)…');
+    try{ const r=await fetch(ORIGIN+'/api/subcard-land',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({merge_sid:sid,force:!!force})});
+      const j=await r.json().catch(()=>({}));
+      if(r.status===409&&j.needs_confirm){
+        if(confirm('⚠️ '+(j.reason||'主卡有未提交改动')+'\n\n仍要强制落地吗?')) return landSubcard(e,sid,true);
+        toast('已取消'); return;
+      }
+      if(r.ok&&j.ok){ toast('✓ 已落地到 '+j.target+',原子卡已自动关闭'); setTimeout(()=>loadData(),600); }
+      else toast(j.hint||j.error||'落地失败');
+    }catch(_){ toast('落地失败'); }
+  }
   // DD-015 Stage 3a: read-only recent conversation
   // Live read-only conversation mirror: reads the session jsonl (which Claude
   // Code writes in real time), auto-refreshing — so you watch the session
@@ -1209,8 +1253,11 @@
     const item=(r,isSub)=>{ const s=r.session||(r.sessions||[])[0]||r.origin_session||'';
       const on=s===sid;
       const close=isSub?`<span class="ts-close" title="关闭子卡(删除它的 worktree + 分支)" onclick="event.stopPropagation();closeSubcard(event,'${esc(s)}','${esc(r.id||'')}','${esc((r.name||'').replace(/'/g,''))}')">×</span>`:'';
+      const mrg=isSub?(isMergeAgent(r)
+        ?`<span class="ts-merge" title="落地这次合并(干完了再点)" onclick="event.stopPropagation();landSubcard(event,'${esc(s)}')">落地▸</span>`
+        :`<span class="ts-merge" title="合并这张子卡回主干" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`):'';
       return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
-        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+close+`</button>`; };
+        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+mrg+close+`</button>`; };
     const rootSid=fam.root.session||(fam.root.sessions||[])[0]||'';
     // DD-025: optimistic "creating…" rows — a freshly-spawned sub-card needs ~10-40s
     // (worktree → -p turn → summarize → classify) before it's a real card. Show a
