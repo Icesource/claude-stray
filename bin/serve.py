@@ -1475,28 +1475,35 @@ class Handler(BaseHTTPRequestHandler):
                                      "hint": "AI 没给出建议,稍后再试"})
         return self._reply(200, {"suggestions": sugg})
 
+    def _close_terminal(self, sid: str) -> None:
+        """Kill the ttyd (and its holder) for a session WITHOUT writing an HTTP
+        response — reusable from teardown paths mid-request. (Calling the
+        replying handler from inside another handler used to emit a premature
+        200 before the real work finished — a double-response bug.)"""
+        ent = _TERMINALS.pop(sid, None)
+        if not ent:
+            return
+        try:
+            os.kill(int(ent["pid"]), signal.SIGTERM)  # ttyd
+        except Exception:
+            pass
+        hn = ent.get("holder")
+        if hn:
+            # End the holder session too — otherwise claude keeps running
+            # detached (ttyd dying only detaches the holder client).
+            name = "stray-" + sid[:8]
+            if hn == "tmux":
+                run_cmd(["tmux", "-L", _TMUX_SOCKET, "kill-session", "-t", name])
+            elif hn == "screen":
+                run_cmd(["screen", "-S", name, "-X", "quit"])
+            else:
+                run_cmd(["pkill", "-f", name])
+        _save_terminals()
+
     def _handle_terminal_close(self, body: dict):
         """Kill the ttyd spawned for a session (called when the cockpit closes
         the terminal modal) so claude/ttyd processes don't pile up."""
-        sid = (body.get("sid") or "").strip()
-        ent = _TERMINALS.pop(sid, None)
-        if ent:
-            try:
-                os.kill(int(ent["pid"]), signal.SIGTERM)  # ttyd
-            except Exception:
-                pass
-            hn = ent.get("holder")
-            if hn:
-                # End the holder session too — otherwise claude keeps running
-                # detached (ttyd dying only detaches the holder client).
-                name = "stray-" + sid[:8]
-                if hn == "tmux":
-                    run_cmd(["tmux", "-L", _TMUX_SOCKET, "kill-session", "-t", name])
-                elif hn == "screen":
-                    run_cmd(["screen", "-S", name, "-X", "quit"])
-                else:
-                    run_cmd(["pkill", "-f", name])
-            _save_terminals()
+        self._close_terminal((body.get("sid") or "").strip())
         return self._reply(200, {"ok": True})
 
     def _handle_terminal(self, body: dict):
@@ -1601,9 +1608,6 @@ class Handler(BaseHTTPRequestHandler):
         it as a card automatically. Body: {cwd}. There's no sid yet, so the
         terminal is keyed by an ephemeral token; a holder keeps it alive across a
         page refresh just like a resumed one."""
-        ttyd = shutil.which("ttyd")
-        if not ttyd:
-            return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
         cwd = (body.get("cwd") or "").strip()
         cwd = os.path.expanduser(cwd) if cwd else os.path.expanduser("~")
         if not os.path.isdir(cwd):
@@ -1624,6 +1628,11 @@ class Handler(BaseHTTPRequestHandler):
         # safe, no fork). No ttyd is spawned for the child.
         if parent and want_wt:
             return self._reply(*self._spawn_subcard(cwd, body.get("name") or "", parent, prompt))
+        # Only the embedded-terminal path below needs ttyd — a sub-card spawn
+        # (above) degrades gracefully without it, so don't gate it on ttyd.
+        ttyd = shutil.which("ttyd")
+        if not ttyd:
+            return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
         wt_path = ""   # the worktree dir we expect claude to create (for sid capture)
@@ -2142,7 +2151,7 @@ class Handler(BaseHTTPRequestHandler):
         # 1. kill its embedded terminal FIRST — so the claude inside isn't writing
         #    into a directory we're about to pull out from under it.
         try:
-            self._handle_terminal_close({"sid": sid})
+            self._close_terminal(sid)
         except Exception:
             pass
         # 2. remove the worktree + branch. Plain `remove` (no --force) when not
@@ -2248,7 +2257,7 @@ class Handler(BaseHTTPRequestHandler):
         """Remove a worktree card's worktree+branch, unregister, tombstone. Reused by
         merge auto-close (original sub-card AND the merge-agent)."""
         try:
-            self._handle_terminal_close({"sid": sid})
+            self._close_terminal(sid)
         except Exception:
             pass
         cl = None
@@ -2258,17 +2267,24 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             cl = None
         removed = None
-        if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
+        if not (cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree")):
+            print(f"[teardown] {sid[:12]}: no worktree location resolved ({cl})",
+                  file=sys.stderr)
+        else:
             main_repo, wt, branch = cl["main_repo"], cl["worktree"], cl.get("branch")
             try:
                 rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt]
-                _worktree._git(main_repo, *rm, timeout=20)
+                if _worktree._git(main_repo, *rm, timeout=20) is None:
+                    print(f"[teardown] {sid[:12]}: worktree remove failed: {wt}",
+                          file=sys.stderr)
                 _worktree._git(main_repo, "worktree", "prune", timeout=10)
-                if branch:
-                    _worktree._git(main_repo, "branch", "-D", branch, timeout=10)
+                if branch and _worktree._git(main_repo, "branch", "-D", branch,
+                                             timeout=10) is None:
+                    print(f"[teardown] {sid[:12]}: branch -D failed: {branch}",
+                          file=sys.stderr)
                 removed = wt
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[teardown] {sid[:12]}: {e}", file=sys.stderr)
         try:
             if _subcards:
                 _subcards.remove(str(SUBCARDS_JSON), sid)
@@ -2365,7 +2381,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._reply(400, {"error": "合并分支还不存在(合并 agent 可能还没建好/没提交)"})
         cur = (_worktree._git(main_repo, "branch", "--show-current") or "").strip()
         checked_out_here = (cur == target)
-        main_dirty = bool((_worktree._git(main_repo, "status", "--porcelain") or "").strip())
+        # -uno: only TRACKED changes count as WIP. Untracked files (e.g. the
+        # .claude/worktrees/ dir the spawn itself creates) are never touched by
+        # a fast-forward — and if one would collide, git refuses the merge
+        # itself. Without -uno every landing is forever "blocked_wip".
+        main_dirty = bool((_worktree._git(main_repo, "status", "--porcelain", "-uno") or "").strip())
         plan = _merge.landing_plan(checked_out_here, main_dirty)
         if plan == "blocked_wip" and not force:
             return self._reply(409, {"needs_confirm": True,
