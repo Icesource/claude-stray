@@ -136,7 +136,11 @@ class SubcardAPI:
             try:
                 tproc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                          env=child_env, start_new_session=True)
-                S._TERMINALS[token] = {"port": port, "pid": tproc.pid, "holder": "tmux"}
+                # "name": the tmux session is named after the TOKEN — keep it on
+                # the entry, because after sid re-key a "stray-<sid[:8]>" guess
+                # would miss it and leak the claude inside as a zombie.
+                S._TERMINALS[token] = {"port": port, "pid": tproc.pid,
+                                       "holder": "tmux", "name": holder}
                 S._save_terminals()
             except Exception:
                 port = None

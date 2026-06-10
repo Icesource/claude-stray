@@ -1492,8 +1492,11 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         hn = ent.get("holder")
         if hn:
             # End the holder session too — otherwise claude keeps running
-            # detached (ttyd dying only detaches the holder client).
-            name = "stray-" + sid[:8]
+            # detached (ttyd dying only detaches the holder client). Spawned
+            # cards name the holder after their TOKEN and are re-keyed to the
+            # sid on capture — the entry's "name" is authoritative; the
+            # sid-derived guess is only a fallback for legacy entries.
+            name = ent.get("name") or ("stray-" + sid[:8])
             if hn == "tmux":
                 run_cmd(["tmux", "-L", _TMUX_SOCKET, "kill-session", "-t", name])
             elif hn == "screen":
@@ -1598,7 +1601,8 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                 start_new_session=True)  # detach: serve Ctrl-C must NOT kill the terminal
         except Exception as e:
             return self._reply(500, {"error": str(e)})
-        _TERMINALS[sid] = {"port": port, "pid": proc.pid, "holder": holder_name}
+        _TERMINALS[sid] = {"port": port, "pid": proc.pid, "holder": holder_name,
+                           "name": "stray-" + sid[:8]}
         _save_terminals()
         time.sleep(0.4)  # let ttyd bind before the browser connects
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "mode": mode})
@@ -1682,7 +1686,8 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                     env=child_env, start_new_session=True)
         except Exception as e:
             return self._reply(500, {"error": str(e)})
-        _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name}
+        _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name,
+                             "name": "stray-" + token[:8]}
         _save_terminals()
         # DD-027: register the placeholder card the INSTANT the session is created,
         # so the dashboard shows it at once (instead of a void until classify runs).
