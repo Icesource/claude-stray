@@ -128,6 +128,49 @@ def _session_jsonl_path(sid: str):
     return p
 
 
+def _last_turn_epoch(jp: str) -> float:
+    """Epoch of the last REAL main-conversation turn in a transcript — a `user` or
+    `assistant` entry that is NOT a sub-agent (isSidechain) or meta. The file mtime
+    is the WRONG signal for "the AI is working": Claude Code also bumps the jsonl for
+    `ai-title` (background title gen), `file-history-snapshot`, `attachment`, and
+    sidechain/sub-agent writes — none of which mean the main session is running. Using
+    those made an idle card flip to 运行中 with no message sent (e.g. after `/model`).
+    Reads only the file tail (cheap). Returns 0 if no real turn found."""
+    if not jp:
+        return 0.0
+    try:
+        sz = os.path.getsize(jp)
+        with open(jp, "rb") as fh:
+            if sz > 131072:
+                fh.seek(-131072, 2)
+                fh.readline()              # drop the partial first line
+            tail = fh.read().decode("utf-8", "replace")
+    except Exception:
+        return 0.0
+    last = 0.0
+    for line in tail.splitlines():
+        if '"timestamp"' not in line or '"type"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except Exception:
+            continue
+        if d.get("type") not in ("user", "assistant"):
+            continue
+        if d.get("isSidechain") or d.get("isMeta"):
+            continue
+        ts = d.get("timestamp")
+        if not ts:
+            continue
+        try:
+            ep = datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+            if ep > last:
+                last = ep
+        except Exception:
+            pass
+    return last
+
+
 def live_snapshot() -> dict:
     """Per-session live status for the cockpit, keyed by session_id.
     Light staleness handling: a 'running' record untouched for >6h is
@@ -154,12 +197,7 @@ def live_snapshot() -> dict:
             continue
         if status == "running":
             jp = _session_jsonl_path(sid)
-            jm = 0
-            if jp:
-                try:
-                    jm = os.path.getmtime(jp)
-                except Exception:
-                    jm = 0
+            jm = _last_turn_epoch(jp) if jp else 0   # last REAL turn, not file mtime
             # With a transcript we can tell a live turn (constant writes) from a
             # dead one — Ctrl-C/crash fire no Stop/SessionEnd, so the record would
             # otherwise sit on 'running' indefinitely. Silent past the threshold
@@ -186,10 +224,8 @@ def live_snapshot() -> dict:
         if st2 in ("needs_you", "idle"):
             jp = _session_jsonl_path(sid)
             if jp:
-                try:
-                    jm = os.path.getmtime(jp)
-                except Exception:
-                    jm = 0
+                jm = _last_turn_epoch(jp)   # last REAL turn write, not file mtime
+                # (so /model, ai-title, snapshots, sub-agent writes don't fake "running")
                 try:
                     ss_ep = datetime.fromisoformat(
                         (rec.get("status_since") or "").replace("Z", "+00:00")).timestamp()
