@@ -45,7 +45,11 @@ try:
     REPO_ROOT = repo_root()
 except Exception:
     REPO_ROOT = Path(__file__).resolve().parent.parent
-CACHE_DIR = REPO_ROOT / "cache"
+# STRAY_CACHE_DIR / STRAY_PROJECTS_DIR / STRAY_PORTS / STRAY_TMUX_SOCKET /
+# STRAY_NO_BG are test-isolation overrides: integration tests run a REAL serve
+# against a throwaway cache + fake projects dir + ephemeral port without ever
+# touching the production instance. Defaults preserve normal behavior exactly.
+CACHE_DIR = Path(os.environ.get("STRAY_CACHE_DIR") or (REPO_ROOT / "cache"))
 TREE_FILE = CACHE_DIR / "mindmap-tree.html"
 DASHBOARD_JSON = CACHE_DIR / "dashboard.json"
 LOCATIONS_JSON = CACHE_DIR / "session_locations.json"
@@ -60,8 +64,14 @@ SUMMARIES_DIR = CACHE_DIR / "summaries"  # Layer-1 per-session summaries
 SYNC_STATUS_JSON = CACHE_DIR / "sync_status.json"  # first-sync health for the UI
 SYNC_LOG = CACHE_DIR / "sync.log"
 
-PORTS = [9876, 9877, 9878]
+PORTS = ([int(p) for p in os.environ["STRAY_PORTS"].replace(",", " ").split()]
+         if os.environ.get("STRAY_PORTS") else [9876, 9877, 9878])
 BIND = "127.0.0.1"
+PROJECTS_DIR = Path(os.environ.get("STRAY_PROJECTS_DIR")
+                    or (Path.home() / ".claude" / "projects"))
+_TMUX_SOCKET = os.environ.get("STRAY_TMUX_SOCKET") or "stray"
+# STRAY_NO_BG=1: skip first-sync / update checks / derived scheduler (tests).
+_NO_BG = os.environ.get("STRAY_NO_BG") == "1"
 
 LIVE_DIR = CACHE_DIR / "live"  # DD-015 Stage 1: per-session live status
 # A 'running' record whose transcript has been silent this long is a dead turn
@@ -120,7 +130,7 @@ def _session_jsonl_path(sid: str):
         p = None
     if not p or not os.path.exists(p):
         try:
-            hits = list((Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"))
+            hits = list(PROJECTS_DIR.glob(f"*/{sid}.jsonl"))
             p = str(hits[0]) if hits else None
         except Exception:
             p = None
@@ -253,7 +263,7 @@ def _wrap_in_holder(sid: str, inner: str) -> tuple[str, str | None]:
                 _TMUX_CONF.write_text(conf)
         except Exception:
             pass
-        return ("tmux -L stray -f " + shlex.quote(str(_TMUX_CONF))
+        return ("tmux -L " + _TMUX_SOCKET + " -f " + shlex.quote(str(_TMUX_CONF))
                 + " new-session -A -s " + shlex.quote(name)
                 + " bash -lc " + shlex.quote(inner), h)
     if h == "screen":
@@ -361,7 +371,7 @@ def _resume_cwd_for(sid: str) -> str:
     found". So read the authoritative cwd from the session's own jsonl (its
     first `cwd` entry == its project dir); fall back to session_locations."""
     try:
-        for f in (Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"):
+        for f in PROJECTS_DIR.glob(f"*/{sid}.jsonl"):
             try:
                 with f.open(encoding="utf-8") as fh:
                     for line in fh:
@@ -410,8 +420,6 @@ MERGE_JOBS_JSON = CACHE_DIR / "merge-jobs.json"
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"
-PROJECTS_DIR = Path.home() / ".claude" / "projects"
-
 _RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
 _RES_REMOTE_CACHE: dict = {}   # cwd -> (epoch, remote_url)
 
@@ -617,7 +625,7 @@ def _recent_turns(sid: str, n: int = 8) -> list[dict]:
         sf = None
     if not sf or not os.path.exists(sf):
         try:
-            hits = list((Path.home() / ".claude" / "projects").glob(f"*/{sid}.jsonl"))
+            hits = list(PROJECTS_DIR.glob(f"*/{sid}.jsonl"))
             sf = str(hits[0]) if hits else None
         except Exception:
             sf = None
@@ -1483,7 +1491,7 @@ class Handler(BaseHTTPRequestHandler):
                 # detached (ttyd dying only detaches the holder client).
                 name = "stray-" + sid[:8]
                 if hn == "tmux":
-                    run_cmd(["tmux", "-L", "stray", "kill-session", "-t", name])
+                    run_cmd(["tmux", "-L", _TMUX_SOCKET, "kill-session", "-t", name])
                 elif hn == "screen":
                     run_cmd(["screen", "-S", name, "-X", "quit"])
                 else:
@@ -1808,7 +1816,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         try:
-            subprocess.run([tmux, "-L", "stray", "-f", str(_TMUX_CONF), "new-session", "-d",
+            subprocess.run([tmux, "-L", _TMUX_SOCKET, "-f", str(_TMUX_CONF), "new-session", "-d",
                             "-s", holder, "bash", "-lc", inner], env=child_env,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
         except Exception as e:
@@ -1818,7 +1826,7 @@ class Handler(BaseHTTPRequestHandler):
         if ttyd:
             import socket as _socket
             s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-            attach = (shlex.quote(tmux) + " -L stray -f " + shlex.quote(str(_TMUX_CONF))
+            attach = (shlex.quote(tmux) + " -L " + _TMUX_SOCKET + " -f " + shlex.quote(str(_TMUX_CONF))
                       + " new-session -A -s " + shlex.quote(holder))
             args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
                     "-t", "titleFixed=" + wt_name, "-t", "rendererType=dom",
@@ -2800,7 +2808,8 @@ def serve(open_browser: bool = True):
     # First-time bootstrap: if the user just installed and the cache is
     # still empty, kick off one pipeline run so they see cards within a
     # minute or two instead of an empty dashboard.
-    _maybe_kick_first_sync()
+    if not _NO_BG:
+        _maybe_kick_first_sync()
     # Recover embedded terminals that survived a previous serve (start_new_session
     # detaches them from our process group, so Ctrl-C restart doesn't kill them).
     _load_terminals()
@@ -2808,7 +2817,8 @@ def serve(open_browser: bool = True):
         print(f"[serve] recovered {len(_TERMINALS)} live terminal(s) across restart")
     # If a new release is out and the user is running interactively,
     # offer to upgrade in place before binding the port.
-    _check_updates_interactive()
+    if not _NO_BG:
+        _check_updates_interactive()
     class QuietServer(ThreadingHTTPServer):
         # A browser dropping a connection (closing a tab, aborting an SSE
         # stream) raises ConnectionResetError/BrokenPipeError deep in the
@@ -2875,25 +2885,26 @@ def serve(open_browser: bool = True):
         # scheduler dies with it. Daemon thread so it can't keep the
         # process alive past httpd.shutdown().
         stop_scheduler = threading.Event()
-        sched_thread = threading.Thread(
-            target=_derived_scheduler_loop,
-            args=(stop_scheduler,),
-            daemon=True,
-            name="ccw-derived-sched",
-        )
-        sched_thread.start()
-        print("[serve] derived scheduler: tips every 2h, weekly Fri noon",
-              file=sys.stderr)
+        if not _NO_BG:
+            sched_thread = threading.Thread(
+                target=_derived_scheduler_loop,
+                args=(stop_scheduler,),
+                daemon=True,
+                name="ccw-derived-sched",
+            )
+            sched_thread.start()
+            print("[serve] derived scheduler: tips every 2h, weekly Fri noon",
+                  file=sys.stderr)
 
-        # Background update-checker. Updates cache/update_state.json
-        # every 24h; the dashboard polls /api/version for the banner.
-        update_thread = threading.Thread(
-            target=_update_recheck_loop,
-            args=(stop_scheduler,),  # reuse the same stop event
-            daemon=True,
-            name="ccw-update-check",
-        )
-        update_thread.start()
+            # Background update-checker. Updates cache/update_state.json
+            # every 24h; the dashboard polls /api/version for the banner.
+            update_thread = threading.Thread(
+                target=_update_recheck_loop,
+                args=(stop_scheduler,),  # reuse the same stop event
+                daemon=True,
+                name="ccw-update-check",
+            )
+            update_thread.start()
 
         try:
             httpd.serve_forever()
