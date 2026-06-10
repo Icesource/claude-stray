@@ -557,9 +557,11 @@
   function weekStartTs(){ const d=new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate()-((d.getDay()+6)%7)); return d.getTime(); }
   // band = real status + live telemetry + blocker text (DD-015)
   function bandFor(init){
-    // DD-027: a placeholder ("instant citizen") card — created this very moment,
-    // AI summary still pending. It belongs in 进行中 and reads "准备中…".
-    if(init._pending) return {band:'running', activity:'准备中…', pending:true};
+    // DD-030: "准备中" is an ORTHOGONAL badge (a card with no AI summary yet), NOT a
+    // band. The band always comes from the canonical live→classify logic below — even
+    // for a pending card — so a 准备中 card that's waiting on you reads 等你, one that's
+    // generating reads 进行中, etc. (The old code forced pending→running, which both
+    // lied about status and tangled the band logic — the "状态转换一团糟" root.)
     // DD-019: sealed historical cards are frozen achievements (no live
     // session); they live in the collapsible done/archive band.
     if(init.sealed) return {band:'done'};
@@ -607,7 +609,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
-        parent_session_id:init.parent_session_id||null, pending:!!b.pending,
+        parent_session_id:init.parent_session_id||null, pending:!!init._pending,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -803,8 +805,11 @@
   function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
     return `<div class="mid ${cls}"${tip}><span class="rtext">${p?esc(p):fallback}</span></div>`;}
   function midCell(r){
+    // DD-030: 准备中 is orthogonal to band — show it whenever the card has no AI
+    // content yet, styled by whatever its real band is (色彩跟随真实状态).
+    if(r.pending)return `<div class="mid ${esc(r.band)}"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`;
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
-    if(r.band==='running'){if(r.pending)return `<div class="mid running"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`;const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
+    if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
     if(r.band==='idle')return progMid('idle', r, esc(r.idle)+' 未动');
     if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
