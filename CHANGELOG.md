@@ -10,6 +10,90 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
+- **DD-030: 创建卡统一身份** (commits `d5ab024` → `9848ef2` + `88571dc`).
+  废弃了「占位卡 + 真卡交接」的双身份机制(bug 根源),改为一条 session
+  一张 `card::<sid>` 卡、创建即定型。
+
+  - `bin/_created.py` 统一缓冲注册表(取代 `pending-cards.json` /
+    `subcards.json` 双表)。token→sid 捕获后卡 id 永不再变;父链接
+    carry-forward 写进卡身上,稳态缓冲为空。
+  - classify 对每个缓冲条目强制认领进 `card::<sid>`,AI 的好名字/进展
+    同步拷贝,`dedup_by_session` 兜底保证不出现双卡。
+  - 「准备中」降级为正交徽章:有没有 AI summary 决定是否显示 `准备中…`,
+    band 永远走规范 live→classify 逻辑;删除 `bandFor` 里 `if(pending) return
+    running` 等特例,彻底消除「状态转换一团糟」根因。
+  - 创建卡(主+子)在 classify 认领前永不被噪声过滤器淘汰(`commit 60e3f6c`)。
+  - 删除「准备中」卡能真正删掉(移植 task-ee1695 子卡发现的修法,
+    `commit 88571dc`)。
+
+- **DD-031: 子卡合并闭环** (commits `4f8200d` + `c291984`).
+  黄金场景「fan out → 并行推进 → 一键合并回主干」首次真正闭合。
+
+  - `bin/_merge.py`:串行队列(`merge-jobs.json` + fcntl 锁);
+    `evaluate_precheck` 三道闸门(无新提交拒、目标不存在拒、未提交改动警告);
+    `landing_plan` 判落地路径(干净→ff_here / 有 WIP→blocked_wip /
+    未 checkout→push_refspec)。
+  - **合并 agent**:点合并 → spawn 一张 `merge-<slug>` 子卡在独立
+    worktree 里 `git merge + 解冲突 + commit`;解不动时转 `needs_you`。
+  - **落地**:合并 agent 干完后人工点「落地▸」→ 主卡分支 FF;有 WIP 则
+    409 拦截,让你先 commit/stash。落地成功自动关原子卡+合并 agent,
+    并起串行队列里的下一个。
+  - **cockpit** 两阶段按钮:普通子卡显示「合并」(内联目标分支选择),
+    合并 agent 显示「落地▸」;subrow + 会话族侧栏两处均已接入。
+
+- **DD-032: stray-subcards 独立 SKILL** (commit `745060d`).
+  对话 fan out 子卡从用户私人 CLAUDE.md 指令块升格为产品。
+
+  - `skills/stray-subcards/SKILL.md` 覆盖触发词、三原语
+    (`stray spawn` / `stray subtasks` / `stray send`)、六步工作流、
+    反模式(禁止用内置 Task 工具/后台 agent 替代 `stray spawn`)。
+  - `bin/install-skill.sh` 同时安装 `stray` + `stray-subcards` 两个 skill;
+    `bin/uninstall.sh` 同步移除。
+  - 合并入口今轮不开对话触发,引导用户去驾驶舱点「合并」按钮(DD-031
+    路径先经受真实使用)。
+
+- **测试基建**:
+  - `STRAY_*` 隔离 env 覆盖(commit `44ee940`):`STRAY_CACHE_DIR` /
+    `STRAY_PROJECTS_DIR` / `STRAY_PORTS` / `STRAY_TMUX_SOCKET` /
+    `STRAY_NO_BG` — serve.py 一套测试专用路径,生产实例零污染。
+  - `tests/test_merge_e2e.py` 四场景集成测试(commit `fe4437d`):
+    真实 serve + 真实 git repo + PATH 假 `claude`(执行 `DO:<shell>` /
+    扮演合并 agent)。覆盖:单子卡合并落地、冲突解决、串行队列、
+    主卡 WIP 拦截。
+
+### Fixed
+
+- **ttyd 闸门挡死子卡 spawn** (in commit `fe4437d`): `/api/new-session`
+  的 ttyd 存在性检查一刀切拦截了子卡请求(子卡 spawn 不需要 ttyd)。
+  修法:ttyd 检查移到非子卡分支。
+- **落地 WIP 检查被未跟踪文件永久误报** (in commit `fe4437d`):
+  `git status --porcelain` 把 `.claude/worktrees/` 等未跟踪目录算进脏改动
+  → 任何 repo 落地永远被 `blocked_wip` 挡住。改用 `-uno` 只看已跟踪变更
+  (FF 不碰未跟踪文件,路径冲突 git 自己会拒)。
+- **teardown 中途双 HTTP 响应** (in commit `fe4437d`):
+  teardown / subcard-close 内部调 `_handle_terminal_close` 时提前发出
+  HTTP 200,客户端在服务端清理完成前就收到成功。改为抽出不回复的
+  `_close_terminal` 供内部复用;teardown 失败日志打 stderr 不再静默。
+- **落地竞速泄漏合并 worktree** (in commit `fe4437d`):
+  合并 agent 的 worktree 在特定竞速下未被清理,已加确定性兜底清理。
+- **子卡关闭后 claude 僵尸** (commit `42906ed`):
+  spawn 的 holder 以 token 命名(`stray-<token8>`),sid 捕获后终端表
+  重 key 成 sid,但 `_close_terminal` 仍用 `sid[:8]` 重构名字 →
+  `kill-session` 永远打偏,子卡/合并 agent 的 claude 关闭后继续以
+  僵尸 tmux 会话存活。修法:终端表每条记录显式存 holder 名,关闭时
+  以记录为准。
+- **live 状态误判「运行中」** (commit `f033467`):
+  `os.path.getmtime(jsonl)` 被非 turn 事件(ai-title、file-history、
+  子 agent sidechain 等)顶高 mtime → 没发消息也变 running。改为
+  `_last_turn_epoch()` 只取最后一条真实主会话 turn 的时间戳。
+
+### Changed
+
+- **serve.py 路由表化** (commit `b4a2d34`): `do_GET` / `do_POST` 改为
+  声明式路由表(`_GET_ROUTES` / `_POST_ROUTES`),18 + 11 个端点覆盖。
+  子卡/合并家族(spawn / close / merge / land / subtasks,~500 行)
+  整体迁入 `bin/_subcard_api.py` mixin,与主 serve.py 解耦,方便独立测试。
+
 - **Three-tier work items** (DD-014, commits `d321620` + `270805d`).
   Every initiative now carries a `level` of `thread`, `card`, or
   `chip`, plus an optional `parent_thread_id` linking a card/chip into
