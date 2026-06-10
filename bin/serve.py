@@ -173,8 +173,15 @@ def live_snapshot() -> dict:
         # Transcript-mtime override: the event model has a gap — answering an
         # elicit / approving a permission / a missed UserPromptSubmit doesn't fire
         # a `running` event, so a session can stay stuck on needs_you / idle while
-        # actually working. If the jsonl was written AFTER that event and within
-        # the last 45s, the session is actively working → show running.
+        # actually working. If the jsonl was written AFTER that event and the
+        # session is still "warm", it's actively working → show running.
+        #
+        # The freshness window MUST match RUNNING_STALE_SECS (the running→idle
+        # threshold): with a tighter window the two directions disagree and an
+        # active session flips to 等你 mid-turn whenever a single tool call
+        # (summarize/classify take 40–60s) exceeds it — the jsonl goes silent past
+        # the window and the stale needs_you/idle re-surfaces. Symmetric thresholds
+        # mean "actively working" reads the same regardless of the last event type.
         st2 = rec.get("status")
         if st2 in ("needs_you", "idle"):
             jp = _session_jsonl_path(sid)
@@ -188,7 +195,7 @@ def live_snapshot() -> dict:
                         (rec.get("status_since") or "").replace("Z", "+00:00")).timestamp()
                 except Exception:
                     ss_ep = 0
-                if jm > ss_ep + 5 and (now - jm) < 45:
+                if jm > ss_ep + 5 and (now - jm) < RUNNING_STALE_SECS:
                     rec = {**rec, "status": "running", "_inferred": "jsonl-fresh"}
         out[sid] = rec
     return out
