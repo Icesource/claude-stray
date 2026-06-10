@@ -398,8 +398,13 @@ try:
     import _pending  # DD-027: instant-citizen placeholder cards (先创建后丰富)
 except Exception:
     _pending = None
+try:
+    import _created  # DD-030: unified created-cards registry (取代 pending+subcards)
+except Exception:
+    _created = None
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PENDING_JSON = CACHE_DIR / "pending-cards.json"
+CREATED_JSON = CACHE_DIR / "created-cards.json"
 PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 _RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
@@ -1658,6 +1663,16 @@ class Handler(BaseHTTPRequestHandler):
                                   parent=parent or None)
             except Exception:
                 pass
+        if _created is not None:
+            try:
+                _created.register(str(CREATED_JSON), token,
+                                  name=(body.get("name") or "").strip(), cwd=cwd,
+                                  worktree_path=wt_path or None,
+                                  worktree_name=wt_name if want_wt else None,
+                                  parent=parent or None,
+                                  initial_task=(body.get("prompt") or "").strip())
+            except Exception:
+                pass
         since = time.time() - 2
         # DD-022-B / DD-025: a worktree session's sid is unknown at launch (claude
         # mints it). Capture it from the worktree's project dir, then re-key the ttyd
@@ -1675,6 +1690,11 @@ class Handler(BaseHTTPRequestHandler):
                         if parent:
                             try:
                                 _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
+                            except Exception:
+                                pass
+                        if _created is not None:
+                            try:
+                                _created.capture_sid(str(CREATED_JSON), token, sid)
                             except Exception:
                                 pass
                         if _pending is not None:
@@ -1700,6 +1720,11 @@ class Handler(BaseHTTPRequestHandler):
                     time.sleep(1)
                     sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), cwd, since)
                     if sid:
+                        if _created is not None:
+                            try:
+                                _created.capture_sid(str(CREATED_JSON), token, sid)
+                            except Exception:
+                                pass
                         try:
                             _pending.capture_sid(str(PENDING_JSON), token, sid)
                         except Exception:
@@ -1791,11 +1816,18 @@ class Handler(BaseHTTPRequestHandler):
                 _save_terminals()
             except Exception:
                 port = None
-        # DD-027: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
+        # DD-027/030: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
         if _pending is not None:
             try:
                 _pending.register(str(PENDING_JSON), token, name=name, cwd=cwd,
                                   worktree_path=wt_path, worktree_name=wt_name, parent=parent or None)
+            except Exception:
+                pass
+        if _created is not None:
+            try:
+                _created.register(str(CREATED_JSON), token, name=name, cwd=cwd,
+                                  worktree_path=wt_path, worktree_name=wt_name,
+                                  parent=parent or None, initial_task=prompt or "")
             except Exception:
                 pass
         # capture the child sid → record parent link + align placeholder + re-key terminal
@@ -1811,6 +1843,11 @@ class Handler(BaseHTTPRequestHandler):
                             _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
                         except Exception:
                             pass
+                        if _created is not None:
+                            try:
+                                _created.capture_sid(str(CREATED_JSON), token, sid)
+                            except Exception:
+                                pass
                         if _pending is not None:
                             try:
                                 _pending.capture_sid(str(PENDING_JSON), token, sid)
@@ -1983,6 +2020,14 @@ class Handler(BaseHTTPRequestHandler):
             doc["version"] = 1
             doc["updated_at"] = now
             DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            # DD-030: a deleted card must also leave the created-cards registry, else
+            # it's re-shown as a 准备中 placeholder / re-exempted next render.
+            if _created is not None:
+                for s in sessions:
+                    try:
+                        _created.remove_by_sid(str(CREATED_JSON), s)
+                    except Exception:
+                        pass
             self._remove_from_dashboard(iid)
             return self._reply(200, {"ok": True})
         except Exception as e:
@@ -2074,12 +2119,17 @@ class Handler(BaseHTTPRequestHandler):
                 removed_wt = wt_path
         except Exception:
             pass
-        # 3. unregister from the sub-card registry
+        # 3. unregister from the sub-card registry (legacy + unified)
         try:
             if _subcards:
                 _subcards.remove(str(SUBCARDS_JSON), sid)
         except Exception:
             pass
+        if _created is not None:
+            try:
+                _created.remove_by_sid(str(CREATED_JSON), sid)
+            except Exception:
+                pass
         # 4. tombstone the card id + drop it from the dashboard now
         if iid:
             try:

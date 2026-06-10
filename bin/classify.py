@@ -810,11 +810,45 @@ def load_subcards_map() -> dict:
         return {}
 
 
+def load_created_cards_map() -> dict:
+    """DD-030: every user-created card (main OR sub) as {sid: {parent, slug}} —
+    so mint_subcard_initiatives claims ALL of them into a stable card, not just
+    sub-cards. Unioned with the legacy subcards.json. A main card has parent=None
+    (link() then leaves it top-level); slug falls back to the workspace name."""
+    out = dict(load_subcards_map())
+    try:
+        import _created
+        doc = json.loads((CACHE_DIR / "created-cards.json").read_text())
+        for sid, ent in _created.by_sid(doc).items():
+            out.setdefault(sid, {"parent": ent.get("parent"),
+                                 "slug": ent.get("worktree_name") or ent.get("name") or ""})
+    except Exception:
+        pass
+    return out
+
+
 def subcard_child_sids() -> set[str]:
     """Child sids registered as sub-cards in cache/subcards.json (DD-025). They're
     explicitly user-spawned, so they bypass the MIN_TURNS noise filter — a fresh
     `claude -p` sub-card does just one turn but must still surface + nest."""
     return set(load_subcards_map().keys())
+
+
+def created_card_sids() -> set[str]:
+    """Every sid the user explicitly created through the cockpit — main OR sub.
+    DD-030: union of legacy subcards.json (DD-025 sub-cards) and the unified
+    created-cards.json. A user-created card is NOT noise: it must bypass the
+    MIN_TURNS filter and surface even at 1 turn (the hsfops bug — a freshly created
+    main card with one message was dropped as thin because only sub-cards were
+    exempt). Transitional union so it works whether data is in the old or new file."""
+    sids = set(load_subcards_map().keys())
+    try:
+        import _created
+        sids |= _created.registered_sids(
+            json.loads((CACHE_DIR / "created-cards.json").read_text()))
+    except Exception:
+        pass
+    return sids
 
 
 def _ws_name_for_cwd(cwd: str) -> str:
@@ -2265,7 +2299,7 @@ def main() -> int:
     # turn (the seeded prompt → response → done) but is explicitly user-spawned,
     # not noise — it must surface so it can nest under its parent.
     if MIN_TURNS > 1:
-        subcard_sids = subcard_child_sids()
+        subcard_sids = created_card_sids()   # DD-030: all user-created cards (main+sub) exempt
 
         def keep_turns(tup):
             sid, fm = tup[0], tup[1]
@@ -2424,7 +2458,7 @@ def main() -> int:
     # 1-turn `claude -p` sub-cards). Runs BEFORE dedup so any AI-emitted duplicate
     # for the same session folds in.
     subcard_n = mint_subcard_initiatives(new_mm, all_summaries,
-                                         load_subcards_map(), deleted_ids)
+                                         load_created_cards_map(), deleted_ids)
     if subcard_n:
         print(f"[classify] DD-025: minted {subcard_n} sub-card(s) the AI dropped")
 
