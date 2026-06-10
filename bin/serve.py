@@ -505,7 +505,14 @@ def _merge_pending_cards(mindmap: dict) -> int:
     doc = _created.load(str(CREATED_JSON))
     if not doc:
         return 0
-    added, stale = _created.merge_into_mindmap(mindmap, doc)
+    # DD-030: honor deletes — a 准备中 card the user tombstoned must NOT re-merge.
+    tomb = set()
+    try:
+        dd = json.loads(DELETED_JSON.read_text())
+        tomb = {x.get("id") for x in (dd.get("initiatives") or []) if x.get("id")}
+    except Exception:
+        pass
+    added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb)
     if stale:
         try:
             for k in stale:
@@ -2020,8 +2027,18 @@ class Handler(BaseHTTPRequestHandler):
             doc["updated_at"] = now
             DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
             # DD-030: a deleted card must also leave the created-cards registry, else
-            # it's re-shown as a 准备中 placeholder / re-exempted next render.
+            # it's re-shown as a 准备中 placeholder / re-exempted next render. Match by
+            # the placeholder id too (a no-sid 准备中 card is `pending::<token>`, a
+            # captured one `card::<sid>` — neither is in dashboard.json, so the
+            # session-based removal alone can't reach a not-yet-real placeholder).
             if _created is not None:
+                try:
+                    if iid.startswith("pending::"):
+                        _created.remove(str(CREATED_JSON), iid[len("pending::"):])
+                    elif iid.startswith("card::"):
+                        _created.remove_by_sid(str(CREATED_JSON), iid[len("card::"):])
+                except Exception:
+                    pass
                 for s in sessions:
                     try:
                         _created.remove_by_sid(str(CREATED_JSON), s)

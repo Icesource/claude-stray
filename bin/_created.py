@@ -249,21 +249,38 @@ def _placeholder_card(token, ent, now):
     }
 
 
-def merge_into_mindmap(mindmap, doc, _now=None):
+def placeholder_id(token, ent):
+    """The id a placeholder renders with — card::<sid> once captured, else
+    pending::<token>. The handle a delete/tombstone must target."""
+    sid = ent.get("sid")
+    return ("card::" + sid) if sid else ("pending::" + token)
+
+
+def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None):
     """Append a 准备中 placeholder for each registry entry not yet backed by a real
     card. Returns (added, stale_tokens). DURABLE: an entry is stale ONLY if it's a
-    failed launch (no sid past TTL); a captured entry is kept even after its real
-    card appears (the registry stays the durable record — classify keeps claiming
-    it + exempting it from the noise filter). Pure: does not mutate `doc`."""
+    failed launch (no sid past TTL) OR the user tombstoned its placeholder; a
+    captured entry is otherwise kept even after its real card appears (the registry
+    stays the durable record). Pure: does not mutate `doc`.
+
+    DD-030 (ported from the task-ee1695 sub-card's finding): a 准备中 card lives ONLY
+    here, overlaid at render — tombstoning it in dashboard.json can't kill it, it
+    re-merges every /api/data until TTL. So honor `tombstoned_ids`: a placeholder
+    whose id is tombstoned is NOT re-merged AND is marked stale (caller prunes the
+    source entry) so the delete actually sticks."""
     if not mindmap or not isinstance(doc, dict) or not doc:
         return 0, []
     now = _now if _now is not None else time.time()
+    tomb = tombstoned_ids or set()
     real_sids, real_wts = _real_sids_wts(mindmap)
     workspaces = mindmap.setdefault("workspaces", [])
     added, stale = 0, []
     for token, ent in doc.items():
         if not isinstance(ent, dict):
             stale.append(token)
+            continue
+        if placeholder_id(token, ent) in tomb:
+            stale.append(token)          # user deleted it → drop source so it sticks
             continue
         if not ent.get("sid") and now - (ent.get("created_at") or 0) > TTL:
             stale.append(token)          # failed launch — never captured a sid

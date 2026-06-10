@@ -80,6 +80,24 @@ def test_provisional_name_falls_back():
     assert mm2["workspaces"][0]["initiatives"][0]["name"] == "准备中…"
 
 
+def test_merge_honors_tombstone_so_delete_sticks():
+    """DD-030 (task-ee1695 finding): a deleted 准备中 card must NOT re-merge, and its
+    source entry is marked stale so the delete sticks. Matches pending::<token>
+    (no sid) and card::<sid> (captured)."""
+    # no-sid placeholder deleted by pending::<token>
+    doc = {"t1": {"sid": None, "name": "x", "cwd": "/r", "created_at": 1}}
+    mm = {"workspaces": []}
+    added, stale = _created.merge_into_mindmap(mm, doc, _now=2,
+                                               tombstoned_ids={"pending::t1"})
+    assert added == 0 and stale == ["t1"]
+    # captured placeholder deleted by card::<sid>
+    doc2 = {"t2": {"sid": "s9", "name": "y", "created_at": 1}}
+    mm2 = {"workspaces": []}
+    added2, stale2 = _created.merge_into_mindmap(mm2, doc2, _now=2,
+                                                 tombstoned_ids={"card::s9"})
+    assert added2 == 0 and stale2 == ["t2"]
+
+
 def test_subtask_metadata():
     doc = {"t1": {"sid": "c1", "parent": "P"}, "t2": {"sid": "c2", "parent": "OTHER"}}
     mm = {"workspaces": [{"initiatives": [
