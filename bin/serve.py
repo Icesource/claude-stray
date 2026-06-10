@@ -487,30 +487,29 @@ def _attach_code_location(mindmap: dict) -> int:
             if cl:
                 init["code_location"] = cl
                 n += 1
-    # DD-025: tag cards that are registered sub-cards with their parent_session_id.
-    if _subcards is not None:
+    # DD-030: tag cards that are registered created cards with their parent_session_id.
+    if _created is not None:
         try:
-            _subcards.link(mindmap, _subcards.load(str(SUBCARDS_JSON)))
+            _created.link(mindmap, _created.load(str(CREATED_JSON)))
         except Exception:
             pass
     return n
 
 
 def _merge_pending_cards(mindmap: dict) -> int:
-    """DD-027: overlay instant-citizen placeholder cards onto the dashboard at
-    render time, and prune any whose real card has arrived (or that expired).
-    Returns how many placeholders were merged in. Best-effort."""
-    if _pending is None or not mindmap:
+    """DD-030: overlay instant 准备中 placeholder cards (from the unified created-cards
+    registry) onto the dashboard at render time; prune only failed launches (no sid
+    past TTL). Returns how many placeholders were merged in. Best-effort."""
+    if _created is None or not mindmap:
         return 0
-    doc = _pending.load(str(PENDING_JSON))
+    doc = _created.load(str(CREATED_JSON))
     if not doc:
         return 0
-    added, stale = _pending.merge_into_mindmap(mindmap, doc)
+    added, stale = _created.merge_into_mindmap(mindmap, doc)
     if stale:
         try:
             for k in stale:
-                doc.pop(k, None)
-            _pending._write(str(PENDING_JSON), doc)
+                _created.remove(str(CREATED_JSON), k)
         except Exception:
             pass
     return added
@@ -1214,7 +1213,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/subtasks":
             from urllib.parse import parse_qs
             parent = (parse_qs(urlparse(self.path).query).get("parent") or [""])[0]
-            if not parent or _subcards is None:
+            if not parent or _created is None:
                 return self._reply(200, {"parent": parent, "subcards": []})
             try:
                 mm = json.load(open(DASHBOARD_JSON))
@@ -1230,8 +1229,8 @@ class Handler(BaseHTTPRequestHandler):
                 import glob as _g
                 hits = _g.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
                 return hits[0] if hits else None
-            md = _subcards.subtask_metadata(parent, mm,
-                                            _subcards.load(str(SUBCARDS_JSON)), _jsonl)
+            md = _created.subtask_metadata(parent, mm,
+                                           _created.load(str(CREATED_JSON)), _jsonl)
             return self._reply(200, {"parent": parent, "subcards": md})
         if path == "/api/data":
             data = {}
@@ -2109,8 +2108,9 @@ class Handler(BaseHTTPRequestHandler):
         #    behind our own guard. force=True (user accepted the loss) → --force.
         try:
             if main_repo and wt_path:
-                ent = (_subcards.load(str(SUBCARDS_JSON)).get(sid) if _subcards else None) or {}
-                slug = ent.get("slug") or os.path.basename(wt_path.rstrip("/"))
+                ent = (_created.by_sid(_created.load(str(CREATED_JSON))).get(sid)
+                       if _created else None) or {}
+                slug = ent.get("worktree_name") or os.path.basename(wt_path.rstrip("/"))
                 rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt_path]
                 _worktree._git(main_repo, *rm, timeout=20)
                 _worktree._git(main_repo, "worktree", "prune", timeout=10)

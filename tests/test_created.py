@@ -80,6 +80,21 @@ def test_provisional_name_falls_back():
     assert mm2["workspaces"][0]["initiatives"][0]["name"] == "准备中…"
 
 
+def test_subtask_metadata():
+    doc = {"t1": {"sid": "c1", "parent": "P"}, "t2": {"sid": "c2", "parent": "OTHER"}}
+    mm = {"workspaces": [{"initiatives": [
+        {"name": "改鉴权", "sessions": ["c1"], "status": "active",
+         "progress": "写了 handler\n还差测试", "blockers": ["等评审"], "next_step": "加测试",
+         "code_location": {"worktree": "/w/a", "branch": "worktree-a"}},
+        {"name": "别人的", "sessions": ["c2"]},
+    ]}]}
+    md = _created.subtask_metadata("P", mm, doc, jsonl_lookup=lambda s: f"/j/{s}.jsonl")
+    assert {m["name"] for m in md} == {"改鉴权"}        # only P's child
+    m = md[0]
+    assert m["session_id"] == "c1" and m["progress"] == "写了 handler"
+    assert m["worktree"] == "/w/a" and m["jsonl"] == "/j/c1.jsonl"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

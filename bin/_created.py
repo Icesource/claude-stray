@@ -148,6 +148,32 @@ def registered_sids(doc):
     return set(by_sid(doc).keys())
 
 
+def _firstline(s):
+    return (s or "").splitlines()[0].strip() if s else ""
+
+
+def subtask_metadata(parent_sid, mindmap, doc, jsonl_lookup=None):
+    """The low-token progress digest a PARENT pulls (`stray subtasks`): one entry
+    per child card of parent_sid, from the cards' existing summaries — no AI.
+    Ported from _subcards.subtask_metadata; reads the unified registry's parent links."""
+    children = {sid for sid, ent in by_sid(doc).items() if ent.get("parent") == parent_sid}
+    out = []
+    for w in (mindmap or {}).get("workspaces", []) or []:
+        for i in w.get("initiatives", []) or []:
+            sid = next((s for s in (i.get("sessions") or []) if s in children), None)
+            if not sid:
+                continue
+            cl = i.get("code_location") or {}
+            out.append({
+                "name": i.get("name"), "session_id": sid,
+                "status": i.get("status") or "", "progress": _firstline(i.get("progress")),
+                "blockers": i.get("blockers") or [], "next_step": i.get("next_step"),
+                "worktree": cl.get("worktree"), "branch": cl.get("branch"),
+                "jsonl": jsonl_lookup(sid) if jsonl_lookup else None,
+            })
+    return out
+
+
 def link(mindmap, doc):
     """Set init['parent_session_id'] on every card whose session is a registered
     created card with a parent. Pure render-time enrichment (mirrors the old
