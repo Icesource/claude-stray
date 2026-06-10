@@ -9,14 +9,37 @@ For full design docs see [design/](design/).
 
 | Item | Status | Doc |
 |---|---|---|
-| P11.0 cache lock | Proposed (below) | — |
+| P11.0 cache lock | Partially Implemented (see note) | — |
 | P11.1 CLI subcommands | Proposed (below) | — |
-| P11.2 SKILL.md | Proposed (below) | — |
+| P11.2 SKILL.md | Implemented | — |
 | P14 AI Pipeline redesign | Implemented | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
 | P15 Card detail + artifacts | Proposed | [DD-003](design/DD-003-card-detail-and-artifacts.md) |
 | P16 Tips quiz (spaced reinforcement) | Proposed (below) | — |
 | P17 Persona accretion ("digital twin" prompt) | Proposed (below) | — |
 | P13 (historical) two-pass classification | Superseded | [DD-001](design/DD-001-two-pass-classification.md) |
+
+## Done
+
+### P11.2 — SKILL.md (Implemented)
+
+`SKILL.md` exists at repo root and `bin/install-skill.sh` copies it to
+`~/.claude/skills/stray/` on the local machine. The raw GitHub URL enables
+one-prompt remote installation.
+
+### P11.0 — Cache lock (Partially implemented)
+
+The `bin/_cache_lock.py` module proposed here was not created. However, the
+three registry helpers introduced in DD-025/DD-030/DD-031 (`_subcards.py`,
+`_created.py`, `_merge.py`) each implement an equivalent pattern inline:
+`fcntl.flock(LOCK_EX)` on a sibling `.lock` file, reused forever (no
+per-entry leak). This covers the most write-contended paths.
+
+What remains from the original spec:
+- `serve.py /api/save` does not yet take the lock before writing
+  `user_overrides.json` / `deleted_ids.json` / archive dir.
+- No shared `bin/_cache_lock.py` context manager for use by CLI commands
+  (P11.1) and the serve endpoint.
+- `dashboard.json` final write does not yet use atomic `tmp + rename`.
 
 ## P11.0 — Concurrency lock for cache writes
 

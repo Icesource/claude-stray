@@ -40,7 +40,6 @@ flowchart LR
     P["cache/dashboard.json<br/>(prior round)"] -.->|PRIOR_MINDMAP| L2
     L2 --> M["cache/dashboard.json<br/>(new round)"]
     M --> R1["render.py — ANSI tree"]
-    M --> R2["render-html.py — cards"]
     M --> R3["render-tree.py — markmap"]
     U["UI edits<br/>(toggle / archive / delete)"] -.->|"POST /api/save"| OV["cache/user_overrides.json"]
     OV -.->|"merged in Layer 2"| M
@@ -85,41 +84,56 @@ fitting** cwd as primary; others go under `linked_cwds`.
 ```
 claude-stray/
 ├── bin/                          # All executables
+│   ├── stray                     # User-facing CLI dispatcher (bash)
 │   ├── install.sh                # One-shot installer (slash + hook)
 │   ├── install-hook.sh           # Re-install only the hooks
+│   ├── install-skill.sh          # Install SKILL.md into ~/.claude/skills/
 │   ├── uninstall.sh
-│   ├── mindmap                   # User-facing CLI dispatcher (bash)
 │   │
 │   ├── pipeline-run.sh           # 3-layer orchestrator (the "core")
 │   ├── refresh-bg.sh             # Non-blocking hook wrapper around pipeline-run.sh
+│   ├── live-hook.sh              # Alternative hook that pushes live telemetry
 │   ├── layer2-trigger.sh         # Coalesce wrapper for Layer 2 (mkdir lock + pending marker)
 │   │
 │   ├── extract.py                # Layer 0: jsonl → cache/sessions/<sid>.json (incremental)
 │   ├── summarize.py              # Layer 1: cache/sessions/<sid>.json → cache/summaries/<sid>.md
 │   ├── classify.py               # Layer 2: cache/summaries/*.md → cache/dashboard.json
 │   │
-│   ├── record-location.py        # hook stdin → cache/session_locations.json
+│   ├── _created.py               # DD-030: card creation registry (fcntl-locked, atomic)
+│   ├── _merge.py                 # DD-031: sub-card merge orchestration (queue + landing plan)
+│   ├── _pending.py               # Pending/blocked card state helper
+│   ├── _subcards.py              # DD-025: sub-card registration (spawn/list/close)
+│   ├── _worktree.py              # Worktree lifecycle helpers (create/clean up git worktrees)
+│   ├── _lifecycle.py             # Card lifecycle transitions
+│   ├── _resources.py             # Resource (MR/PR/CR/issue) link registry
+│   ├── _updates.py               # Incremental card update feed
+│   ├── _cost_alarm.py            # Cost/rate alarm: snapshot(), warn/halt levels (DD-004 base)
 │   ├── _cost_log.py              # Shared cost-logger helper (appends to cost_log.jsonl)
 │   ├── cost.py                   # `stray --cost` reporter
+│   ├── live-state.py             # Live telemetry state for cockpit SSE feed
+│   │
+│   ├── record-location.py        # hook stdin → cache/session_locations.json
 │   │
 │   ├── render.py                 # dashboard.json → ANSI tree (stdout)
-│   ├── render-html.py            # dashboard.json + archive/ + locations → dashboard.html
 │   ├── render-tree.py            # dashboard.json → mindmap-tree.html (markmap)
+│   ├── cockpit.html              # Primary attention cockpit UI (served at /)
 │   │
 │   ├── serve.py                  # Local HTTP service (127.0.0.1:9876)
 │   └── diagnose.py               # `stray --diagnose`
+│
+├── SKILL.md                      # Claude Code skill descriptor (P11.2)
 │
 ├── prompts/
 │   ├── summarize-session.md      # Layer 1 prompt (per-session digest)
 │   └── classify-cross-session.md # Layer 2 prompt (cross-session classifier)
 │
-├── commands/                     # /mindmap and /mindmap-refresh templates
+├── commands/                     # /stray and /stray-refresh slash command templates
 │
 ├── cache/                        # Runtime state, gitignored
 │   ├── config.json               # {lang: zh-CN}
-│   ├── dashboard.json              # Main output
-│   ├── dashboard.html              # Rendered artifact
-│   ├── mindmap-tree.html         # Rendered artifact
+│   ├── dashboard.json            # Main output
+│   ├── dashboard.html            # Rendered artifact
+│   ├── mindmap-tree.html         # Rendered artifact (markmap)
 │   ├── sessions/                 # Layer 0 output: <sid>.json per session
 │   ├── summaries/                # Layer 1 output: <sid>.md per session
 │   ├── state.json                # extract's per-file byte-offset table
@@ -136,7 +150,7 @@ claude-stray/
 └── docs/                         # This dir
 ```
 
-By code size: `render-html.py` (~1900) > `classify.py` (~750) > `summarize.py` (~420) > `render.py` (~415) > `serve.py` (~380) > `diagnose.py` (~340) > everything else <250.
+By code size: `serve.py` (largest) > `classify.py` > `summarize.py` > `render.py` > `diagnose.py` > `_merge.py` / `_created.py` / `_subcards.py` > everything else.
 
 ---
 
@@ -147,13 +161,12 @@ Who calls whom; who reads/writes what. **Solid = direct call**, **dashed = file-
 ```mermaid
 graph TD
     install["install.sh"] -.->|writes| set["~/.claude/settings.json"]
-    install -.->|symlinks| sym["~/.local/bin/mindmap"]
+    install -.->|symlinks| sym["~/.local/bin/stray"]
 
     set -.->|"Stop / SessionStart"| bg["refresh-bg.sh"]
-    sym --> mm["mindmap"]
+    sym --> mm["stray"]
 
     mm --> render["render.py"]
-    mm --> rh["render-html.py"]
     mm --> rt["render-tree.py"]
     mm --> srv["serve.py"]
     mm --> diag["diagnose.py"]
@@ -173,7 +186,7 @@ graph TD
     sum -.->|spawns| claude1["claude --no-session-persistence -p<br/>Haiku 4.5"]
     cls -.->|spawns| claude2["claude --no-session-persistence -p<br/>Haiku 4.5"]
 
-    srv -.->|spawns| rh
+    srv -.->|serves| ck["cockpit.html"]
     srv -.->|spawns| rt
     srv -.->|spawns| prun
     srv -.->|"zellij action"| zj["Zellij"]
@@ -484,7 +497,7 @@ stateDiagram-v2
 
 Two kinds of `archived`:
 - **AI-archived** (>14d idle) — still in dashboard.json with `status=archived`
-- **User-archived** — physically moved to `cache/archive/<ws>/<id>.json`; dashboard.json no longer contains it. The HTML still shows it because `render-html.py` reads the archive/ dir.
+- **User-archived** — physically moved to `cache/archive/<ws>/<id>.json`; dashboard.json no longer contains it. The HTML still shows it because `render-tree.py` and `serve.py` read the archive/ dir.
 
 ---
 
@@ -499,11 +512,37 @@ Locking is layer-scoped, no longer global:
 | Layer 2 (`classify.py`) | `cache/.locks/layer2.lock.d/` | global (one classify at a time) |
 | Layer 2 fan-in | `cache/.layer2.pending` marker | re-run after current finishes |
 | `user_overrides.json` writes | none | last-writer-wins (~100ms window) |
+| `_subcards.py` registry writes | `fcntl.flock` on `<file>.lock` | file-level exclusive lock |
+| `_created.py` registry writes | `fcntl.flock` on `<file>.lock` | file-level exclusive lock |
+| `_merge.py` queue writes | `fcntl.flock` on `<file>.lock` | file-level exclusive lock |
 
-All mkdir locks include stale-lock cleanup (`find -mmin +N` before
-acquire) and `trap rmdir EXIT` to release on crash. `flock(1)` is NOT
-used — it's util-linux-only and missing on stock macOS (lesson from
-P14 ship bug, [feedback_macos_portability](../../.claude/projects/-Users-bby-Code-claude-stray/memory/feedback_macos_portability.md)).
+All mkdir locks (Layer 1/2) include stale-lock cleanup (`find -mmin +N` before
+acquire) and `trap rmdir EXIT` to release on crash. The `_subcards.py` / `_created.py` /
+`_merge.py` family use `fcntl.flock(LOCK_EX)` — POSIX advisory, available on macOS and
+Linux. `flock(1)` (the util-linux shell command) is NOT used anywhere — it's missing on
+stock macOS (lesson from P14 ship bug, [feedback_macos_portability](../../.claude/projects/-Users-bby-Code-claude-stray/memory/feedback_macos_portability.md)).
+
+---
+
+## 11a. Test isolation: environment overrides
+
+All path-sensitive code (serve.py, pipeline-run.sh, _subcards.py, _created.py, _merge.py,
+etc.) honours a set of environment variables that redirect to throwaway locations.
+Integration tests use these to boot a fully isolated real instance without touching the
+user's production cache or tmux session:
+
+| Env var | Default | What it redirects |
+|---|---|---|
+| `STRAY_CACHE_DIR` | `<repo>/cache` | All cache files (dashboard.json, sessions/, summaries/, …) |
+| `STRAY_PROJECTS_DIR` | `~/.claude/projects` | jsonl source directory (Layer 0 input) |
+| `STRAY_PORTS` | `9876` | HTTP port for serve.py |
+| `STRAY_TMUX_SOCKET` | system default | tmux server socket (isolates from real tmux sessions) |
+| `STRAY_NO_BG` | unset | Set to `1` to run pipeline-run.sh in the foreground (no fork) |
+
+`tests/test_merge_e2e.py` (DD-031 slice 5) is the reference integration test:
+it sets all five overrides, boots a real `serve.py`, runs scenario flows through
+the HTTP API against real git repos, and tears down cleanly. The fake `claude`
+stub on PATH ensures zero AI calls during test runs.
 
 ---
 
@@ -531,12 +570,24 @@ you have a burst day with >120 active sessions, the oldest ones fall
 into "cold" territory and stop influencing fresh classification. Fine
 in practice; surfaced here in case scale changes.
 
-### 13.2 No live budget / runaway alarm
+### 13.2 Live budget alarm — monitoring implemented, auto-engage not yet
 
-There's a kill switch (`cache/.refresh-disabled`) but no live alarm.
-You only notice anomaly when you manually run `stray --cost`. DD-004
-plans the daily budget + rate watchdog + dashboard banner; not yet
-implemented.
+`bin/_cost_alarm.py` is implemented and wired into `serve.py`. It reads
+`cache/cost_log.jsonl` and classifies the current state as `ok / warn /
+halt` based on daily spend (default: warn ≥ $2.00, halt ≥ $10.00) and
+call-rate in the last 5-minute window. Thresholds are env-overridable
+(`CLAUDE_WORKTREE_DAILY_WARN_USD`, `CLAUDE_WORKTREE_DAILY_HALT_USD`,
+`CLAUDE_WORKTREE_RATE_WARN`, `CLAUDE_WORKTREE_RATE_HALT`). Console output
+via `--watch` gives a tail-like live view.
+
+What is **not yet implemented** (DD-004 remainder):
+- Auto-engage the kill switch when the alarm level reaches `halt`.
+- Dashboard banner surfacing the alarm level inline on the cockpit.
+- The `/api/health` endpoint that exposes the snapshot to the UI.
+
+Until then: the kill switch (`stray --pause` / `touch cache/.refresh-disabled`)
+remains the only auto-stop mechanism. Run `stray --cost` for a one-shot
+cost report.
 
 ### 13.3 No lifecycle control surface
 
@@ -547,6 +598,48 @@ proposes an opt-in lifecycle model.
 ### 13.4 Cross-host / multi-user
 
 Loopback-only is intentional. No remote access, no collaboration, no plans to support either.
+
+---
+
+## 13b. Historical pitfalls absorbed from design exploration
+
+These were discovered during the initial single-script era (2026-05) and remain
+relevant to anyone extending the pipeline.
+
+### `claude -p --bare` breaks OAuth authentication
+
+`--bare` mode tells the Claude CLI to use only `ANTHROPIC_API_KEY` or
+`apiKeyHelper` — it does **not** read the OAuth keychain. Since stray relies on
+the user's Claude Code subscription (OAuth), Layer 1 and Layer 2 must **never**
+pass `--bare`. Adding it produces `Not logged in · Please run /login`.
+
+### jsonl `away_summary` field
+
+Claude Code writes session recaps as a `system` + `subtype: "away_summary"` line
+in the jsonl:
+
+```json
+{"type": "system", "subtype": "away_summary", "content": "<recap text>", ...}
+```
+
+This is the highest-fidelity recap signal and is read directly by `extract.py`.
+Only ~8% of sessions have it (short sessions, old versions, or closed-recap mode
+may not). The fallback is the signal-authority chain below.
+
+### Signal authority ordering in Layer 1
+
+When summarizing a session, `prompts/summarize-session.md` instructs the AI to
+trust signals in this order (strongest first):
+
+1. `task_events` — explicit `completed:` markers from the user
+2. `edited_files` — actual Write/Edit paths; unforgeable
+3. `last_assistant_summary` — most recent assistant reply opener (has the conclusion)
+4. `away_summary` (`recap`) — authoritative but lags on active sessions
+5. `recent_user_prompts` (last 3) — current focus
+6. `first_user_prompt` — original goal, usually stale
+
+Hardcoded rule: if any of signals 1–3 indicate something is done, never emit
+`{done: false}` for that task.
 
 ---
 

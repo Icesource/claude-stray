@@ -1,3 +1,14 @@
+> **[历史文档 — 已退役]**
+> 本文件是 2026-05 初版设计笔记，描述的单脚本架构（`refresh.sh` / `aggregate.py` / launchd 兜底）
+> 以及 `/mindmap` 命名均已退役（退役提交：`2ae5071`）。
+> 现状请看 [docs/ARCHITECTURE.md](../ARCHITECTURE.md)。
+>
+> **但以下结论仍然有效，且已被现版本吸收：**
+> - **jsonl 结构探针发现**：`away_summary` 以 `system/subtype=away_summary` 落盘，已成为 Layer 0 `extract.py` 的核心信号。
+> - **`--bare` 认证坑**：`claude -p` 的 `--bare` 模式不读 OAuth keychain，与订阅凭据方案互斥，现版本 Layer 1/2 均不使用 `--bare`。
+> - **锁设计取舍**：全局 `mkdir` 原子锁"抢锁失败即放弃"的哲学被保留；现版本演进为层级锁（per-sid Layer 1 + 全局 Layer 2），与本文相同的 macOS-safe（无 `flock(1)`）方式实现。
+> - **信号权威序**（`task_events` > `edited_files` > `last_assistant_summary` > `recap/away_summary` > `recent_user_prompts` > `first_user_prompt`）已固化进 `prompts/summarize-session.md`。
+
 # Claude Code Worktree (Design Notes)
 
 一个为 Claude Code 提供"会话脑图"能力的本地工具：定时读取历史会话，用 AI 自动分类工作项目与进展，最终通过 `/mindmap` 命令在终端以 shell 风格树状图呈现。
