@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Install SKILL.md into ~/.claude/skills/stray/ so the main Claude Code
-# Agent auto-activates it when the user asks about their work.
+# Install the stray SKILLs into ~/.claude/skills/ so the main Claude Code
+# Agent auto-activates them:
+#   stray           — dashboard management actions (open/refresh/pause/cost)
+#   stray-subcards  — fan out parallel sub-cards from a conversation (DD-032)
 #
-# Idempotent. Re-run any time to refresh after a SKILL.md change.
+# Idempotent. Re-run any time to refresh after a SKILL change.
 #
 # Usage:
 #   bash bin/install-skill.sh
@@ -10,22 +12,25 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOME_DIR="$HOME"
-SKILL_SRC="$REPO_ROOT/SKILL.md"
-SKILL_DIR="$HOME_DIR/.claude/skills/stray"
-SKILL_DST="$SKILL_DIR/SKILL.md"
+SKILLS_DIR="$HOME/.claude/skills"
 
-if [ ! -f "$SKILL_SRC" ]; then
-  echo "Error: $SKILL_SRC not found." >&2
-  exit 1
-fi
+install_one() {
+  local src="$1" name="$2"
+  if [ ! -f "$src" ]; then
+    echo "Error: $src not found." >&2
+    exit 1
+  fi
+  mkdir -p "$SKILLS_DIR/$name"
+  cp "$src" "$SKILLS_DIR/$name/SKILL.md"
+  echo "[ok] installed: $SKILLS_DIR/$name/SKILL.md"
+}
 
-mkdir -p "$SKILL_DIR"
-cp "$SKILL_SRC" "$SKILL_DST"
-echo "[ok] installed: $SKILL_DST"
+install_one "$REPO_ROOT/SKILL.md" "stray"
+install_one "$REPO_ROOT/skills/stray-subcards/SKILL.md" "stray-subcards"
+
 echo
-echo "Activates automatically the next time you ask Claude Code about"
-echo "your current work, costs, blocked items, weekly recap, etc."
+echo "Activates automatically the next time you ask Claude Code about your"
+echo "current work / costs (stray), or ask to fan out sub-cards (stray-subcards)."
 echo
 echo "To remove later:"
-echo "  rm -rf $SKILL_DIR"
+echo "  rm -rf $SKILLS_DIR/stray $SKILLS_DIR/stray-subcards"

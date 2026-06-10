@@ -76,12 +76,14 @@ for cli in stray mindmap; do
   fi
 done
 
-# 3. SKILL directory
-SKILL_DIR="$HOME_DIR/.claude/skills/stray"
-if [ -d "$SKILL_DIR" ]; then
-  rm -rf "$SKILL_DIR"
-  echo "[3/6] removed SKILL: $SKILL_DIR"
-fi
+# 3. SKILL directories
+for skill_name in stray stray-subcards; do
+  SKILL_DIR="$HOME_DIR/.claude/skills/$skill_name"
+  if [ -d "$SKILL_DIR" ]; then
+    rm -rf "$SKILL_DIR"
+    echo "[3/6] removed SKILL: $SKILL_DIR"
+  fi
+done
 # Legacy SKILL name from before the rename — clean it up too.
 LEGACY_SKILL="$HOME_DIR/.claude/skills/mindmap"
 if [ -d "$LEGACY_SKILL" ]; then
