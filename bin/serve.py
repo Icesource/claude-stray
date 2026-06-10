@@ -417,6 +417,11 @@ try:
 except Exception:
     _merge = None
 MERGE_JOBS_JSON = CACHE_DIR / "merge-jobs.json"
+# DD-025/030/031 sub-card + merge HTTP handlers live in their own module (the
+# hottest change surface — kept out of serve.py so parallel sub-cards stop
+# colliding here). The mixin reads serve's globals through install().
+import _subcard_api
+_subcard_api.install(sys.modules[__name__])
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"
@@ -950,7 +955,7 @@ def _derived_scheduler_loop(stop_event) -> None:
             _run_derived("weekly_report.py", ["--week", "0"])
 
 
-class Handler(BaseHTTPRequestHandler):
+class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
     server_version = "ccw-helper/2"
 
     def log_message(self, fmt, *args):
@@ -1199,193 +1204,205 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(204); self._cors(); self.end_headers()
 
+    def _serve_favicon(self):
+        # Return a 1x1 transparent SVG so browsers stop asking.
+        svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="13" font-size="14">\xf0\x9f\x97\x82\xef\xb8\x8f</text></svg>'
+        self.send_response(200); self._cors()
+        self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+        self.send_header("Content-Length", str(len(svg)))
+        self.end_headers()
+        self.wfile.write(svg)
+        return
+    def _handle_ping(self):
+        return self._reply(200, {
+            "service": "claude-stray", "version": 2,
+            "has_zellij": has_zellij(),
+            "can_write_disk": True,  # the server CAN write to cache/
+            "terminal": shutil.which("ttyd") is not None,
+            "ttyd": shutil.which("ttyd") is not None,
+        })
+    def _handle_live(self):
+        return self._reply(200, {"live": live_snapshot()})
+    def _handle_data(self):
+        data = {}
+        try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
+        except Exception: data["mindmap"] = None
+        # DD-016 safety net: never serve same-session duplicate cards, even if
+        # a stale/racy classify wrote them (the file is fixed on the next run).
+        try:
+            if data.get("mindmap"):
+                sys.path.insert(0, str(REPO_ROOT / "bin"))
+                import classify
+                classify.dedup_by_session(data["mindmap"])
+        except Exception:
+            pass
+        # Real-time: overlay the freshest Layer-1 当前状态 onto cards whose
+        # session was re-summarized after the dashboard was written, so the
+        # active card reflects your latest turn without waiting for classify.
+        try:
+            _freshen_progress_from_summaries(data.get("mindmap"))
+        except Exception:
+            pass
+        try:
+            _attach_code_location(data.get("mindmap"))  # DD-022-A: real worktree/branch
+            _attach_resource_urls(data.get("mindmap"))  # DD-026: backfill/reconstruct urls
+        except Exception:
+            pass
+        # DD-027: merge in placeholder cards for work created since the last
+        # pipeline run, so the dashboard shows it INSTANTLY (marked _pending →
+        # "准备中"). Once the real card arrives (aligned by session_id /
+        # worktree path) the placeholder is dropped + pruned from the file.
+        try:
+            _merge_pending_cards(data.get("mindmap"))
+        except Exception:
+            pass
+        # Sync health for the empty/first-run state: is the background
+        # analysis running / done / failed, and is claude even available.
+        data["sync"] = _read_sync_status()
+        data["claude_ok"] = bool(shutil.which("claude"))
+        try: data["locations"] = json.load(open(LOCATIONS_JSON))
+        except Exception: data["locations"] = None
+        # Archived items from cache/archive/<ws>/<id>.json — these are
+        # outside dashboard.json so we surface them explicitly so the
+        # browser's hot-refresh shows newly archived items immediately.
+        archived = []
+        if ARCHIVE_DIR.is_dir():
+            for ws_dir in sorted(ARCHIVE_DIR.iterdir()):
+                if not ws_dir.is_dir(): continue
+                for f in sorted(ws_dir.glob("*.json")):
+                    try:
+                        rec = json.loads(f.read_text())
+                    except Exception:
+                        continue
+                    init = rec.get("initiative")
+                    if isinstance(init, dict) and init.get("id"):
+                        archived.append({
+                            "ws_name": rec.get("from_workspace") or ws_dir.name,
+                            "ws_cwd": None,
+                            "init": init,
+                            "archived_at": rec.get("archived_at"),
+                        })
+        data["archived"] = archived
+        sys.path.insert(0, str(REPO_ROOT / "bin"))
+        # Lifecycle state so the dashboard banner can hot-refresh.
+        try:
+            from _lifecycle import status as _lifecycle_status
+            data["lifecycle"] = _lifecycle_status()
+        except Exception as e:
+            data["lifecycle"] = {"paused": False, "_err": str(e)}
+        # Cost-alarm snapshot. Always include in response (future DD-004
+        # banner reads this). Console emits only when level WORSENS
+        # (avoids spam from repeated polls at the same level).
+        try:
+            from _cost_alarm import snapshot as _cost_snap, format_console_line
+            snap = _cost_snap()
+            data["cost_alarm"] = snap
+            _emit_cost_alarm_if_worsened(snap)
+        except Exception as e:
+            data["cost_alarm"] = {"level": "ok", "_err": str(e)}
+        return self._reply(200, data)
+    def _handle_derived(self):
+        # DD-006 derived feature payloads, all in one shot for the
+        # sidebar widgets. Each entry is the latest.json of that
+        # feature, or null if it hasn't been generated yet.
+        out = {}
+        for feat in ("suggestions", "tips", "wellness"):
+            f = DERIVED_DIR / feat / "latest.json"
+            try:
+                out[feat] = json.loads(f.read_text()) if f.exists() else None
+            except Exception:
+                out[feat] = None
+        # Weekly report: list available reports + most recent
+        weekly: dict = {"latest": None, "available": []}
+        reports_dir = DERIVED_DIR / "reports"
+        if reports_dir.is_dir():
+            md_files = sorted(reports_dir.glob("*.md"), reverse=True)
+            weekly["available"] = [f.stem for f in md_files][:12]
+            if md_files:
+                weekly["latest"] = {
+                    "week": md_files[0].stem,
+                    "generated_at": json.loads(
+                        (reports_dir / ".last_run.json").read_text()
+                    ).get("at") if (reports_dir / ".last_run.json").exists() else None,
+                }
+        out["weekly"] = weekly
+        return self._reply(200, out)
+    def _handle_weekly_report(self):
+        from urllib.parse import parse_qs as _pqs
+        qs = _pqs(urlparse(self.path).query)
+        week = (qs.get("week") or [""])[0]
+        if not re.match(r"^\d{4}-W\d{2}$", week):
+            return self._reply(400, {"error": "week must be YYYY-Www"})
+        md_path = DERIVED_DIR / "reports" / f"{week}.md"
+        if not md_path.exists():
+            return self._reply(404, {"error": "report not generated"})
+        return self._reply(200, {
+            "week": week,
+            "markdown": md_path.read_text(),
+        })
+    def _handle_version(self):
+        # Last-known update snapshot (written by startup check + the
+        # 24h background recheck thread). Browser polls this for the
+        # update banner; we never block on a fresh fetch here.
+        try:
+            import _updates
+            snap = _updates.read_state()
+        except Exception as e:
+            snap = {"error": str(e)}
+        return self._reply(200, snap or {})
+    # Exact-path GET routes (zero-arg handler methods; query via self.path).
+    _GET_ROUTES = {
+        "/favicon.ico": "_serve_favicon",
+        "/ping": "_handle_ping",
+        "/api/live": "_handle_live",
+        "/api/events": "_handle_sse",
+        "/api/transcript": "_handle_transcript",
+        "/api/archive-weeks": "_handle_archive_weeks",
+        "/api/subtasks": "_handle_subtasks",
+        "/api/data": "_handle_data",
+        "/api/derived": "_handle_derived",
+        "/api/weekly-report": "_handle_weekly_report",
+        "/api/version": "_handle_version",
+    }
+
     def do_GET(self):
         path = urlparse(self.path).path
         if path in ("/", "/index", "/index.html", "/cockpit", "/cockpit.html"):
-            return self._serve_file(COCKPIT_FILE, "text/html")  # cockpit is the default page now
+            return self._serve_file(COCKPIT_FILE, "text/html")  # cockpit is the default page
         if path == "/mindmap-tree.html":
             return self._serve_file(TREE_FILE, "text/html")
-        if path == "/favicon.ico":
-            # Return a 1x1 transparent SVG so browsers stop asking.
-            svg = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><text y="13" font-size="14">\xf0\x9f\x97\x82\xef\xb8\x8f</text></svg>'
-            self.send_response(200); self._cors()
-            self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
-            self.send_header("Content-Length", str(len(svg)))
-            self.end_headers()
-            self.wfile.write(svg)
-            return
-        if path == "/ping":
-            return self._reply(200, {
-                "service": "claude-stray", "version": 2,
-                "has_zellij": has_zellij(),
-                "can_write_disk": True,  # the server CAN write to cache/
-                "terminal": shutil.which("ttyd") is not None,
-                "ttyd": shutil.which("ttyd") is not None,
-            })
-        if path == "/api/live":
-            return self._reply(200, {"live": live_snapshot()})
-        if path == "/api/events":
-            return self._handle_sse()
-        if path == "/api/transcript":
-            return self._handle_transcript()
-        if path == "/api/archive-weeks":
-            return self._handle_archive_weeks()
-        if path == "/api/subtasks":
-            from urllib.parse import parse_qs
-            parent = (parse_qs(urlparse(self.path).query).get("parent") or [""])[0]
-            if not parent or _created is None:
-                return self._reply(200, {"parent": parent, "subcards": []})
-            try:
-                mm = json.load(open(DASHBOARD_JSON))
-            except Exception:
-                mm = {}
-            try:
-                _attach_code_location(mm)   # populate worktree/branch on the cards
-                _attach_resource_urls(mm)   # DD-026: backfill/reconstruct MR/CR urls
-            except Exception:
-                pass
-
-            def _jsonl(sid):
-                import glob as _g
-                hits = _g.glob(os.path.expanduser(f"~/.claude/projects/*/{sid}.jsonl"))
-                return hits[0] if hits else None
-            md = _created.subtask_metadata(parent, mm,
-                                           _created.load(str(CREATED_JSON)), _jsonl)
-            return self._reply(200, {"parent": parent, "subcards": md})
-        if path == "/api/data":
-            data = {}
-            try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
-            except Exception: data["mindmap"] = None
-            # DD-016 safety net: never serve same-session duplicate cards, even if
-            # a stale/racy classify wrote them (the file is fixed on the next run).
-            try:
-                if data.get("mindmap"):
-                    sys.path.insert(0, str(REPO_ROOT / "bin"))
-                    import classify
-                    classify.dedup_by_session(data["mindmap"])
-            except Exception:
-                pass
-            # Real-time: overlay the freshest Layer-1 当前状态 onto cards whose
-            # session was re-summarized after the dashboard was written, so the
-            # active card reflects your latest turn without waiting for classify.
-            try:
-                _freshen_progress_from_summaries(data.get("mindmap"))
-            except Exception:
-                pass
-            try:
-                _attach_code_location(data.get("mindmap"))  # DD-022-A: real worktree/branch
-                _attach_resource_urls(data.get("mindmap"))  # DD-026: backfill/reconstruct urls
-            except Exception:
-                pass
-            # DD-027: merge in placeholder cards for work created since the last
-            # pipeline run, so the dashboard shows it INSTANTLY (marked _pending →
-            # "准备中"). Once the real card arrives (aligned by session_id /
-            # worktree path) the placeholder is dropped + pruned from the file.
-            try:
-                _merge_pending_cards(data.get("mindmap"))
-            except Exception:
-                pass
-            # Sync health for the empty/first-run state: is the background
-            # analysis running / done / failed, and is claude even available.
-            data["sync"] = _read_sync_status()
-            data["claude_ok"] = bool(shutil.which("claude"))
-            try: data["locations"] = json.load(open(LOCATIONS_JSON))
-            except Exception: data["locations"] = None
-            # Archived items from cache/archive/<ws>/<id>.json — these are
-            # outside dashboard.json so we surface them explicitly so the
-            # browser's hot-refresh shows newly archived items immediately.
-            archived = []
-            if ARCHIVE_DIR.is_dir():
-                for ws_dir in sorted(ARCHIVE_DIR.iterdir()):
-                    if not ws_dir.is_dir(): continue
-                    for f in sorted(ws_dir.glob("*.json")):
-                        try:
-                            rec = json.loads(f.read_text())
-                        except Exception:
-                            continue
-                        init = rec.get("initiative")
-                        if isinstance(init, dict) and init.get("id"):
-                            archived.append({
-                                "ws_name": rec.get("from_workspace") or ws_dir.name,
-                                "ws_cwd": None,
-                                "init": init,
-                                "archived_at": rec.get("archived_at"),
-                            })
-            data["archived"] = archived
-            sys.path.insert(0, str(REPO_ROOT / "bin"))
-            # Lifecycle state so the dashboard banner can hot-refresh.
-            try:
-                from _lifecycle import status as _lifecycle_status
-                data["lifecycle"] = _lifecycle_status()
-            except Exception as e:
-                data["lifecycle"] = {"paused": False, "_err": str(e)}
-            # Cost-alarm snapshot. Always include in response (future DD-004
-            # banner reads this). Console emits only when level WORSENS
-            # (avoids spam from repeated polls at the same level).
-            try:
-                from _cost_alarm import snapshot as _cost_snap, format_console_line
-                snap = _cost_snap()
-                data["cost_alarm"] = snap
-                _emit_cost_alarm_if_worsened(snap)
-            except Exception as e:
-                data["cost_alarm"] = {"level": "ok", "_err": str(e)}
-            return self._reply(200, data)
-        if path == "/api/derived":
-            # DD-006 derived feature payloads, all in one shot for the
-            # sidebar widgets. Each entry is the latest.json of that
-            # feature, or null if it hasn't been generated yet.
-            out = {}
-            for feat in ("suggestions", "tips", "wellness"):
-                f = DERIVED_DIR / feat / "latest.json"
-                try:
-                    out[feat] = json.loads(f.read_text()) if f.exists() else None
-                except Exception:
-                    out[feat] = None
-            # Weekly report: list available reports + most recent
-            weekly: dict = {"latest": None, "available": []}
-            reports_dir = DERIVED_DIR / "reports"
-            if reports_dir.is_dir():
-                md_files = sorted(reports_dir.glob("*.md"), reverse=True)
-                weekly["available"] = [f.stem for f in md_files][:12]
-                if md_files:
-                    weekly["latest"] = {
-                        "week": md_files[0].stem,
-                        "generated_at": json.loads(
-                            (reports_dir / ".last_run.json").read_text()
-                        ).get("at") if (reports_dir / ".last_run.json").exists() else None,
-                    }
-            out["weekly"] = weekly
-            return self._reply(200, out)
-        if path == "/api/weekly-report":
-            from urllib.parse import parse_qs as _pqs
-            qs = _pqs(urlparse(self.path).query)
-            week = (qs.get("week") or [""])[0]
-            if not re.match(r"^\d{4}-W\d{2}$", week):
-                return self._reply(400, {"error": "week must be YYYY-Www"})
-            md_path = DERIVED_DIR / "reports" / f"{week}.md"
-            if not md_path.exists():
-                return self._reply(404, {"error": "report not generated"})
-            return self._reply(200, {
-                "week": week,
-                "markdown": md_path.read_text(),
-            })
-        if path == "/api/version":
-            # Last-known update snapshot (written by startup check + the
-            # 24h background recheck thread). Browser polls this for the
-            # update banner; we never block on a fresh fetch here.
-            try:
-                import _updates
-                snap = _updates.read_state()
-            except Exception as e:
-                snap = {"error": str(e)}
-            return self._reply(200, snap or {})
-        # Static file passthrough from cache/ (limited to known whitelist below)
+        handler = self._GET_ROUTES.get(path)
+        if handler:
+            return getattr(self, handler)()
+        # Static file passthrough from cache/ (path-traversal guarded)
         if path.startswith("/cache/"):
             rel = path[len("/cache/"):]
             if ".." in rel or rel.startswith("/"):
                 return self._reply(403, {"error": "forbidden"})
             return self._serve_file(CACHE_DIR / rel)
         self._reply(404, {"error": "not found", "path": path})
+
+    # path -> handler-method name; every handler takes the parsed JSON body.
+    _POST_ROUTES = {
+        "/focus": "_handle_focus",
+        "/newpane": "_handle_newpane",
+        "/api/save": "_handle_save",
+        "/api/refresh": "_handle_refresh",
+        "/api/lifecycle": "_handle_lifecycle",
+        "/api/consolidate-tasks": "_handle_consolidate",
+        "/api/update": "_handle_update",
+        "/api/merge": "_handle_merge",
+        "/api/delete": "_handle_delete",
+        "/api/subcard-close": "_handle_subcard_close",
+        "/api/subcard-merge": "_handle_subcard_merge",
+        "/api/subcard-land": "_handle_subcard_land",
+        "/api/archive": "_handle_archive",
+        "/api/terminal": "_handle_terminal",
+        "/api/new-session": "_handle_new_session",
+        "/api/terminal-close": "_handle_terminal_close",
+        "/api/send": "_handle_send",
+        "/api/suggest": "_handle_suggest",
+    }
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -1396,24 +1413,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return self._reply(400, {"error": "bad json"})
 
-        if path == "/focus":     return self._handle_focus(body)
-        if path == "/newpane":   return self._handle_newpane(body)
-        if path == "/api/save":  return self._handle_save(body)
-        if path == "/api/refresh": return self._handle_refresh(body)
-        if path == "/api/lifecycle": return self._handle_lifecycle(body)
-        if path == "/api/consolidate-tasks": return self._handle_consolidate(body)
-        if path == "/api/update": return self._handle_update(body)
-        if path == "/api/merge": return self._handle_merge(body)
-        if path == "/api/delete": return self._handle_delete(body)
-        if path == "/api/subcard-close": return self._handle_subcard_close(body)
-        if path == "/api/subcard-merge": return self._handle_subcard_merge(body)
-        if path == "/api/subcard-land": return self._handle_subcard_land(body)
-        if path == "/api/archive": return self._handle_archive(body)
-        if path == "/api/terminal": return self._handle_terminal(body)
-        if path == "/api/new-session": return self._handle_new_session(body)
-        if path == "/api/terminal-close": return self._handle_terminal_close(body)
-        if path == "/api/send": return self._handle_send(body)
-        if path == "/api/suggest": return self._handle_suggest(body)
+        handler = self._POST_ROUTES.get(path)
+        if handler:
+            return getattr(self, handler)(body)
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_send(self, body: dict):
@@ -1767,145 +1769,6 @@ class Handler(BaseHTTPRequestHandler):
                                  "worktree_name": wt_name if want_wt else None,
                                  "parent": parent or None})
 
-    def _spawn_subcard(self, cwd: str, name: str, parent: str, prompt: str,
-                       *, wt_name=None, branch=None, base=None, on_capture=None):
-        """DD-025: fan out a sub-card — run `claude -p --worktree <slug>` DETACHED.
-        DD-031: wt_name/branch/base let a MERGE-AGENT spawn on `merge-<slug>` off the
-        target branch; on_capture(sid) fires when the child sid is captured (the
-        merge orchestration records merge_sid through it).
-        It creates .claude/worktrees/<slug>/ + branch worktree-<slug> + a resumable
-        session, runs the seeded task headless, then exits. A bg thread captures the
-        child's session id (its first cwd == the worktree) and records the parent
-        link. The cockpit shows it nested under the parent; "open terminal" resumes
-        it (sole driver — the -p process already exited). No ttyd for the child."""
-        if _worktree is None:
-            return (500, {"error": "worktree helper unavailable"})
-        cl0 = _worktree.compute_code_location(cwd)
-        if not cl0 and parent:
-            # UI spawn may not know the parent card's cwd — derive it from the
-            # parent session itself (its jsonl's first cwd), then retry.
-            cwd = _resume_cwd_for(parent) or cwd
-            cl0 = _worktree.compute_code_location(cwd)
-        if not cl0:
-            return (400, {"error": "not a git repo",
-                                     "hint": "子卡要在一个 git 仓库目录里 spawn"})
-        if not prompt:
-            return (400, {"error": "empty task", "hint": "子卡需要一个任务描述"})
-        claude = shutil.which("claude")
-        if not claude:
-            return (503, {"error": "claude not found", "hint": "claude 不在 PATH 上"})
-        import uuid as _uuid
-        wt_name = wt_name or _worktree.slugify(name) or ("task-" + _uuid.uuid4().hex[:6])
-        # realpath so the captured child cwd (resolved, e.g. /tmp→/private/tmp) matches
-        wt_path = os.path.realpath(os.path.join(
-            cl0.get("main_repo") or cwd, ".claude", "worktrees", wt_name))
-        # DD-025 (interactive substrate): no `claude -p`. Create the worktree, then run
-        # INTERACTIVE claude (seeded with the task) in a DETACHED tmux session — it runs
-        # immediately and stays alive, so you attach to it and DRIVE it (resume model),
-        # and its sid is captured promptly. The cockpit "open terminal" attaches to this
-        # same tmux (sole driver → single-driver safe, never a `--resume` fork).
-        tmux = shutil.which("tmux")
-        if not tmux:
-            return (503, {"error": "tmux not found", "hint": "子卡交互式底层需要 tmux"})
-        ttyd = shutil.which("ttyd")
-        token = "new-" + _uuid.uuid4().hex[:8]
-        holder = "stray-" + token[:8]
-        main_repo = cl0.get("main_repo") or cwd
-        branch = branch or ("worktree-" + wt_name)
-        base_arg = (" " + shlex.quote(base)) if base else ""   # DD-031: branch off target
-        child_env = {k: v for k, v in os.environ.items() if not k.startswith("ZELLIJ")}
-        inner = ("git -C " + shlex.quote(main_repo) + " worktree add -b " + shlex.quote(branch)
-                 + " " + shlex.quote(wt_path) + base_arg + " 2>/dev/null || git -C " + shlex.quote(main_repo)
-                 + " worktree add " + shlex.quote(wt_path) + " 2>/dev/null ; cd "
-                 + shlex.quote(wt_path) + " && exec " + shlex.quote(claude)
-                 + " --dangerously-skip-permissions " + shlex.quote(prompt))
-        try:
-            if not _TMUX_CONF.exists():
-                _TMUX_CONF.write_text("set -g status off\nset -g mouse off\nset -g escape-time 10\n")
-        except Exception:
-            pass
-        try:
-            subprocess.run([tmux, "-L", _TMUX_SOCKET, "-f", str(_TMUX_CONF), "new-session", "-d",
-                            "-s", holder, "bash", "-lc", inner], env=child_env,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
-        except Exception as e:
-            return (500, {"error": "tmux start failed: " + str(e)})
-        # a ttyd that ATTACHES to that tmux when the cockpit opens the sub-card
-        port = None
-        if ttyd:
-            import socket as _socket
-            s = _socket.socket(); s.bind(("127.0.0.1", 0)); port = s.getsockname()[1]; s.close()
-            attach = (shlex.quote(tmux) + " -L " + _TMUX_SOCKET + " -f " + shlex.quote(str(_TMUX_CONF))
-                      + " new-session -A -s " + shlex.quote(holder))
-            args = [ttyd, "-p", str(port), "-i", "127.0.0.1", "-W",
-                    "-t", "titleFixed=" + wt_name, "-t", "rendererType=dom",
-                    "-t", "rightClickSelectsWord=true"]
-            idx = _ttyd_patched_index()
-            if idx:
-                args += ["-I", idx]
-            args += ["bash", "-lc", attach]
-            try:
-                tproc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                         env=child_env, start_new_session=True)
-                _TERMINALS[token] = {"port": port, "pid": tproc.pid, "holder": "tmux"}
-                _save_terminals()
-            except Exception:
-                port = None
-        # DD-027/030: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
-        if _pending is not None:
-            try:
-                _pending.register(str(PENDING_JSON), token, name=name, cwd=cwd,
-                                  worktree_path=wt_path, worktree_name=wt_name, parent=parent or None)
-            except Exception:
-                pass
-        if _created is not None:
-            try:
-                _created.register(str(CREATED_JSON), token, name=name, cwd=cwd,
-                                  worktree_path=wt_path, worktree_name=wt_name,
-                                  parent=parent or None, initial_task=prompt or "")
-            except Exception:
-                pass
-        # capture the child sid → record parent link + align placeholder + re-key terminal
-        if _subcards is not None:
-            since = time.time() - 2
-
-            def _capture():
-                for _ in range(60):
-                    time.sleep(1)
-                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
-                    if sid:
-                        try:
-                            _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
-                        except Exception:
-                            pass
-                        if _created is not None:
-                            try:
-                                _created.capture_sid(str(CREATED_JSON), token, sid)
-                            except Exception:
-                                pass
-                        if _pending is not None:
-                            try:
-                                _pending.capture_sid(str(PENDING_JSON), token, sid)
-                            except Exception:
-                                pass
-                        try:
-                            ent = _TERMINALS.pop(token, None)
-                            if ent:
-                                _TERMINALS[sid] = ent
-                                _save_terminals()
-                        except Exception:
-                            pass
-                        if on_capture:                 # DD-031: record merge_sid
-                            try:
-                                on_capture(sid)
-                            except Exception:
-                                pass
-                        return
-            threading.Thread(target=_capture, daemon=True).start()
-        url = ("http://127.0.0.1:" + str(port) + "/") if port else None
-        return (200, {"ok": True, "worktree_name": wt_name, "worktree": True,
-                                 "parent": parent, "url": url, "token": token})
-
     def _handle_merge(self, body: dict):
         """DD-016: record a user-declared merge into initiative_links.json and
         apply it to dashboard.json immediately. Body:
@@ -2083,143 +1946,6 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             return self._reply(500, {"error": str(e)})
 
-    def _subcard_close_blockers(self, sid: str, wt_path: str | None) -> dict:
-        """Reasons NOT to silently destroy a sub-card's worktree. `git worktree
-        remove --force` + `branch -D` are irreversible, so before doing it we check
-        for live work the user almost certainly doesn't mean to nuke:
-          - live:  the session is actively running, OR an embedded terminal (ttyd)
-                   is still attached to it (= a claude is alive inside the worktree).
-          - dirty: the worktree has uncommitted changes (would be lost forever).
-        Returns {"live": bool, "dirty": bool, "reasons": [str], "hint": str};
-        the caller turns a non-empty result into a 409 needs-confirm unless the
-        client explicitly retries with force=True."""
-        live = dirty = False
-        reasons: list[str] = []
-        try:
-            if (live_snapshot().get(sid) or {}).get("status") == "running":
-                live = True
-                reasons.append("会话正在运行(AI 正在生成)")
-        except Exception:
-            pass
-        try:
-            ent = _TERMINALS.get(sid)
-            if ent and _pid_alive(ent.get("pid")):
-                live = True
-                reasons.append("有一个嵌入终端正连着这个会话")
-        except Exception:
-            pass
-        if wt_path and os.path.isdir(wt_path):
-            try:
-                out = _worktree._git(wt_path, "status", "--porcelain", timeout=10)
-                if (out or "").strip():
-                    dirty = True
-                    reasons.append("worktree 有未提交的改动")
-            except Exception:
-                pass
-        return {"live": live, "dirty": dirty, "reasons": reasons,
-                "hint": "；".join(reasons)}
-
-    def _handle_subcard_close(self, body: dict):
-        """DD-025: close a sub-card — delete its git worktree + branch, unregister it
-        from subcards.json, kill its terminal, and tombstone its card. (Merge-back is
-        done by the user beforehand; this is the cleanup.) Body: {sid, id?, force?}.
-
-        Live-guard: a sub-card whose session is still running / has a live terminal /
-        has uncommitted changes is NOT destroyed on the first request — we return
-        409 {needs_confirm} so the cockpit can hard-confirm; only force=True proceeds
-        (and only force=True passes `--force` to `git worktree remove`)."""
-        sid = (body.get("sid") or "").strip()
-        iid = (body.get("id") or "").strip()
-        force = bool(body.get("force"))
-        if not sid:
-            return self._reply(400, {"error": "sid required"})
-        # resolve the worktree + main repo from the child's own cwd up front, so the
-        # guard can inspect it and the removal below can reuse it.
-        main_repo = wt_path = None
-        try:
-            cwd = _resume_cwd_for(sid)
-            cl = _worktree.compute_code_location(cwd) if (cwd and _worktree) else None
-            if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
-                main_repo, wt_path = cl["main_repo"], cl["worktree"]
-        except Exception:
-            pass
-        if not force:
-            blk = self._subcard_close_blockers(sid, wt_path)
-            if blk["live"] or blk["dirty"]:
-                return self._reply(409, {"needs_confirm": True, **blk})
-        removed_wt = None
-        # 1. kill its embedded terminal FIRST — so the claude inside isn't writing
-        #    into a directory we're about to pull out from under it.
-        try:
-            self._close_terminal(sid)
-        except Exception:
-            pass
-        # 2. remove the worktree + branch. Plain `remove` (no --force) when not
-        #    confirmed: git itself refuses on a dirty/locked worktree — a backstop
-        #    behind our own guard. force=True (user accepted the loss) → --force.
-        try:
-            if main_repo and wt_path:
-                ent = (_created.by_sid(_created.load(str(CREATED_JSON))).get(sid)
-                       if _created else None) or {}
-                slug = ent.get("worktree_name") or os.path.basename(wt_path.rstrip("/"))
-                rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt_path]
-                _worktree._git(main_repo, *rm, timeout=20)
-                _worktree._git(main_repo, "worktree", "prune", timeout=10)
-                if slug:
-                    _worktree._git(main_repo, "branch", "-D", "worktree-" + slug, timeout=10)
-                removed_wt = wt_path
-        except Exception:
-            pass
-        # 3. unregister from the sub-card registry (legacy + unified)
-        try:
-            if _subcards:
-                _subcards.remove(str(SUBCARDS_JSON), sid)
-        except Exception:
-            pass
-        if _created is not None:
-            try:
-                _created.remove_by_sid(str(CREATED_JSON), sid)
-            except Exception:
-                pass
-        # 4. tombstone the card id + drop it from the dashboard now
-        if iid:
-            try:
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                try:
-                    doc = json.loads(DELETED_JSON.read_text())
-                    if not isinstance(doc, dict):
-                        doc = {}
-                except Exception:
-                    doc = {}
-                inits = doc.setdefault("initiatives", [])
-                if not any(x.get("id") == iid for x in inits):
-                    # DD-029: store the child sid so classify session-tombstones it
-                    # (a closed sub-card whose summary lingers won't resurrect under
-                    # a fresh id).
-                    inits.append({"id": iid, "deleted_at": now, "sessions": [sid]})
-                doc["version"] = 1
-                doc["updated_at"] = now
-                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
-                self._remove_from_dashboard(iid)
-            except Exception:
-                pass
-        return self._reply(200, {"ok": True, "removed_worktree": removed_wt})
-
-    # ---- DD-031: sub-card merge closure -----------------------------------
-
-    def _parent_of_sid(self, sid: str) -> str:
-        for mod, path, idx in ((_created, CREATED_JSON, lambda d: _created.by_sid(d)),
-                               (_subcards, SUBCARDS_JSON, lambda d: d)):
-            try:
-                if mod:
-                    ent = (idx(mod.load(str(path))) or {}).get(sid)
-                    if ent and ent.get("parent"):
-                        return ent["parent"]
-            except Exception:
-                pass
-        return ""
-
     def _card_id_for_sid(self, sid: str) -> str:
         try:
             d = json.loads(DASHBOARD_JSON.read_text())
@@ -2252,163 +1978,6 @@ class Handler(BaseHTTPRequestHandler):
             self._remove_from_dashboard(iid)
         except Exception:
             pass
-
-    def _teardown_worktree_card(self, sid: str, force: bool = True):
-        """Remove a worktree card's worktree+branch, unregister, tombstone. Reused by
-        merge auto-close (original sub-card AND the merge-agent)."""
-        try:
-            self._close_terminal(sid)
-        except Exception:
-            pass
-        cl = None
-        try:
-            cwd = _resume_cwd_for(sid)
-            cl = _worktree.compute_code_location(cwd) if (cwd and _worktree) else None
-        except Exception:
-            cl = None
-        removed = None
-        if not (cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree")):
-            print(f"[teardown] {sid[:12]}: no worktree location resolved ({cl})",
-                  file=sys.stderr)
-        else:
-            main_repo, wt, branch = cl["main_repo"], cl["worktree"], cl.get("branch")
-            try:
-                rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt]
-                if _worktree._git(main_repo, *rm, timeout=20) is None:
-                    print(f"[teardown] {sid[:12]}: worktree remove failed: {wt}",
-                          file=sys.stderr)
-                _worktree._git(main_repo, "worktree", "prune", timeout=10)
-                if branch and _worktree._git(main_repo, "branch", "-D", branch,
-                                             timeout=10) is None:
-                    print(f"[teardown] {sid[:12]}: branch -D failed: {branch}",
-                          file=sys.stderr)
-                removed = wt
-            except Exception as e:
-                print(f"[teardown] {sid[:12]}: {e}", file=sys.stderr)
-        try:
-            if _subcards:
-                _subcards.remove(str(SUBCARDS_JSON), sid)
-        except Exception:
-            pass
-        try:
-            if _created:
-                _created.remove_by_sid(str(CREATED_JSON), sid)
-        except Exception:
-            pass
-        self._tombstone_card(self._card_id_for_sid(sid), sid)
-        return removed
-
-    def _start_merge_job(self, job: dict):
-        """Spawn the merge-agent sub-card for a queued job (on merge-<slug> off target,
-        seeded with the merge task). Sets state=resolving + records merge_sid on capture."""
-        sub_slug, target, main_repo = job["sub_slug"], job["target_branch"], job["main_repo"]
-        merge_slug = job["merge_slug"]
-        sub_branch = "worktree-" + sub_slug
-        parent = self._parent_of_sid(job["sub_sid"]) or ""
-        prompt = (
-            "你是一个「合并 agent」。当前 worktree 在分支 " + merge_slug
-            + "(基于目标分支 " + target + ")。任务:把子卡分支 " + sub_branch + " 合并进来。\n"
-            "步骤:\n"
-            "1) 运行: git merge " + sub_branch + "\n"
-            "2) 若有冲突,逐个解决 —— 理解双方代码的语义,合出正确的结果(不是简单二选一)。\n"
-            "3) 解决后: git add -A && git commit(默认合并提交信息即可)。\n"
-            "4) 若某处冲突你拿不准怎么解才对,【停下来,把冲突点和你的疑问清楚地告诉用户,等用户回答】,不要瞎猜。\n"
-            "5) 全部解决并 commit 后,告诉用户:「合并完成,可以落地了」。\n"
-            "只做这一件事,不要改与本次合并无关的东西。")
-        sub_sid = job["sub_sid"]
-        code, _payload = self._spawn_subcard(
-            main_repo, "合并 ⊳ " + sub_slug, parent, prompt,
-            wt_name=merge_slug, branch=merge_slug, base=target,
-            on_capture=lambda msid: _merge.update_job(str(MERGE_JOBS_JSON), sub_sid, merge_sid=msid))
-        _merge.update_job(str(MERGE_JOBS_JSON), sub_sid, state="resolving")
-        return code
-
-    def _handle_subcard_merge(self, body: dict):
-        """Start (or queue) a merge of a sub-card back to a target branch. DD-031."""
-        if _merge is None or _worktree is None:
-            return self._reply(503, {"error": "merge unavailable"})
-        sid = (body.get("sid") or "").strip()
-        target = (body.get("target") or "").strip()
-        force = bool(body.get("force"))
-        if not sid:
-            return self._reply(400, {"error": "sid required"})
-        cwd = _resume_cwd_for(sid)
-        cl = _worktree.compute_code_location(cwd) if cwd else None
-        if not cl or not cl.get("is_worktree"):
-            return self._reply(400, {"error": "不是子卡 worktree", "hint": "只有 worktree 子卡能合并"})
-        main_repo, sub_wt, sub_branch = cl["main_repo"], cl["worktree"], cl.get("branch") or ""
-        sub_slug = (sub_branch[len("worktree-"):] if sub_branch.startswith("worktree-")
-                    else os.path.basename(sub_wt.rstrip("/")))
-        if not target:
-            target = (_worktree._git(main_repo, "branch", "--show-current") or "").strip() or "main"
-        target_exists = _worktree._git(main_repo, "rev-parse", "--verify", "--quiet", target) is not None
-        commits_ahead = 0
-        if target_exists and sub_branch:
-            try:
-                commits_ahead = int((_worktree._git(
-                    main_repo, "rev-list", "--count", target + ".." + sub_branch) or "0") or "0")
-            except (TypeError, ValueError):
-                commits_ahead = 0
-        sub_dirty = bool((_worktree._git(sub_wt, "status", "--porcelain") or "").strip())
-        dec = _merge.evaluate_precheck(commits_ahead, sub_dirty, target_exists)
-        if not dec["ok"]:
-            return self._reply(400, {"error": dec["reason"]})
-        if dec["warn"] and not force:
-            return self._reply(409, {"needs_confirm": True, "warn": dec["warn"]})
-        job, started = _merge.add_job(str(MERGE_JOBS_JSON), sub_sid=sid, sub_slug=sub_slug,
-                                      target_branch=target, main_repo=main_repo)
-        if started and job.get("state") == "queued":
-            self._start_merge_job(job)
-        return self._reply(200, {"ok": True, "queued": not started, "target": target,
-                                 "merge_slug": _merge.merge_branch(sub_slug)})
-
-    def _handle_subcard_land(self, body: dict):
-        """Fast-forward target to the conflict-free merge branch, auto-close the
-        original sub-card + merge-agent, then start the next queued merge. DD-031."""
-        if _merge is None or _worktree is None:
-            return self._reply(503, {"error": "merge unavailable"})
-        msid = (body.get("merge_sid") or "").strip()
-        sub_sid = (body.get("sub_sid") or "").strip()
-        force = bool(body.get("force"))
-        job = _merge.job_by_merge_sid(str(MERGE_JOBS_JSON), msid) if msid else None
-        if not job and sub_sid:
-            job = next((j for j in _merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
-                        if j.get("sub_sid") == sub_sid), None)
-        if not job:
-            return self._reply(404, {"error": "找不到合并任务"})
-        main_repo, target, merge_slug = job["main_repo"], job["target_branch"], job["merge_slug"]
-        if _worktree._git(main_repo, "rev-parse", "--verify", "--quiet", merge_slug) is None:
-            return self._reply(400, {"error": "合并分支还不存在(合并 agent 可能还没建好/没提交)"})
-        cur = (_worktree._git(main_repo, "branch", "--show-current") or "").strip()
-        checked_out_here = (cur == target)
-        # -uno: only TRACKED changes count as WIP. Untracked files (e.g. the
-        # .claude/worktrees/ dir the spawn itself creates) are never touched by
-        # a fast-forward — and if one would collide, git refuses the merge
-        # itself. Without -uno every landing is forever "blocked_wip".
-        main_dirty = bool((_worktree._git(main_repo, "status", "--porcelain", "-uno") or "").strip())
-        plan = _merge.landing_plan(checked_out_here, main_dirty)
-        if plan == "blocked_wip" and not force:
-            return self._reply(409, {"needs_confirm": True,
-                                     "reason": "主卡有未提交改动 —— 先 commit/stash 再落地(或强制)"})
-        if plan == "ff_here" or (plan == "blocked_wip" and force):
-            out = _worktree._git(main_repo, "merge", "--ff-only", merge_slug, timeout=40)
-        else:  # ff_ref: target not checked out here → advance the ref (FF-enforced)
-            out = _worktree._git(main_repo, "push", ".", merge_slug + ":" + target, timeout=40)
-        if out is None:
-            return self._reply(409, {"error": "落地失败(不是 fast-forward?目标可能已前进)",
-                                     "hint": "让合并 agent 先 `git merge " + target + "` 追上再落地"})
-        self._teardown_worktree_card(job["sub_sid"], force=True)
-        if job.get("merge_sid"):
-            self._teardown_worktree_card(job["merge_sid"], force=True)
-        _merge.remove_job(str(MERGE_JOBS_JSON), job["sub_sid"])
-        nxt = _merge.next_queued(str(MERGE_JOBS_JSON))
-        if nxt:
-            try:
-                self._start_merge_job(nxt)
-            except Exception:
-                pass
-        threading.Thread(target=regenerate_html, daemon=True).start()
-        return self._reply(200, {"ok": True, "target": target, "landed": merge_slug})
 
     def _handle_archive(self, body: dict):
         iid = (body.get("id") or "").strip()
