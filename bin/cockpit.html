@@ -690,7 +690,7 @@
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
-    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid){ if(typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); if(typeof renderTermSide==='function') renderTermSide(tm.dataset.sid); if(typeof renderTermTimeline==='function') renderTermTimeline(tm.dataset.sid); } }
+    const tm=document.getElementById('termModal'); if(tm&&tm.style.display!=='none'&&tm.dataset.sid){ if(typeof renderTermTabs==='function') renderTermTabs(tm.dataset.sid); if(typeof renderTermRes==='function') renderTermRes(tm.dataset.sid); if(typeof renderTermSide==='function') renderTermSide(tm.dataset.sid); if(typeof renderTermTimeline==='function') renderTermTimeline(tm.dataset.sid); } }
   async function loadData(){ try{
     const [d,l]=await Promise.all([
       fetch(ORIGIN+'/api/data').then(r=>r.json()),
@@ -1298,13 +1298,24 @@
     // card. Every open terminal maps to its family root; sub-cards (二级) live in
     // the left 会话族 panel, never the header. The active family's root always
     // shows, even when only one of its sub-cards is open.
+    renderTermTabs(sid);
+    const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
+    if(nt&&act) nt.href=act.src;
+  }
+  // Header tabs (one per 一级卡片 family). Split out of setActiveTerm so the data
+  // refresh loop can re-run it — otherwise the tab's status icon froze at whatever
+  // band it had when the terminal opened (e.g. stays 进行中 after the card已转「等你」).
+  function renderTermTabs(sid){
+    const m=getTermModal(); if(!m) return;
+    const tabsEl=m.querySelector('.termtabs'); if(!tabsEl) return;
+    const frames=[...m.querySelectorAll('.termstack iframe')];
     const openSids=new Set(frames.map(f=>f.dataset.sid));
     const activeRoot=familyRootSid(sid);
     const roots=[], seen=new Set();
     const pushRoot=rs=>{ if(rs&&!seen.has(rs)){ seen.add(rs); roots.push(rs); } };
     for(const f of frames) pushRoot(familyRootSid(f.dataset.sid));
     pushRoot(activeRoot);
-    m.querySelector('.termtabs').innerHTML=roots.map(rs=>{
+    tabsEl.innerHTML=roots.map(rs=>{
       const r=findRowForSid(rs), nm=r&&r.name?r.name:'';
       const rootOpen=openSids.has(rs), on=rs===activeRoot;
       const icon=r?statusIcon(r.band,11):'';   // r.band is the family-rolled-up band
@@ -1313,8 +1324,6 @@
       const click=rootOpen?`setActiveTerm('${esc(rs)}')`:`openTerminal(event,'${esc(rs)}')`;
       return `<span class="ttab${on?' on':''}${rootOpen?'':' closed'}" onclick="${click}" title="${esc((nm||rs)+' · 一级卡片')}">${icon}<span class="tt-l">${lbl}</span><b onclick="endTermFamily(event,'${esc(rs)}')" title="关闭这张卡片(及其已开的子卡终端)">×</b></span>`;
     }).join('');
-    const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
-    if(nt&&act) nt.href=act.src;
   }
   // close a whole 一级卡片 family: end every open terminal whose family root matches.
   function endTermFamily(e,rootSid){ if(e)e.stopPropagation();
