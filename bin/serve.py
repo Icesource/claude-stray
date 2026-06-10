@@ -1942,12 +1942,28 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
 
+    def _sessions_for_init_id(self, iid: str) -> list:
+        """The sessions[] of the card with this id, from the current dashboard.
+        DD-029: stored in the tombstone so classify can session-tombstone (not just
+        id-tombstone) — otherwise the AI re-mints the still-summarized session under
+        a fresh id and the deleted card resurrects."""
+        try:
+            d = json.loads(DASHBOARD_JSON.read_text())
+            for ws in d.get("workspaces", []):
+                for i in (ws.get("initiatives") or []):
+                    if i.get("id") == iid:
+                        return list(i.get("sessions") or [])
+        except Exception:
+            pass
+        return []
+
     def _handle_delete(self, body: dict):
         iid = (body.get("id") or "").strip()
         if not iid:
             return self._reply(400, {"error": "id required"})
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        sessions = self._sessions_for_init_id(iid)
         try:
             try:
                 doc = json.loads(DELETED_JSON.read_text())
@@ -1956,7 +1972,7 @@ class Handler(BaseHTTPRequestHandler):
                 doc = {}
             inits = doc.setdefault("initiatives", [])
             if not any(x.get("id") == iid for x in inits):
-                inits.append({"id": iid, "deleted_at": now})
+                inits.append({"id": iid, "deleted_at": now, "sessions": sessions})
             doc["version"] = 1
             doc["updated_at"] = now
             DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
@@ -2070,7 +2086,10 @@ class Handler(BaseHTTPRequestHandler):
                     doc = {}
                 inits = doc.setdefault("initiatives", [])
                 if not any(x.get("id") == iid for x in inits):
-                    inits.append({"id": iid, "deleted_at": now})
+                    # DD-029: store the child sid so classify session-tombstones it
+                    # (a closed sub-card whose summary lingers won't resurrect under
+                    # a fresh id).
+                    inits.append({"id": iid, "deleted_at": now, "sessions": [sid]})
                 doc["version"] = 1
                 doc["updated_at"] = now
                 DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))

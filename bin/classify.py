@@ -937,6 +937,39 @@ def archived_session_ids_on_disk() -> dict[str, str]:
     return out
 
 
+def deleted_session_ids_on_disk() -> dict[str, str]:
+    """Map {session_id: most-recent deleted_at} for sessions that lived inside a
+    user-DELETED card — the delete-side mirror of archived_session_ids_on_disk().
+
+    DD-029: a deleted card was ONLY id-blacklisted (deleted_ids.json stored just
+    the id). But the contributing session keeps its summary, so the AI re-mints a
+    card for it with a FRESH id every round, dodging the id tombstone → the card
+    the user deleted resurrects as a top-level card (observed: a merged sub-card
+    deleted 4-5 times kept coming back). Same cure as archive: time-windowed
+    SESSION tombstoning — filter the session from `hot` until
+    last_activity_at > deleted_at, so genuine new work auto-un-tombstones while an
+    untouched done session stays gone.
+
+    Only tombstone entries carrying a `sessions` list participate; older id-only
+    entries keep their id-based strip (strip_deleted_from_prior / the re-strip).
+    """
+    out: dict[str, str] = {}
+    if not DELETED_FILE.exists():
+        return out
+    try:
+        d = json.loads(DELETED_FILE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return out
+    for x in (d.get("initiatives") or []):
+        deleted_at = x.get("deleted_at") or ""
+        for sid in (x.get("sessions") or []):
+            if not sid:
+                continue
+            if sid not in out or deleted_at > out[sid]:
+                out[sid] = deleted_at
+    return out
+
+
 # ---------- apply user overrides ------------------------------------------
 
 
@@ -2205,10 +2238,18 @@ def main() -> int:
     # again (last_activity_at > archived_at). New activity
     # automatically un-tombstones — the session reappears in a fresh
     # initiative. Prevents the "archive recreates with a new id" loop.
-    archived_sids_map = archived_session_ids_on_disk()
-    if archived_sids_map:
+    # DD-029: deletions get the SAME time-windowed session-tombstone as archives
+    # (delete used to be id-only → AI re-minted the still-summarized session under
+    # a fresh id every round → the deleted sub-card kept resurrecting top-level).
+    # Merge both maps; a session tombstoned by either stays out until touched after
+    # the later timestamp.
+    tombstoned_sids_map = dict(archived_session_ids_on_disk())
+    for sid, ts in deleted_session_ids_on_disk().items():
+        if sid not in tombstoned_sids_map or ts > tombstoned_sids_map[sid]:
+            tombstoned_sids_map[sid] = ts
+    if tombstoned_sids_map:
         def is_still_archived(sid: str, fm: dict) -> bool:
-            arch_at = archived_sids_map.get(sid)
+            arch_at = tombstoned_sids_map.get(sid)
             if not arch_at:
                 return False
             last_act = fm.get("last_activity_at") or ""
@@ -2405,12 +2446,38 @@ def main() -> int:
     # before the write, and drop any matching initiative so the freshest user
     # intent always wins regardless of timing.
     fresh_tombstoned = archived_ids_on_disk() | set(load_deleted_ids() or [])
-    if fresh_tombstoned:
+    # DD-029: ALSO strip by SESSION-tombstone, not just id. A deleted/archived card's
+    # session keeps its summary, and carry-forward / mint_subcard / the AI each re-mint
+    # a card for it under a DIFFERENT id that dodges the id strip above — this is the
+    # engine behind "删了的子卡每隔一会儿又冒出来成一级卡". Re-read the session
+    # tombstones FRESH and drop any non-sealed card whose EVERY session is still
+    # tombstoned (untouched since deletion). All-sessions (not any) so a card that also
+    # holds live work survives. Time window auto-frees a session the user resumes.
+    fresh_sess_tomb = dict(archived_session_ids_on_disk())
+    for sid, ts in deleted_session_ids_on_disk().items():
+        if sid not in fresh_sess_tomb or ts > fresh_sess_tomb[sid]:
+            fresh_sess_tomb[sid] = ts
+    last_act_by_sid = {sid: (fm.get("last_activity_at") or "")
+                       for sid, fm, _b, _r in all_summaries}
+
+    def _session_tombstoned(sid: str) -> bool:
+        ts = fresh_sess_tomb.get(sid)
+        return bool(ts) and (last_act_by_sid.get(sid, "") <= ts)
+
+    if fresh_tombstoned or fresh_sess_tomb:
         stripped = 0
         for ws in new_mm.get("workspaces", []) or []:
-            kept = [i for i in (ws.get("initiatives") or [])
-                    if i.get("id") not in fresh_tombstoned]
-            stripped += len(ws.get("initiatives") or []) - len(kept)
+            kept = []
+            for i in (ws.get("initiatives") or []):
+                if i.get("id") in fresh_tombstoned:
+                    stripped += 1
+                    continue
+                sids = i.get("sessions") or []
+                if (not i.get("sealed") and sids
+                        and all(_session_tombstoned(s) for s in sids)):
+                    stripped += 1
+                    continue
+                kept.append(i)
             ws["initiatives"] = kept
         new_mm["workspaces"] = [w for w in new_mm.get("workspaces", [])
                                 if (w.get("initiatives") or [])]
