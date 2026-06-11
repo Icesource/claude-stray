@@ -44,6 +44,12 @@ try:
     REPO_ROOT = repo_root()
 except Exception:
     REPO_ROOT = Path(__file__).resolve().parent.parent
+
+try:
+    from _cache_lock import cache_lock as _cache_lock
+except Exception:
+    import contextlib
+    _cache_lock = contextlib.nullcontext  # type: ignore[assignment]
 # STRAY_CACHE_DIR / STRAY_PROJECTS_DIR / STRAY_PORTS / STRAY_TMUX_SOCKET /
 # STRAY_NO_BG are test-isolation overrides: integration tests run a REAL serve
 # against a throwaway cache + fake projects dir + ephemeral port without ever
@@ -1892,17 +1898,18 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sessions = self._sessions_for_init_id(iid)
         try:
-            try:
-                doc = json.loads(DELETED_JSON.read_text())
-                if not isinstance(doc, dict): doc = {}
-            except Exception:
-                doc = {}
-            inits = doc.setdefault("initiatives", [])
-            if not any(x.get("id") == iid for x in inits):
-                inits.append({"id": iid, "deleted_at": now, "sessions": sessions})
-            doc["version"] = 1
-            doc["updated_at"] = now
-            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            with _cache_lock("overrides"):
+                try:
+                    doc = json.loads(DELETED_JSON.read_text())
+                    if not isinstance(doc, dict): doc = {}
+                except Exception:
+                    doc = {}
+                inits = doc.setdefault("initiatives", [])
+                if not any(x.get("id") == iid for x in inits):
+                    inits.append({"id": iid, "deleted_at": now, "sessions": sessions})
+                doc["version"] = 1
+                doc["updated_at"] = now
+                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
             # DD-030: a deleted card must also leave the created-cards registry, else
             # it's re-shown as a 准备中 placeholder / re-exempted next render. Match by
             # the placeholder id too (a no-sid 准备中 card is `pending::<token>`, a
@@ -1943,18 +1950,19 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
-            try:
-                doc = json.loads(DELETED_JSON.read_text())
-                if not isinstance(doc, dict):
+            with _cache_lock("overrides"):
+                try:
+                    doc = json.loads(DELETED_JSON.read_text())
+                    if not isinstance(doc, dict):
+                        doc = {}
+                except Exception:
                     doc = {}
-            except Exception:
-                doc = {}
-            inits = doc.setdefault("initiatives", [])
-            if not any(x.get("id") == iid for x in inits):
-                inits.append({"id": iid, "deleted_at": now, "sessions": [sid] if sid else []})
-            doc["version"] = 1
-            doc["updated_at"] = now
-            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+                inits = doc.setdefault("initiatives", [])
+                if not any(x.get("id") == iid for x in inits):
+                    inits.append({"id": iid, "deleted_at": now, "sessions": [sid] if sid else []})
+                doc["version"] = 1
+                doc["updated_at"] = now
+                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
             self._remove_from_dashboard(iid)
         except Exception:
             pass
@@ -1977,11 +1985,12 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
             if not found:
                 return self._reply(404, {"error": "not found"})
             ws_name = fws.get("name") or "unknown"
-            ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
-            ws_dir.mkdir(parents=True, exist_ok=True)
-            payload = {"archived_at": now, "archived_by": "user",
-                       "from_workspace": ws_name, "initiative": found}
-            (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            with _cache_lock("overrides"):
+                ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
+                ws_dir.mkdir(parents=True, exist_ok=True)
+                payload = {"archived_at": now, "archived_by": "user",
+                           "from_workspace": ws_name, "initiative": found}
+                (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
             self._remove_from_dashboard(iid)
             return self._reply(200, {"ok": True})
         except Exception as e:
@@ -2009,44 +2018,45 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-            # 1) user_overrides.json — task_toggles + deleted_tasks are
-            # consumed by classify (cleared after applying). hidden_artifacts
-            # is a persistent suppression list: it stays in the file across
-            # classify runs so a user-deleted MR / PR / etc. never reappears
-            # even when Layer 1 keeps re-emitting it from session frontmatter.
-            ov = {
-                "version": 1,
-                "task_toggles": body.get("task_toggles") or [],
-                "deleted_tasks": body.get("deleted_tasks") or [],
-                "hidden_artifacts": body.get("hidden_artifacts") or [],
-                "updated_at": now,
-            }
-            OVERRIDES_JSON.write_text(json.dumps(ov, indent=2, ensure_ascii=False))
-
-            # 2) deleted_ids.json
-            del_ids = body.get("deleted") or []
-            del_doc = {
-                "version": 1,
-                "initiatives": [{"id": i, "deleted_at": now} for i in del_ids],
-                "updated_at": now,
-            }
-            DELETED_JSON.write_text(json.dumps(del_doc, indent=2, ensure_ascii=False))
-
-            # 3) archive/<ws>/<init_id>.json — write any archived entries we have
-            archived_data = body.get("archived_data") or {}
-            for init_id, rec in archived_data.items():
-                if not init_id or not isinstance(rec, dict):
-                    continue
-                ws_name = rec.get("ws_name") or "unknown"
-                ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
-                ws_dir.mkdir(parents=True, exist_ok=True)
-                payload = {
-                    "archived_at": now,
-                    "archived_by": "user",
-                    "from_workspace": ws_name,
-                    "initiative": rec.get("init"),
+            with _cache_lock("overrides"):
+                # 1) user_overrides.json — task_toggles + deleted_tasks are
+                # consumed by classify (cleared after applying). hidden_artifacts
+                # is a persistent suppression list: it stays in the file across
+                # classify runs so a user-deleted MR / PR / etc. never reappears
+                # even when Layer 1 keeps re-emitting it from session frontmatter.
+                ov = {
+                    "version": 1,
+                    "task_toggles": body.get("task_toggles") or [],
+                    "deleted_tasks": body.get("deleted_tasks") or [],
+                    "hidden_artifacts": body.get("hidden_artifacts") or [],
+                    "updated_at": now,
                 }
-                (ws_dir / f"{init_id}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+                OVERRIDES_JSON.write_text(json.dumps(ov, indent=2, ensure_ascii=False))
+
+                # 2) deleted_ids.json
+                del_ids = body.get("deleted") or []
+                del_doc = {
+                    "version": 1,
+                    "initiatives": [{"id": i, "deleted_at": now} for i in del_ids],
+                    "updated_at": now,
+                }
+                DELETED_JSON.write_text(json.dumps(del_doc, indent=2, ensure_ascii=False))
+
+                # 3) archive/<ws>/<init_id>.json — write any archived entries we have
+                archived_data = body.get("archived_data") or {}
+                for init_id, rec in archived_data.items():
+                    if not init_id or not isinstance(rec, dict):
+                        continue
+                    ws_name = rec.get("ws_name") or "unknown"
+                    ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
+                    ws_dir.mkdir(parents=True, exist_ok=True)
+                    payload = {
+                        "archived_at": now,
+                        "archived_by": "user",
+                        "from_workspace": ws_name,
+                        "initiative": rec.get("init"),
+                    }
+                    (ws_dir / f"{init_id}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
 
             # Regenerate HTML so a reload reflects the save (dashboard.json is
             # untouched until next refresh; the HTML uses overrides to compute
