@@ -404,6 +404,32 @@ def test_closing_sub_mid_merge_cancels_job(h):
     assert os.path.exists(os.path.join(h.repo, "iota.txt"))
 
 
+@_scenario("closeguard")
+def test_close_blocks_on_unmerged_not_on_terminal(h):
+    """关卡守卫(用户实测驱动):一张已合并干净的卡能直接关(终端连着不算);
+    有未合并提交的卡要拦下来(branch -D 会丢这些提交)。"""
+    sid, slug = h.spawn_subcard("kappa", [
+        "echo k > kappa.txt", "git add -A && git commit -q -m kappa"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    # unmerged commit → must block (even though a terminal is attached)
+    st, j = h.post("/api/subcard-close", {"sid": sid})
+    assert st == 409 and j.get("unmerged") is True, (st, j)
+    # merge it back and land, so the branch tip becomes contained in main
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200, (st, j)
+    h.wait_merge_ready(slug)
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
+    assert st == 200 and j.get("ok"), (st, j)
+    # now fully merged → close must NOT be blocked (attached terminal alone is
+    # not a reason) and it tears the worktree down
+    st, j = h.post("/api/subcard-close", {"sid": sid})
+    assert st == 200 and j.get("ok"), ("merged card must close freely", st, j)
+    h._wait(lambda: not h.branch_exists("worktree-" + slug), 15,
+            "close should have removed the merged branch")
+
+
 @_scenario("wip")
 def test_wip_blocks_landing(h):
     sid, slug = h.spawn_subcard("epsilon", [

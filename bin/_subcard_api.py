@@ -238,21 +238,25 @@ class SubcardAPI:
         return (200, payload)
 
 
-    def _subcard_close_blockers(self, sid: str, wt_path: str | None) -> dict:
+    def _subcard_close_blockers(self, sid: str, wt_path: str | None,
+                                main_repo: str | None = None,
+                                branch: str | None = None) -> dict:
         """Reasons NOT to silently destroy a sub-card's worktree. `git worktree
         remove --force` + `branch -D` are irreversible, so before doing it we
         check for work the user almost certainly doesn't mean to nuke:
-          - live:  the session is ACTIVELY RUNNING (AI generating) — closing now
-                   interrupts a turn in flight.
-          - dirty: the worktree has uncommitted changes (would be lost forever).
+          - live:    the session is ACTIVELY RUNNING (AI generating) — closing
+                     now interrupts a turn in flight.
+          - dirty:   the worktree has UNCOMMITTED changes (lost on remove).
+          - unmerged: the branch has COMMITS not yet reachable from any other
+                     branch (lost on `branch -D`). This is the real danger the
+                     user cares about — committed work that never landed back.
         A merely-attached embedded terminal is NOT a blocker: the card you're
         driving always has one, and closing just tears the terminal down (no
-        data loss). (Fix 2026-06-11: an idle attached terminal used to gate the
-        close, so every card you actually used refused to close.)
-        Returns {"live": bool, "dirty": bool, "reasons": [str], "hint": str};
-        the caller turns a non-empty result into a 409 needs-confirm unless the
-        client explicitly retries with force=True."""
-        live = dirty = False
+        data loss). (2026-06-11: idle terminal used to gate close → every card
+        you used refused to close; then refined dirty→unmerged per user.)
+        Returns {live, dirty, unmerged, reasons, hint}; the caller turns any
+        true flag into a 409 needs-confirm unless force=True."""
+        live = dirty = unmerged = False
         reasons: list[str] = []
         try:
             if (S.live_snapshot().get(sid) or {}).get("status") == "running":
@@ -268,8 +272,26 @@ class SubcardAPI:
                     reasons.append("worktree 有未提交的改动")
             except Exception:
                 pass
-        return {"live": live, "dirty": dirty, "reasons": reasons,
-                "hint": "；".join(reasons)}
+        # unmerged: branch tip not contained in any OTHER branch → its commits
+        # would vanish on `branch -D`. `git branch --contains <tip>` lists every
+        # branch that already has this work; if only the branch itself shows up,
+        # nothing has absorbed it yet.
+        if main_repo and branch:
+            try:
+                tip = S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet",
+                                       branch, timeout=10)
+                if tip:
+                    out = S._worktree._git(main_repo, "branch", "--format=%(refname:short)",
+                                           "--contains", tip, timeout=10) or ""
+                    others = [b.strip() for b in out.splitlines()
+                              if b.strip() and b.strip() != branch]
+                    if not others:
+                        unmerged = True
+                        reasons.append("分支有提交还没合并回任何其它分支(关闭会丢失)")
+            except Exception:
+                pass
+        return {"live": live, "dirty": dirty, "unmerged": unmerged,
+                "reasons": reasons, "hint": "；".join(reasons)}
 
 
     def _handle_subcard_close(self, body: dict):
@@ -299,8 +321,8 @@ class SubcardAPI:
         except Exception:
             pass
         if not force:
-            blk = self._subcard_close_blockers(sid, wt_path)
-            if blk["live"] or blk["dirty"]:
+            blk = self._subcard_close_blockers(sid, wt_path, main_repo, wt_branch)
+            if blk["live"] or blk["dirty"] or blk["unmerged"]:
                 return self._reply(409, {"needs_confirm": True, **blk})
         removed_wt = None
         # 1. kill its embedded terminal FIRST — so the claude inside isn't writing
