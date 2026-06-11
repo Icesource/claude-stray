@@ -240,11 +240,15 @@ class SubcardAPI:
 
     def _subcard_close_blockers(self, sid: str, wt_path: str | None) -> dict:
         """Reasons NOT to silently destroy a sub-card's worktree. `git worktree
-        remove --force` + `branch -D` are irreversible, so before doing it we check
-        for live work the user almost certainly doesn't mean to nuke:
-          - live:  the session is actively running, OR an embedded terminal (ttyd)
-                   is still attached to it (= a claude is alive inside the worktree).
+        remove --force` + `branch -D` are irreversible, so before doing it we
+        check for work the user almost certainly doesn't mean to nuke:
+          - live:  the session is ACTIVELY RUNNING (AI generating) — closing now
+                   interrupts a turn in flight.
           - dirty: the worktree has uncommitted changes (would be lost forever).
+        A merely-attached embedded terminal is NOT a blocker: the card you're
+        driving always has one, and closing just tears the terminal down (no
+        data loss). (Fix 2026-06-11: an idle attached terminal used to gate the
+        close, so every card you actually used refused to close.)
         Returns {"live": bool, "dirty": bool, "reasons": [str], "hint": str};
         the caller turns a non-empty result into a 409 needs-confirm unless the
         client explicitly retries with force=True."""
@@ -254,13 +258,6 @@ class SubcardAPI:
             if (S.live_snapshot().get(sid) or {}).get("status") == "running":
                 live = True
                 reasons.append("会话正在运行(AI 正在生成)")
-        except Exception:
-            pass
-        try:
-            ent = S._TERMINALS.get(sid)
-            if ent and S._pid_alive(ent.get("pid")):
-                live = True
-                reasons.append("有一个嵌入终端正连着这个会话")
         except Exception:
             pass
         if wt_path and os.path.isdir(wt_path):
