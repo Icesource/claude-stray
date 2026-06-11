@@ -10,6 +10,19 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
+- **DD-033: 子卡自己是合并 agent**(`cdff798`):砍掉「合并 ⊳」agent 卡 ——
+  合并 = 把指令注入子卡自己的会话(活卡 send-keys / 死卡带全上下文 resume),
+  在子卡分支上 merge 目标;落地 = FF 目标到子卡分支 tip;**落地后子卡保留**
+  (可继续使用,手动 × 关闭)。落地后的新提交天然随落地带走。保留串行队列/
+  三闸门/WIP 拦截/人类一闸。`/api/data` 暴露 merge_jobs,子卡行三态按钮。
+- **P11.0: cache 写锁**(`c9853f5`):`bin/_cache_lock.py`;/api/save、delete、
+  archive、tombstone 与 classify 的 overrides 消费走同一把 fcntl 锁。
+- **UI 审视五项落地**(`0fc4ce0`):首访默认「按注意力」视图;脑图默认折叠;
+  tips 气泡缩成猫图标 hover 展开;「待查看」HUD 权重对齐 RANK;idle 行内嵌
+  artifact chip;全闲置提示;归档纵向排列。
+
+### Added
+
 - **落地自动追赶**(DD-031 跟进,`f77b88d`):落地遇「目标分支已前进(非 FF)」
   或「子卡在合并后又有新提交(会被静默丢弃)」时,不再只甩提示让人手动催 ——
   serve 直接把追赶指令注入合并 agent 的 tmux 会话,UI 提示「已自动通知,
