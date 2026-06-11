@@ -10,6 +10,34 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
+- **落地自动追赶**(DD-031 跟进,`f77b88d`):落地遇「目标分支已前进(非 FF)」
+  或「子卡在合并后又有新提交(会被静默丢弃)」时,不再只甩提示让人手动催 ——
+  serve 直接把追赶指令注入合并 agent 的 tmux 会话,UI 提示「已自动通知,
+  解完再点落地」。新增 catchup/abort 集成测试场景。
+- **spawn trust 边界**(`1c5c5a3`):未被 Claude 信任过的仓库里 spawn 子卡会
+  无声卡在 folder-trust 弹窗(`--dangerously-skip-permissions` 不豁免)。现在
+  spawn 响应带启发式 trust_warning(警告不拦截);捕获线程 15s 无 sid 时探测
+  pane,占位卡显示可操作的「⚠ 等 trust 确认」。
+- **DD-032 发现点**:起子卡弹窗底部提示「对话里说拆子卡即可 fan out」。
+
+### Fixed
+
+- 子卡 running 不再传染主卡归带(只保留 needs_you 上卷;子卡活动由 ⑃ 徽章
+  表达,主卡永远显示自己的真实状态)(`1041781`)。
+- 关闭合并 agent 卡(或合并中的原子卡)现在会取消 merge job 并推进队列 ——
+  此前 job 卡死 resolving 永久占住串行锁,之后所有合并被堵死(`1041781`)。
+- 关卡删分支按真实分支名(合并 agent 在 merge-<slug> 上,旧代码硬编码
+  worktree-<slug> 永远删不中)(`1041781`)。
+- toast 提到 z-index 90,不再被终端遮罩盖住(`f77b88d`)。
+
+### Changed
+
+- **物理退役旧双表**(`0712976`):`pending-cards.json` 零读者 → 5 处写全删,
+  `bin/_pending.py` + 其测试退役(-366 行);`subcards.json` 停写新条目,
+  遗留读 union 与关卡清理保留。
+
+### Added
+
 - **DD-030: 创建卡统一身份** (commits `d5ab024` → `9848ef2` + `88571dc`).
   废弃了「占位卡 + 真卡交接」的双身份机制(bug 根源),改为一条 session
   一张 `card::<sid>` 卡、创建即定型。
