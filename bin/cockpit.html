@@ -354,10 +354,11 @@
   .tside-item .ts-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
   /* 紧凑徽章:只一个图标,完整说明在 tooltip */
   .mbadge.compact{padding:1px 5px;font-size:11px;font-weight:600}
-  .mbadge{flex:none;font-size:10px;padding:1px 6px;border-radius:4px;white-space:nowrap;line-height:1.5}
+  .mbadge{flex:none;font-size:10px;padding:1px 6px;border-radius:4px;white-space:nowrap;line-height:1.5;cursor:default}
   .mbadge.merged{color:var(--done);background:color-mix(in srgb,var(--done) 12%,transparent)}
+  /* ahead + dirty 都是「关闭会丢工作」的警告,同用琥珀警告色,靠图标(⎌N / ✎)区分 */
   .mbadge.ahead{color:var(--needs);background:color-mix(in srgb,var(--needs) 13%,transparent)}
-  .mbadge.dirty{color:var(--run);background:color-mix(in srgb,var(--run) 13%,transparent)}
+  .mbadge.dirty{color:var(--needs);background:color-mix(in srgb,var(--needs) 13%,transparent)}
   .sr-merge{flex:none;font-size:10.5px;padding:1px 7px;margin-left:2px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-dim);cursor:pointer;opacity:.6;transition:opacity .12s,color .12s,border-color .12s}
   .subrow:hover .sr-merge{opacity:.95}
   .sr-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
@@ -892,7 +893,7 @@
   // (for the roomier dashboard sub-row). Same tooltip either way.
   function mergeBadge(c,compact){ const m=c.merge_status; if(!m)return '';
     const k=compact?' compact':'';
-    if(m.dirty)return `<span class="mbadge dirty${k}" title="worktree 有未提交改动 — 关闭会丢失">${compact?'●':'●未提交'}</span>`;
+    if(m.dirty)return `<span class="mbadge dirty${k}" title="worktree 有未提交改动 — 关闭会丢失">${compact?'✎':'✎ 未提交'}</span>`;
     if(m.ahead>0)return `<span class="mbadge ahead${k}" title="有 ${m.ahead} 个提交还没合并回任何其它分支 — 关闭会丢失。先合并落地">⎌${m.ahead}${compact?'':' 未合并'}</span>`;
     return `<span class="mbadge merged${k}" title="提交都已合并回主干 — 关闭安全">${compact?'✓':'✓已合并'}</span>`;}
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
