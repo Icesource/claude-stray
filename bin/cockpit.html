@@ -325,13 +325,13 @@
   .termside{position:fixed;z-index:71;top:calc((100vh - min(80vh,880px))/2);right:calc(50% + 558px);
     width:264px;max-height:min(80vh,880px);overflow-y:auto;overflow-x:visible;display:flex;flex-direction:column;gap:7px;padding:2px 8px 6px}
   .termside[hidden]{display:none}
-  /* 主卡行:和子卡 chip 一样可点(切回主卡终端),视觉上更重一档 */
-  .tside-h{display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;height:36px;padding:0 11px;text-align:left;
-    border:1px solid var(--hair);border-left:2.5px solid var(--connector);border-radius:8px;background:var(--bg-elev);box-shadow:0 4px 13px rgba(0,0,0,.38);
-    color:var(--ink-dim);cursor:pointer;font-family:var(--sans);margin:0 0 1px;transition:transform .14s,border-color .15s,box-shadow .15s}
-  .tside-h:hover{border-color:var(--run);transform:translateX(3px);box-shadow:0 9px 22px rgba(0,0,0,.5)}
-  .tside-h.on{border-left-color:var(--run);color:var(--ink);border-color:color-mix(in srgb,var(--run) 45%,transparent);cursor:default}
-  .tside-h.on:hover{transform:none}
+  /* 主卡行:保持原来的「主标题」观感(无背景无边框),但整行可点(切回主卡终端) */
+  .tside-h{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0;text-align:left;
+    font-family:var(--mono);color:var(--ink-dim);font-weight:700;margin:0 0 1px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7);
+    cursor:pointer;transition:color .12s}
+  .tside-h:hover .tside-h-n{color:var(--run)}
+  .tside-h.on{cursor:default}
+  .tside-h.on:hover .tside-h-n{color:var(--ink)}
   .tside-h .ts-open{width:6px;height:6px;border-radius:50%;background:var(--run);box-shadow:0 0 5px var(--run-glow);flex:none}
   .tside-item{position:relative;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;height:33px;padding:0 11px;text-align:left;
     border:1px solid var(--hair);border-left:2.5px solid var(--connector);border-radius:8px;background:var(--bg-elev);box-shadow:0 4px 13px rgba(0,0,0,.38);
@@ -379,7 +379,7 @@
   .ttab.closed{opacity:.62;border-style:dashed}   /* 一级卡片在册但终端未开 — 点开 */
   /* 左侧会话族:一级卡片标题 + 二级(子卡)分组小标题 */
   .tside-h{display:flex;align-items:center;gap:6px}
-  .tside-h .tside-h-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:12px;letter-spacing:.02em;text-transform:none;font-weight:600}
+  .tside-h .tside-h-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:600;transition:color .12s}
   .tside-sub-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-faint);text-transform:uppercase;font-weight:700;margin:7px 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .tside-empty{font-size:11px;color:var(--ink-faint);padding:4px 2px 2px;font-family:var(--mono)}
   /* #3 当前卡片进度时间线 — 横在终端顶部的一条 */
