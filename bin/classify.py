@@ -1392,6 +1392,46 @@ def stabilize_card_ids_against_prior(new_mm: dict, prior: dict) -> int:
     return n
 
 
+def restore_lost_sessions(new_mm: dict, prior: dict) -> int:
+    """Invariant: the AI may not EMPTY a card's sessions[]. A session leaves a
+    card only by moving to another card (claim/merge) or by tombstone. Observed
+    2026-06-11: 「HSF app-doc 身份规范化与去重索引」 came out of a classify round
+    with sessions:[] while its session was held by NO other card — the card
+    survived (carry-forward keeps cards) but became un-enterable (终端 needs a
+    sid). This net restores prior sessions to any non-sealed card that still
+    exists but lost ALL its sessions, skipping sessions that are tombstoned or
+    now legitimately held by another card."""
+    if not prior:
+        return 0
+    held: set[str] = set()
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            for s in (init.get("sessions") or []):
+                held.add(s)
+    tomb: set[str] = set()
+    try:
+        tomb = set(deleted_session_ids_on_disk().keys())
+    except Exception:
+        pass
+    prior_sessions = {}
+    for ws in (prior.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if init.get("id") and (init.get("sessions") or []):
+                prior_sessions[init["id"]] = list(init["sessions"])
+    fixed = 0
+    for ws in (new_mm.get("workspaces") or []):
+        for init in (ws.get("initiatives") or []):
+            if init.get("sealed") or (init.get("sessions") or []):
+                continue
+            cand = [s for s in prior_sessions.get(init.get("id") or "", [])
+                    if s not in held and s not in tomb]
+            if cand:
+                init["sessions"] = cand
+                held.update(cand)
+                fixed += 1
+    return fixed
+
+
 def enforce_carry_forward_initiatives(new_mm: dict, prior: dict,
                                        deleted_ids: list[str]) -> int:
     """DD-014 — mechanical guarantee that every PRIOR initiative survives
@@ -2440,6 +2480,10 @@ def main() -> int:
     if restored:
         print(f"[classify] !! carry-forward restored {restored} "
               f"initiative(s) AI dropped from PRIOR", file=sys.stderr)
+    sess_fixed = restore_lost_sessions(new_mm, prior)
+    if sess_fixed:
+        print(f"[classify] !! restored sessions on {sess_fixed} card(s) the AI "
+              f"emptied (sessions only leave via claim/tombstone)", file=sys.stderr)
     rule_repairs = enforce_cold_and_terminal_monotone(new_mm, prior, hot_sids)
     if rule_repairs:
         print(f"[classify] enforced cold/terminal-monotone rules: {rule_repairs} repairs")
