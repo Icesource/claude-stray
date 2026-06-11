@@ -42,12 +42,17 @@
   .brand .mark{width:9px;height:9px;border-radius:2px;background:var(--needs);box-shadow:0 0 8px 1px var(--needs-glow);transform:translateY(1px)}
   .brand .name{font-family:var(--mono);font-size:13px;letter-spacing:.04em;color:var(--ink-dim)}
   .brand .sub{font-size:12px;color:var(--ink-faint)}
+  .mid .chip{flex:none;margin-left:8px}
+  .allidle{margin:10px 4px;font-size:11.5px;color:var(--ink-faint);text-align:center}
   .hud{display:flex;align-items:baseline;gap:20px;margin-left:4px}
   .hud .stat{display:flex;align-items:baseline;gap:6px}
   .hud .n{font-family:var(--mono);font-size:21px;font-weight:600;letter-spacing:-.01em}
   .hud .lbl{font-size:12.5px;color:var(--ink-dim)}
   .hud .sep{color:var(--hair);font-size:16px}
   .hud .k-needs .n,.hud .k-needs .lbl{color:var(--needs)} .hud .k-run .n{color:var(--run)} .hud .k-idle .n{color:var(--idle)} .hud .k-dun .n,.hud .k-dun .lbl{color:var(--done)}
+  /* 审视 M2: done_unread RANK 仅次于等你,>0 时给它匹配排序的存在感 */
+  .hud .k-dun.on{background:color-mix(in srgb,var(--done) 13%,transparent);border-radius:7px;padding:1px 8px;animation:dunpulse 2.8s ease-in-out infinite}
+  @keyframes dunpulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 1px color-mix(in srgb,var(--done) 40%,transparent)}}
   .topbar .right{margin-left:auto;display:flex;align-items:center;gap:14px}
   .viewtog{display:flex;border:1px solid var(--hair);border-radius:6px;overflow:hidden}
   .viewtog button{font-family:var(--sans);font-size:12px;padding:5px 12px;background:transparent;color:var(--ink-dim);border:none;border-right:1px solid var(--hair);cursor:pointer}
@@ -459,7 +464,7 @@
   .aw-hl li::before{content:'';position:absolute;left:2px;top:8px;width:4px;height:4px;border-radius:50%;background:var(--done)}
   .aw-proj{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--hair-soft)}
   .aw-ws{font-family:var(--mono);font-size:11px;color:var(--ink-faint);min-width:130px;padding-top:3px}
-  .aw-items{display:flex;flex-wrap:wrap;gap:6px;flex:1}
+  .aw-items{display:flex;flex-direction:column;gap:3px;flex:1}
   .aw-item{font-size:12px;color:var(--ink-dim);border:1px solid var(--hair);border-radius:6px;padding:3px 9px;background:var(--bg)}
   .aw-item.done{color:var(--done)}
 
@@ -512,6 +517,10 @@
   .tips-bubble.cycling .tt-balloon{animation:tipPop .35s cubic-bezier(.34,1.56,.64,1)}
   @keyframes tipPop{0%{opacity:.4;transform:scale(.94)}100%{opacity:1;transform:scale(1)}}
   @media (max-width:900px){.tips-bubble{width:230px;left:14px}}
+  /* 审视 H4: 默认只留猫(释放左下 300px 内容区);hover 展开气泡,双击切常驻 */
+  .tips-bubble.tmini{width:auto}
+  .tips-bubble.tmini .tt-balloon{display:none}
+  .tips-bubble.tmini:hover .tt-balloon{display:block;position:absolute;left:78px;bottom:0;width:300px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
 </style>
 </head>
 <body>
@@ -535,7 +544,7 @@
 
   <!-- 桌宠 + tips 气泡 (DD-006,从 classic 迁移)。loadDerived() 填充,
        至少有一条 tip 才显示。点击换下一句,拖动可移动。 -->
-  <div class="tips-bubble" id="tips-ticker" hidden title="点一下听下一句 · 拖动可移动">
+  <div class="tips-bubble" id="tips-ticker" hidden title="点一下听下一句 · 拖动可移动 · 双击展开/收起气泡">
     <div class="tt-pet" id="tt-kind" aria-hidden="true"></div>
     <div class="tt-balloon">
       <span class="tt-lead" id="tt-lead"></span>
@@ -748,7 +757,7 @@
   document.getElementById('hud').innerHTML=
     `<div class="stat"><span class="n">${active}</span><span class="lbl">进行中</span></div><span class="sep">·</span>`+
     `<div class="stat k-needs"><span class="n">${c.needs_you||0}</span><span class="lbl">等你</span></div>`+
-    `<div class="stat k-dun"><span class="n">${c.done_unread||0}</span><span class="lbl">待查看</span></div>`+
+    `<div class="stat k-dun${(c.done_unread||0)>0?' on':''}"><span class="n">${c.done_unread||0}</span><span class="lbl">待查看</span></div>`+
     `<div class="stat k-run"><span class="n">${c.running||0}</span><span class="lbl">AI在跑</span></div>`+
     `<div class="stat k-idle"><span class="n">${c.idle||0}</span><span class="lbl">闲置</span></div>`;
   const _cl=document.getElementById('clock'); if(_cl)_cl.textContent='实时 · '+new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'});
@@ -815,7 +824,9 @@
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
-    if(r.band==='idle')return progMid('idle', r, esc(r.idle)+' 未动');
+    if(r.band==='idle'){const a=(r.artifacts||[]).find(x=>x&&(x.url||x.ref_id));
+      const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
+      return `<div class="mid idle"${tip}><span class="rtext">${p?esc(p):esc(r.idle)+' 未动'}</span>${a?chip(a):''}</div>`;}
     if(r.band==='done')return progMid('idle', r, '已完成 · '+esc(r.idle)+'前');
     if(r.band==='paused')return progMid('idle', r, '搁置 · '+esc(r.idle)+'未动');
     return `<div class="mid"></div>`;}
@@ -902,6 +913,9 @@
     BANDS.forEach(b=>{const rows=DATA.rows.filter(r=>r.band===b.key).sort((x,y)=>y.idle_secs-x.idle_secs);
       if(!rows.length)return; if(b.collapse){html+=collapsedBand(b.key);return;}
       html+=`<section class="band" data-band="${b.key}"><div class="band-head"><span class="glyph">${b.glyph}</span><span class="htxt">${b.label}</span><span class="cnt">${rows.length}</span><span class="rule"></span></div><div class="rows">`+rows.map(rowEl).join('')+`</div></section>`;});
+    const cz=DATA.counts||{};
+    if(!(cz.needs_you||cz.done_unread||cz.running)&&(cz.idle||0)>0)
+      html+=`<div class="allidle">全部处于闲置 —— 若刚有活动却不见变化,跑一下 stray --diagnose 检查 hooks 是否接入</div>`;
     board.innerHTML=html;wire();}
 
   // PROJECT view (tiers + minimap + draggable + item strips)
@@ -964,7 +978,8 @@
       const id=row.getAttribute('data-id');const willOpen=!row.classList.contains('open');row.classList.toggle('open');if(id){willOpen?OPEN.add(id):OPEN.delete(id);}}));
     mini.querySelectorAll('.mnode,.mleaf').forEach(n=>n.addEventListener('click',()=>jumpTo(n.dataset.ws)));
     const mh=mini.querySelector('.mind-head');
-    if(mh)mh.addEventListener('click',()=>{mini.classList.toggle('mclosed');if(!mini.classList.contains('mclosed'))requestAnimationFrame(drawMindLinks);});
+    if(mh)mh.addEventListener('click',()=>{const c=mini.classList.toggle('mclosed');try{localStorage.setItem('cockpit-mind',c?'c':'o')}catch(e){}if(!c)requestAnimationFrame(drawMindLinks);});
+    try{if((localStorage.getItem('cockpit-mind')||'c')==='c')mini.classList.add('mclosed');}catch(e){}
     if(location.hash.indexOf('open')>=0){const m=location.hash.match(/open=?(\d+)?/),rows=board.querySelectorAll('.row'),idx=m&&m[1]?parseInt(m[1]):0;if(rows[idx])rows[idx].classList.add('open');}
     // re-apply preserved UI state so a background refresh never collapses your view
     board.querySelectorAll('.proj').forEach(sec=>{const v=PCOLLAPSE[sec.dataset.ws];if(v==='o')sec.classList.remove('collapsed');else if(v==='c')sec.classList.add('collapsed');});
@@ -1430,7 +1445,12 @@
     document.querySelectorAll('#viewtog button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
     renderCurrent();}
   document.querySelectorAll('#viewtog button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.v)));
-  let initView='project';try{initView=localStorage.getItem('cockpit-view')||'project'}catch(e){}
+  (function(){const tb=document.getElementById('tips-ticker');if(!tb)return;
+    let pref='m';try{pref=localStorage.getItem('cockpit-tips')||'m'}catch(e){}
+    if(pref==='m')tb.classList.add('tmini');
+    tb.addEventListener('dblclick',()=>{const m=tb.classList.toggle('tmini');try{localStorage.setItem('cockpit-tips',m?'m':'f')}catch(e){}});
+  })();
+  let initView='attention';try{initView=localStorage.getItem('cockpit-view')||'attention'}catch(e){}
   if(location.hash.indexOf('attention')>=0)initView='attention';
   if(location.hash.indexOf('archive')>=0)initView='archive';
   setView(initView);
