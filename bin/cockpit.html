@@ -720,7 +720,7 @@
   // family roll-up rank: like RANK but running OUTRANKS done_unread — if anything
   // in the card family is still running, the whole card is 进行中, not 待查看.
   const FAM_RANK={needs_you:0,running:1,done_unread:2,idle:3,done:4,paused:5};
-  const LV={thread:'主线',card:'卡',chip:'片'};
+  const LV={card:'卡',chip:'片'};  // DD-033: thread level removed (card = session)
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
   const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
   const tierOf = ws => MAIN_WS.includes(ws)?'main':'side';
@@ -833,10 +833,7 @@
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
     h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||esc(r.level)||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
-    // DD-019: sealed cards have no live session — "进入会话" resumes the
-    // origin session; the merge action is meaningless (empty sessions[]).
-    const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   // DD-025: a parent's sub-cards rendered as compact rows nested under it.
   // Row click → terminal; the ⌄ button expands a detail panel (full progress /
@@ -1394,33 +1391,9 @@
     if(!rest.length){ m.remove(); return; }
     setActiveTerm((m.dataset.sid===sid)?rest[0].dataset.sid:m.dataset.sid);
   }
-  // DD-016: merge this card into another (durable; survives re-classify)
-  function mergeStart(e,id){
-    e.stopPropagation();
-    const self=DATA.rows.find(r=>r.id===id); if(!self) return;
-    const others=DATA.rows.filter(r=>r.id&&r.id!==id);
-    if(!others.length){ toast('没有可合并的目标'); return; }
-    const host=e.target.closest('.acts'); if(!host) return;
-    const opts=others.map(r=>`<option value="${esc(r.id)}">${esc(r.ws)} · ${esc(r.name)}</option>`).join('');
-    host.innerHTML=`<span style="font-size:12.5px;color:var(--ink-dim)">把「${esc(self.name)}」合并到:</span>`+
-      `<select id="mergeSel" style="font-size:12px;background:var(--bg-row);color:var(--ink);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;max-width:280px">${opts}</select>`+
-      `<button class="btn primary" onclick="mergeConfirm(event,'${esc(id)}')">确认合并</button>`+
-      `<button class="btn" onclick="renderCurrent()">取消</button>`;
-  }
-  async function mergeConfirm(e,id){
-    e.stopPropagation();
-    const sel=document.getElementById('mergeSel'); if(!sel) return;
-    const self=DATA.rows.find(r=>r.id===id), target=DATA.rows.find(r=>r.id===sel.value);
-    if(!self||!target) return;
-    const sessions=[...new Set([...(self.sessions||[]),...(target.sessions||[])])];
-    try{
-      const r=await fetch(ORIGIN+'/api/merge',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({sessions, canonical_id:target.id, name:target.name})});
-      if(!r.ok) throw 0;
-      toast('已合并到「'+target.name+'」');
-      setTimeout(loadData, 500);
-    }catch(_){ toast('合并失败'); }
-  }
+  // (DD-033: the DD-016 card-merge UI was retired — card = session, there is
+  // nothing to merge. Sub-card branch merging (DD-031) is a different thing
+  // and lives in the terminal sidebar.)
   let tt;function toast(m,ms){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),ms||1800);}
 
   function setView(v){document.body.dataset.view=v;try{localStorage.setItem('cockpit-view',v)}catch(e){}

@@ -1276,15 +1276,9 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         data = {}
         try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
         except Exception: data["mindmap"] = None
-        # DD-016 safety net: never serve same-session duplicate cards, even if
-        # a stale/racy classify wrote them (the file is fixed on the next run).
-        try:
-            if data.get("mindmap"):
-                sys.path.insert(0, str(REPO_ROOT / "bin"))
-                import classify
-                classify.dedup_by_session(data["mindmap"])
-        except Exception:
-            pass
+        # (DD-033: the DD-016 render-time dedup safety net was removed — the
+        # mechanical assembler builds exactly one card per session, so
+        # same-session duplicates are structurally impossible.)
         # Real-time: overlay the freshest Layer-1 当前状态 onto cards whose
         # session was re-summarized after the dashboard was written, so the
         # active card reflects your latest turn without waiting for classify.
@@ -1440,7 +1434,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         "/api/lifecycle": "_handle_lifecycle",
         "/api/consolidate-tasks": "_handle_consolidate",
         "/api/update": "_handle_update",
-        "/api/merge": "_handle_merge",
         "/api/delete": "_handle_delete",
         "/api/subcard-close": "_handle_subcard_close",
         "/api/subcard-merge": "_handle_subcard_merge",
@@ -1823,47 +1816,8 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                  "worktree_name": wt_name if want_wt else None,
                                  "parent": parent or None})
 
-    def _handle_merge(self, body: dict):
-        """DD-016: record a user-declared merge into initiative_links.json and
-        apply it to dashboard.json immediately. Body:
-            {sessions: [sid...], canonical_id?: str, name?: str}
-        The merge is durable — classify.apply_initiative_links re-applies it on
-        every future run, so re-clustering can never re-split it."""
-        try:
-            sessions = [s for s in (body.get("sessions") or []) if s]
-            if len(sessions) < 2:
-                return self._reply(400, {"error": "need >= 2 sessions"})
-            links = CACHE_DIR / "initiative_links.json"
-            try:
-                doc = json.loads(links.read_text())
-                if not isinstance(doc, dict):
-                    doc = {}
-            except Exception:
-                doc = {}
-            doc.setdefault("version", 1)
-            groups = doc.setdefault("groups", [])
-            sset = set(sessions)
-            # fold into any existing group that shares a session
-            target = next((g for g in groups if sset.intersection(g.get("sessions") or [])), None)
-            if target is None:
-                target = {"sessions": []}
-                groups.append(target)
-            target["sessions"] = sorted(set((target.get("sessions") or []) + sessions))
-            if body.get("canonical_id"):
-                target["canonical_id"] = body["canonical_id"]
-            if body.get("name"):
-                target["name"] = body["name"]
-            links.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
-            # apply immediately + regen HTML
-            sys.path.insert(0, str(REPO_ROOT / "bin"))
-            import classify
-            d = json.loads(DASHBOARD_JSON.read_text())
-            n = classify.apply_initiative_links(d)
-            classify.atomic_write_json(DASHBOARD_JSON, d)
-            threading.Thread(target=regenerate_html, daemon=True).start()
-            return self._reply(200, {"ok": True, "merged": n})
-        except Exception as e:
-            return self._reply(500, {"error": str(e)})
+    # (DD-033: /api/merge — the DD-016 card-merge endpoint — was retired.
+    # Card = session; initiative_links.json is no longer read or written.)
 
     def _handle_lifecycle(self, body: dict):
         """Pause / resume the pipeline (DD-005). Body:

@@ -1,6 +1,6 @@
 # DD-033: Layer-2 机械化 —— classify 从「作者」降为「装订工」
 
-**Status**: In progress — 决议 2026-06-11(与用户 grill 敲定)
+**Status**: Implemented 2026-06-11(切片 1-5 全部完成;生产 cache 迁移在合并入 main 时执行 `bin/_migrate_card_ids.py`)
 **Author**: Claude (with user)
 **Predecessors**: 北极星转向 2026-06-04(卡=单 session)、DD-013/014/020(status/level/attention
 已机械化)、DD-011/021(tasks/artifacts 机械聚合)、DD-029/030(id 钉死、创建卡机械铸造)

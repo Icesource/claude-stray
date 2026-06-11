@@ -183,6 +183,15 @@ def test_worktree_groups_into_main_repo():
     assert len(ws["initiatives"]) == 2
 
 
+def test_ws_name_for_cwd():
+    import classify
+    f = classify._ws_name_for_cwd
+    assert f("/Users/x/Code/myrepo/.claude/worktrees/authz") == "myrepo"
+    assert f("/Users/x/Code/myrepo") == "myrepo"
+    assert f("") == "misc"
+    assert f(os.path.expanduser("~")) == "home"
+
+
 def test_level_no_thread():
     big_tasks = "tasks:\n" + "".join(
         f"  - title: task number {i}\n    status: pending\n" for i in range(10))
