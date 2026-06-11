@@ -457,7 +457,20 @@ MERGE_JOBS_JSON = CACHE_DIR / "merge-jobs.json"
 # hottest change surface — kept out of serve.py so parallel sub-cards stop
 # colliding here). The mixin reads serve's globals through install().
 import _subcard_api
-_subcard_api.install(sys.modules[__name__])
+
+
+class _LiveGlobals:
+    """serve's globals as a live attribute view. Equivalent to handing over
+    the module object, but also works when serve.py is exec'd from an
+    importlib spec without a sys.modules entry (how tests load it)."""
+    def __getattr__(self, k):
+        try:
+            return globals()[k]
+        except KeyError:
+            raise AttributeError(k) from None
+
+
+_subcard_api.install(_LiveGlobals())
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
 PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"

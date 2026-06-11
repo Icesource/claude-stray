@@ -13,6 +13,7 @@ import time
 from datetime import datetime, timezone
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(REPO, "bin"))   # serve imports siblings (_subcard_api …)
 _spec = importlib.util.spec_from_file_location("serve", os.path.join(REPO, "bin", "serve.py"))
 serve = importlib.util.module_from_spec(_spec)
 try:
