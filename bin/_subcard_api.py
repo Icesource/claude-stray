@@ -36,6 +36,38 @@ def install(serve_module) -> None:
 _TRUST_MARKERS = ("trust this folder", "Yes, I trust")
 
 
+def landing_state(job):
+    """DD-033 single-button flow: is this merge job ready to fast-forward the
+    target to the sub branch, and is anything blocking it? Pure git inspection
+    (no Handler) so both the auto-land watcher and /api/data can call it.
+      ready    = the sub branch CONTAINS the target (the sub merged the target
+                 in — or the target never moved since the sub was branched);
+                 the FF is then conflict-free.
+      blocked  = ready, but the target is checked out in main_repo with
+                 uncommitted TRACKED changes — we never FF over the user's WIP.
+      landable = ready and not blocked → the watcher will auto-land it.
+    Returns {ready, landable, blocked, reason}."""
+    wt = getattr(S, "_worktree", None)
+    main_repo = (job or {}).get("main_repo")
+    target = (job or {}).get("target_branch")
+    sub_branch = "worktree-" + ((job or {}).get("sub_slug") or "")
+    off = {"ready": False, "landable": False, "blocked": False, "reason": ""}
+    if not (wt and main_repo and target):
+        return off
+    if wt._git(main_repo, "rev-parse", "--verify", "--quiet", sub_branch) is None:
+        return dict(off, reason="子卡分支不存在")
+    ready = wt._git(main_repo, "merge-base", "--is-ancestor", target, sub_branch) is not None
+    if not ready:
+        return dict(off, reason="子卡正在把 " + target + " 合并进来")
+    cur = (wt._git(main_repo, "branch", "--show-current") or "").strip()
+    main_dirty = (cur == target and
+                  bool((wt._git(main_repo, "status", "--porcelain", "-uno") or "").strip()))
+    if main_dirty:
+        return {"ready": True, "landable": False, "blocked": True,
+                "reason": "主卡有未提交改动,先 commit/stash 再自动落地"}
+    return {"ready": True, "landable": True, "blocked": False, "reason": "可落地"}
+
+
 def repo_probably_trusted(main_repo: str, projects: dict | None = None) -> bool:
     """Will a claude spawned under main_repo hit the folder-trust dialog?
     Observed rule (2026-06-11): the dialog fires only when ~/.claude.json has NO
@@ -473,12 +505,15 @@ class SubcardAPI:
 
 
     def _merge_instruction(self, target: str) -> str:
-        return ("请把目标分支 " + target + " 合并进当前分支:运行 git merge " + target + " 。"
+        return ("【把这张子卡合并回 " + target + " ——第一步,只需你做这一步】\n"
+                "在当前分支运行: git merge " + target + " ,把 " + target + " 的最新代码合进来。"
                 "若有冲突,理解双方代码的语义合出正确结果(不是简单二选一),"
                 "然后 git add -A && git commit(默认合并提交信息即可)。"
-                "若某处冲突拿不准怎么解,停下来把冲突点和疑问清楚地告诉用户,等用户回答。"
-                "全部解决并 commit 后告诉用户:「合并完成,可以在驾驶舱点落地了」。"
-                "只做这一件事,不要改与合并无关的东西。")
+                "若某处冲突拿不准怎么解,停下来把冲突点和疑问清楚地告诉用户,等用户回答。\n"
+                "完成后无需再做别的:stray 会自动把 " + target + " 快进到你这个分支(因为 "
+                + target + " 被主检出占用,只有 stray 能安全完成最后这步 fast-forward)。"
+                "只做 git merge 这一件事,不要改与合并无关的东西,也不要尝试 checkout/"
+                "push 到 " + target + "(git 会拒绝,且不需要)。")
 
     def _nudge_sub_session(self, sid: str, text: str) -> bool:
         """Deliver an instruction to the sub-card's OWN session if it's live in

@@ -1348,11 +1348,16 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # analysis running / done / failed, and is claude even available.
         data["sync"] = _read_sync_status()
         data["claude_ok"] = bool(shutil.which("claude"))
-        # DD-033: merge jobs, so sub-card rows can render the 合并/落地 two-phase
-        # button without a separate merge-agent card existing.
+        # DD-033 single-button: merge jobs + each job's landing readiness, so the
+        # sub-card row can render one 「合并中…/落地受阻」 status (the FF is auto).
         try:
-            data["merge_jobs"] = (_merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
-                                  if _merge else [])
+            jobs = (_merge.load(str(MERGE_JOBS_JSON)).get("jobs", []) if _merge else [])
+            for j in jobs:
+                try:
+                    j["land"] = _subcard_api.landing_state(j)
+                except Exception:
+                    j["land"] = {}
+            data["merge_jobs"] = jobs
         except Exception:
             data["merge_jobs"] = []
         try: data["locations"] = json.load(open(LOCATIONS_JSON))
@@ -2424,6 +2429,37 @@ def _check_updates_interactive() -> None:
               "Run `stray --update` to install on demand.\n")
 
 
+_BOUND_PORT = None  # set once serve binds — the auto-land watcher POSTs to self here
+
+
+def _merge_autoland_loop(stop_event) -> None:
+    """DD-033 single-button: once a sub-card has merged the target into its own
+    branch (and the main checkout is clean), fast-forward the target to it —
+    automatically, so the user only ever clicks 「合并」 once. The sub-card
+    physically cannot update the checked-out target itself (git refuses), so
+    this is the one step stray must do. WIP-blocked jobs just wait (the FF
+    never touches the user's uncommitted work)."""
+    import urllib.request
+    while not stop_event.wait(4.0):
+        if _merge is None or _BOUND_PORT is None:
+            continue
+        try:
+            jobs = _merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
+        except Exception:
+            continue
+        for j in jobs:
+            try:
+                if not _subcard_api.landing_state(j).get("landable"):
+                    continue
+                body = json.dumps({"sub_sid": j.get("sub_sid")}).encode()
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{_BOUND_PORT}/api/subcard-land",
+                    data=body, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=45).read()
+            except Exception:
+                pass  # transient; retried next tick
+
+
 def _update_recheck_loop(stop_event) -> None:
     """Daemon thread: re-run the update check every 24h while serve
     is alive. Silent — updates `cache/update_state.json` only. The
@@ -2474,6 +2510,8 @@ def serve(open_browser: bool = True):
             continue
         # Daemon threads so any in-flight handlers don't block process exit.
         httpd.daemon_threads = True
+        global _BOUND_PORT
+        _BOUND_PORT = port   # the auto-land watcher POSTs /api/subcard-land here
 
         url = f"http://{BIND}:{port}/"
         print(f"\n  ▸ {url}\n")
@@ -2540,6 +2578,13 @@ def serve(open_browser: bool = True):
                 name="ccw-update-check",
             )
             update_thread.start()
+
+        # DD-033: auto-land ready merge jobs so 「合并」 is a single click. Gated
+        # separately from _NO_BG so integration tests can opt INTO it
+        # (STRAY_AUTOLAND=1) while keeping the rest of the background off.
+        if not _NO_BG or os.environ.get("STRAY_AUTOLAND") == "1":
+            threading.Thread(target=_merge_autoland_loop, args=(stop_scheduler,),
+                             daemon=True, name="ccw-merge-autoland").start()
 
         try:
             httpd.serve_forever()

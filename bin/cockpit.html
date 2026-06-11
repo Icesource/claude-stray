@@ -360,6 +360,9 @@
   .sr-merge{flex:none;font-size:10.5px;padding:1px 7px;margin-left:2px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-dim);cursor:pointer;opacity:.6;transition:opacity .12s,color .12s,border-color .12s}
   .subrow:hover .sr-merge{opacity:.95}
   .sr-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
+  /* DD-033 单按钮的状态态(非按钮,不可点) */
+  .sr-merge.busy{cursor:default;opacity:.75;border-style:dashed}
+  .sr-merge.warn{cursor:default;color:var(--needs);border-color:color-mix(in srgb,var(--needs) 45%,transparent);opacity:.95}
   .tside-item.pending{border-style:dashed;border-left-color:var(--run);color:var(--ink-faint);cursor:default}
   .tside-item.pending:hover{transform:none;border-color:var(--hair);box-shadow:0 4px 13px rgba(0,0,0,.38)}
   .tside-item.pending .ts-spin{width:11px;height:11px;flex:none;border:1.6px solid var(--hair);border-top-color:var(--run);border-radius:50%;animation:tlspin .8s linear infinite}
@@ -1084,31 +1087,33 @@
       else toast(j.hint||j.error||'关闭失败');
     }catch(_){ toast('关闭失败'); }
   }
-  // DD-031: a merge-agent sub-card is named "合并 ⊳ <子卡>"; it shows 「落地」 instead of 「合并」.
-  function isMergeAgent(c){ return ((c&&c.name)||'').indexOf('合并 ⊳')===0; }
+  // DD-033 单按钮:点「合并」= 子卡把目标合进自己 → stray 自动 FF 回目标。
+  // 一个按钮按 job 状态变成状态文字(合并中…/排队中/落地受阻),无需第二次点。
   function mergeOrLandBtn(c,sid){
-    if(isMergeAgent(c)) return `<button class="sr-merge" title="落地:把这次合并 fast-forward 到目标分支(干完了再点)" onclick="event.stopPropagation();landSubcard(event,'${sid}')">落地▸</button>`;
     const mj=(MJOBS||[]).find(j=>j.sub_sid===sid);
-    if(mj) return mj.state==='queued'
-      ?`<button class="sr-merge" title="排队中 — 前面还有合并在进行(串行)" onclick="event.stopPropagation()">排队中…</button>`
-      :`<button class="sr-merge" title="子卡正把 ${esc(mj.target_branch||'')} 合并进自己;它说合并完成后点这里落地(FF 目标分支到子卡)" onclick="event.stopPropagation();landSubcard(event,'${sid}')">落地▸</button>`;
-    return `<button class="sr-merge" title="合并这张子卡回主干(DD-033:子卡自己执行 git merge,落地后卡保留)" onclick="event.stopPropagation();mergeSubcard(event,'${sid}','${esc((c.name||'').replace(/'/g,''))}')">合并</button>`;
+    if(mj){
+      if(mj.state==='queued') return `<span class="sr-merge busy" title="排队中 — 前面还有合并在进行(串行)">排队中…</span>`;
+      const land=mj.land||{};
+      if(land.blocked) return `<span class="sr-merge warn" title="${esc(land.reason||'落地受阻')} —— 处理后会自动落地">落地受阻</span>`;
+      return `<span class="sr-merge busy" title="子卡正把 ${esc(mj.target_branch||'目标')} 合并进自己;合完 stray 会自动落地回去,你不用管">合并中…</span>`;
+    }
+    return `<button class="sr-merge" title="把这张子卡合并回主干:子卡先把目标合进来解冲突,stray 再自动 FF 回目标(一步到位,卡保留)" onclick="event.stopPropagation();mergeSubcard(event,'${sid}','${esc((c.name||'').replace(/'/g,''))}')">合并</button>`;
   }
-  // DD-031: start a merge — spawns a merge-agent that does git merge + resolves conflicts.
+  // DD-033: start a merge — the sub-card merges the target into itself; stray auto-lands.
   async function mergeSubcard(e,sid,name){ if(e)e.stopPropagation(); if(!sid)return;
-    const t=prompt('把子卡「'+name+'」合并到哪个分支?\n留空 = 主卡所在分支(默认)。合并 agent 会解决冲突,拿不准会问你。','');
+    const t=prompt('把子卡「'+name+'」合并回哪个分支?\n留空 = 主卡所在分支(默认)。\n子卡会先把该分支合进自己解冲突(拿不准会问你),之后 stray 自动落地回去——你只点这一次。','');
     if(t===null) return;   // cancelled
     await _mergeReq(sid,(t||'').trim(),false);
   }
   async function _mergeReq(sid,target,force){
-    toast('正在起合并 agent…');
+    toast('正在通知子卡合并…');
     try{ const r=await fetch(ORIGIN+'/api/subcard-merge',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,target,force})});
       const j=await r.json().catch(()=>({}));
       if(r.status===409&&j.needs_confirm){
         if(confirm('⚠️ '+(j.warn||'有未提交改动')+'\n\n仍要合并(只合已提交的部分)吗?')) return _mergeReq(sid,target,true);
         toast('已取消'); return;
       }
-      if(r.ok&&j.ok){ toast(j.queued?('已排队,等前一个合并落地…'):('已让子卡自己合并 '+j.target+'(在它自己的分支上),它说完成后点「落地」'),4000); setTimeout(()=>loadData(),600); }
+      if(r.ok&&j.ok){ toast(j.queued?('已排队,等前一个合并落地…'):('已通知子卡合并 '+j.target+';解完冲突后会自动落地回去,你不用管'),5000); setTimeout(()=>loadData(),600); }
       else toast(j.error||j.hint||'合并失败');
     }catch(_){ toast('合并失败'); }
   }
@@ -1323,12 +1328,15 @@
     const item=(r,isSub)=>{ const s=r.session||(r.sessions||[])[0]||r.origin_session||'';
       const on=s===sid;
       const close=isSub?`<span class="ts-close" title="关闭子卡(删除它的 worktree + 分支)" onclick="event.stopPropagation();closeSubcard(event,'${esc(s)}','${esc(r.id||'')}','${esc((r.name||'').replace(/'/g,''))}')">×</span>`:'';
-      const _mj=(MJOBS||[]).find(j=>j.sub_sid===s);
-      const mrg=isSub?((isMergeAgent(r)||(_mj&&_mj.state!=='queued'))
-        ?`<span class="ts-merge" title="落地这次合并(子卡说合并完成后再点)" onclick="event.stopPropagation();landSubcard(event,'${esc(s)}')">落地▸</span>`
-        :(_mj
-          ?`<span class="ts-merge" title="排队中 — 前面还有合并在进行(串行)">排队中…</span>`
-          :`<span class="ts-merge" title="合并这张子卡回主干" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`)):'';
+      // DD-033 单按钮(同 dashboard 逻辑):合并 / 合并中… / 排队中… / 落地受阻
+      let mrg='';
+      if(isSub){ const _mj=(MJOBS||[]).find(j=>j.sub_sid===s);
+        if(_mj){ const L=_mj.land||{};
+          mrg = _mj.state==='queued' ? `<span class="ts-merge" title="排队中(串行)">排队中…</span>`
+              : L.blocked ? `<span class="ts-merge" title="${esc(L.reason||'落地受阻')} —— 处理后自动落地">落地受阻</span>`
+              : `<span class="ts-merge" title="子卡合并中,完成后自动落地回去">合并中…</span>`;
+        } else mrg=`<span class="ts-merge" title="合并这张子卡回主干(自动落地)" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`;
+      }
       return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
         statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+(isSub?mergeBadge(r,true):'')+mrg+close+`</button>`; };
     const rootSid=fam.root.session||(fam.root.sessions||[])[0]||'';

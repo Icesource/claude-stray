@@ -85,7 +85,7 @@ def _git(cwd, *args):
 class Harness:
     """One isolated serve + user repo per scenario."""
 
-    def __init__(self, name):
+    def __init__(self, name, autoland=False):
         self.dir = os.path.realpath(tempfile.mkdtemp(prefix=f"stray-e2e-{name}-"))
         self.cache = os.path.join(self.dir, "cache")
         self.projects = os.path.join(self.dir, "projects")
@@ -119,6 +119,8 @@ class Harness:
             "STRAY_TMUX_SOCKET": self.sock,
             "STRAY_NO_BG": "1",
         })
+        if autoland:
+            env["STRAY_AUTOLAND"] = "1"   # opt the auto-land watcher back on
         self.log = open(os.path.join(self.dir, "serve.log"), "w")
         self.proc = subprocess.Popen(
             [sys.executable, os.path.join(REPO, "bin", "serve.py"), "--no-open"],
@@ -220,10 +222,10 @@ class Harness:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-def _scenario(name):
+def _scenario(name, autoland=False):
     def deco(fn):
         def wrapped():
-            h = Harness(name)
+            h = Harness(name, autoland=autoland)
             try:
                 fn(h)
             except Exception:
@@ -234,6 +236,26 @@ def _scenario(name):
         wrapped.__name__ = fn.__name__
         return wrapped
     return deco
+
+
+@_scenario("autoland", autoland=True)
+def test_single_button_auto_lands(h):
+    """DD-033 single button: clicking 合并 ONCE is enough — the sub-card merges
+    the target into itself, then the auto-land watcher fast-forwards main with
+    NO second click. Here the target hasn't moved, so the sub already contains
+    it → the watcher lands within a couple of ticks."""
+    sid, slug = h.spawn_subcard("auto", [
+        "echo a > auto.txt", "git add -A && git commit -q -m auto-work"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200 and j.get("ok"), (st, j)
+    # NO manual land call — the watcher must FF main on its own
+    h._wait(lambda: os.path.exists(os.path.join(h.repo, "auto.txt"))
+            and h.jobs() == [], 30, "auto-land never fast-forwarded main")
+    # sub-card SURVIVES (DD-033) — the branch/worktree are still there
+    assert h.branch_exists("worktree-" + slug)
 
 
 @_scenario("single")
