@@ -17,8 +17,9 @@ After reading this doc you should be able to:
 ## 1. 30-second overview
 
 Reads `~/.claude/projects/*.jsonl` (Claude Code's own session log),
-runs a **two-step Haiku 4.5 pipeline** (per-session summarize →
-cross-session classify) and persists the result to `cache/dashboard.json`.
+runs **one Haiku 4.5 step** (per-session summarize) plus a **mechanical
+assembly step** (DD-033: one card per session, zero AI, sub-second) and
+persists the result to `cache/dashboard.json`.
 The primary surface is the **attention cockpit** (`bin/cockpit.html`,
 served at `/`): a live web dashboard that bands the work by attention
 state — **needs-you → running → idle → done** — driven by real-time
@@ -36,8 +37,8 @@ flowchart LR
     L0 --> S["cache/sessions/<br/>(per-session metadata)"]
     S --> L1["Layer 1:<br/>summarize.py<br/>(Haiku 4.5)"]
     L1 --> SM["cache/summaries/<br/>*.md per session"]
-    SM --> L2["Layer 2:<br/>classify.py<br/>(Haiku 4.5)"]
-    P["cache/dashboard.json<br/>(prior round)"] -.->|PRIOR_MINDMAP| L2
+    SM --> L2["Layer 2:<br/>classify.py → _assemble.py<br/>(mechanical, no AI)"]
+    P["cache/dashboard.json<br/>(prior round)"] -.->|PRIOR| L2
     L2 --> M["cache/dashboard.json<br/>(new round)"]
     M --> R1["render.py — ANSI tree"]
     M --> R3["render-tree.py — markmap"]
@@ -52,9 +53,12 @@ flowchart LR
 
 Compared to the old single-script architecture: Layer 0 (cheap,
 byte-incremental) is decoupled from Layer 1 (per-session AI summarize,
-fan-out-able) and Layer 2 (cross-session classify, coalesced). Layer 1
+fan-out-able) and Layer 2 (mechanical assembly, coalesced). Layer 1
 runs only on sessions that actually changed; Layer 2 runs only when
-some Layer 1 wrote a new summary.
+some Layer 1 wrote a new summary. The AI in Layer 2 was removed by
+DD-033 — once card = session (north star 2026-06-04), nothing remained
+for it to decide, and its slowness was the root of a whole family of
+card-vanishing/renaming race bugs.
 
 ---
 
@@ -63,8 +67,8 @@ some Layer 1 wrote a new summary.
 | Concept | Physical form | Created by |
 |---|---|---|
 | **session** | One jsonl file = one Claude Code conversation | Claude Code (automatic) |
-| **initiative** | Logical aggregate of one or more sessions = "one piece of work" | AI (during Layer 2 classify) |
-| **workspace** | One repo/dir = container of initiatives | AI (usually the cwd) |
+| **initiative (card)** | Exactly one session = "one piece of work" (DD-033; id = `card::<sid>`) | mechanical assembly (Layer 2) |
+| **workspace** | One repo/dir = container of initiatives | mechanical (session cwd; a worktree folds into its main repo) |
 
 Example: 5 Claude Code sessions in `~/Code/hsf/hsfops`, working on
 "ChangeFree refactor" and "App doc iteration":
@@ -124,7 +128,7 @@ claude-stray/
 │
 ├── prompts/
 │   ├── summarize-session.md      # Layer 1 prompt (per-session digest)
-│   └── classify-cross-session.md # Layer 2 prompt (cross-session classifier)
+│   └── (classify-cross-session.md removed by DD-033 — Layer 2 has no AI)
 │
 ├── commands/                     # /stray and /stray-refresh slash command templates
 │
@@ -180,10 +184,9 @@ graph TD
     trig --> cls["classify.py"]
 
     sum -.->|reads| p1["prompts/summarize-session.md"]
-    cls -.->|reads| p2["prompts/classify-cross-session.md"]
+    cls --> asm["_assemble.py<br/>(mechanical, no AI)"]
 
     sum -.->|spawns| claude1["claude --no-session-persistence -p<br/>Haiku 4.5"]
-    cls -.->|spawns| claude2["claude --no-session-persistence -p<br/>Haiku 4.5"]
 
     srv -.->|serves| ck["cockpit.html"]
     srv -.->|spawns| rt
@@ -197,18 +200,16 @@ graph TD
     cls -.->|reads| sumdir
     cls -.->|writes| mj["cache/dashboard.json"]
     sum -.->|appends| cl["cache/cost_log.jsonl"]
-    cls -.->|appends| cl
 
     style mj fill:#a8e6cf,color:#000
     style claude1 fill:#fff3a0,color:#000
-    style claude2 fill:#fff3a0,color:#000
     style prun fill:#ffd3b6,color:#000
 ```
 
 Two most important paths:
 
 1. **Data collection**: `jsonl → extract.py → cache/sessions/`
-2. **AI classification**: `cache/sessions/ → summarize.py → cache/summaries/ → classify.py → cache/dashboard.json`
+2. **Summarize + assembly**: `cache/sessions/ → summarize.py (AI) → cache/summaries/ → classify.py/_assemble.py (mechanical) → cache/dashboard.json`
 
 ---
 
@@ -216,7 +217,8 @@ Two most important paths:
 
 `pipeline-run.sh` orchestrates the three layers. Layer 2 is fired via
 `layer2-trigger.sh`, which coalesces concurrent triggers so the
-expensive cross-session classify runs at most once per quiet period.
+assembly runs at most once per quiet period (it's sub-second now, but
+coalescing still keeps writes serialized).
 
 ```mermaid
 flowchart TD
@@ -239,10 +241,9 @@ flowchart TD
 
     Trigger --> L2Lock{"mkdir layer2.lock.d<br/>ok?"}
     L2Lock -- no --> Pending["touch .layer2.pending<br/>exit 0"]
-    L2Lock -- yes --> L2["classify.py<br/>(load all summaries)"]
-    L2 --> Filter2["hot vs cold (48h)<br/>filter user_turns&lt;2<br/>cap MAX_HOT=120"]
-    Filter2 --> CC2["claude --no-session-persistence -p<br/>Haiku 4.5<br/>--max-budget-usd 2.50"]
-    CC2 --> ClsOut["write cache/dashboard.json<br/>append cost_log.jsonl<br/>regen dashboard.html"]
+    L2Lock -- yes --> L2["classify.py → _assemble.py<br/>(load all summaries)"]
+    L2 --> Filter2["eligibility gate:<br/>hot OR already carded;<br/>user_turns ≥ 2 unless created"]
+    Filter2 --> ClsOut["write cache/dashboard.json<br/>(mechanical, no AI, sub-second)<br/>regen dashboard.html"]
     ClsOut --> Pend2{".layer2.pending<br/>exists?"}
     Pend2 -- yes --> L2
     Pend2 -- no --> ExitOK
@@ -280,18 +281,32 @@ lock prevents duplicate concurrent work on the same session.
 - `--max-budget-usd 0.50` — per-call hard ceiling.
 - `--disallowedTools "Bash Edit Write Read Glob Grep"` — pure text gen.
 
-### Layer 2 — `classify.py` (via `layer2-trigger.sh`)
+### Layer 2 — `classify.py` → `bin/_assemble.py` (via `layer2-trigger.sh`)
 
-Reads ALL `cache/summaries/*.md`, stratifies into hot (last 48h) and
-cold, applies user overrides, sends a prompt containing prior
-dashboard.json + hot summaries to Haiku 4.5, writes the new dashboard.json.
+DD-033: mechanical assembly, zero AI. Reads ALL `cache/summaries/*.md`
+plus the prior dashboard.json and deterministically builds the new one:
+one card (`card::<sid>`) per eligible session, grouped into workspaces
+by cwd (a worktree folds into its main repo).
 
-`layer2-trigger.sh` coalesces fan-in: if a classify is already running,
-a new trigger just `touch`es `.layer2.pending`; the running classify
+Eligibility gate — a session becomes a card iff it has a summary AND
+(it is hot OR it already had a card in PRIOR), is not session-tombstoned
+(user delete/archive), and has `user_turns ≥ 2` unless user-created or
+already carded. This replicates the old flow's implicit invariant
+(~160 summaries on disk → ~25 cards) and keeps deleted work dead.
+
+Field sources are all mechanical: name = prior name → Layer-1 `title:`
+→ first sentence of `# 目标`; status from `status_guess`; progress /
+next_step / awaiting_user straight from the summary; tasks/artifacts =
+monotone union with PRIOR (terminal never reverts, nothing deleted
+except by user override). `classify.py` survives as the CLI shell +
+shared parsing library.
+
+`layer2-trigger.sh` coalesces fan-in: if an assembly is already running,
+a new trigger just `touch`es `.layer2.pending`; the running instance
 checks for that marker after writing output and loops.
 
-Both layers append to `cache/cost_log.jsonl` for the `stray --cost`
-report.
+Only Layer 1 appends to `cache/cost_log.jsonl` for the `stray --cost`
+report (Layer 2 no longer costs anything).
 
 ---
 
@@ -431,9 +446,9 @@ sequenceDiagram
 
 Functionally unchanged from earlier — see code in `bin/render-html.py`
 (client-side `task_toggles`) and `bin/serve.py` (`POST /api/save`).
-Server merges overrides into the next classify run via
-`apply_user_overrides()` in `classify.py`. The classify prompt's
-done-monotone rule prevents AI from un-doing it.
+Server merges overrides into the next assembly run via
+`apply_user_overrides_inplace()` in `classify.py`. The assembler's
+terminal-monotone merge prevents anything from un-doing it.
 
 ### Walkthrough 3: `stray --serve` lifecycle
 
@@ -449,28 +464,26 @@ still:
 
 ```mermaid
 flowchart LR
-    A["dashboard.json (round N)"] -->|slimmed| B["PRIOR_MINDMAP block"]
-    C["summaries/*.md (hot)"] --> D["INPUT_SESSIONS block"]
-    E["deleted_ids.json"] --> F["DELETED_IDS"]
-    O["user_overrides"] --> Merge["apply_user_overrides"]
-    Merge --> B
-    B & D & F --> G["claude -p Haiku<br/>(Layer 2)"]
+    A["dashboard.json (round N)"] -->|PRIOR| G["_assemble.py<br/>(mechanical)"]
+    C["summaries/*.md (all)"] --> G
+    E["deleted_ids.json + archive/<br/>(id + session tombstones)"] --> G
+    O["user_overrides"] --> G
     G --> H["dashboard.json (round N+1)"]
     H -.->|next round| A
 ```
 
-`prompts/classify-cross-session.md` enforces the Continuity rules:
+DD-033: the Continuity rules are no longer *prompt* rules — they are
+construction invariants of `bin/_assemble.py`:
 
-1. **Stable id** — same work reuses the same id, even if name evolves
-2. **Conservative renaming** — task titles shouldn't be casually rewritten
-3. **Monotone done** — once `done:true`, stays so
-4. **Cold immutability (§5)** — cold initiatives are byte-identical to PRIOR (only status decay allowed)
-5. **Don't delete prior tasks** — they're history
-6. **New entries justified** — must have evidence in INPUT_SESSIONS
+1. **Stable id** — `card::<session_id>`, fixed at creation, trivially stable
+2. **Stable name** — the prior card name wins; Layer-1 `title:` only names new cards
+3. **Monotone terminal** — a done/cancelled task or merged/closed artifact never reverts
+4. **Don't delete prior tasks/artifacts** — PRIOR is the union floor (plus a shrink guard)
+5. **No resurrection** — session-level tombstones + the cold-session gate
 
-This is exactly why "user-marked-done tasks survive AI": AI sees
-`done:true` in PRIOR, the monotone rule forbids change, and post-process
-in classify.py repairs it if AI drifts anyway.
+"User-marked-done tasks survive" because the assembler carries PRIOR
+verbatim and only ever upgrades pending → terminal; there is no AI left
+to drift.
 
 ---
 
@@ -648,7 +661,7 @@ You've now seen the whole system. Suggested next steps:
 
 1. **See your state**: `stray --diagnose` walks every stage and shows kill-switch / cost / hook status
 2. **Trace a real session**: `stray --diagnose <sid>` to see exactly where a session is in the pipeline
-3. **Read a prompt**: `cat prompts/summarize-session.md` (Layer 1) and `cat prompts/classify-cross-session.md` (Layer 2)
+3. **Read the prompt**: `cat prompts/summarize-session.md` (Layer 1 — the only AI in the pipeline; Layer 2 is mechanical, read `bin/_assemble.py`)
 4. **Read a DD**:
    - [DD-002](design/DD-002-ai-pipeline-redesign.md) — why 3 layers
    - [DD-003](design/DD-003-card-detail-and-artifacts.md) — card surface + artifact extraction

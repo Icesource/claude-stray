@@ -1,10 +1,11 @@
 # DD-016: Stable initiative identity — session_id atom + persisted membership, AI as labeler
 
-**Status**: Partially implemented — the **durable merge engine** is live
-(`classify.py` `apply_initiative_links`, driven by `cache/initiative_links.json`,
-2026-06-02). Still pending: user-facing merge action (cockpit/endpoint),
-AI-suggested merges via shared-artifact hints, the full session→initiative
-registry, and blocker freshness.
+**Status**: **Superseded by DD-033** (2026-06-11). The north star (2026-06-04,
+card = session) made identity trivial — `card::<session_id>` — so the whole
+drift-fighting apparatus here (registry, durable merges, id stabilization)
+became unnecessary and was removed. `apply_initiative_links` /
+`initiative_links.json` / the merge endpoint are gone; this doc is kept as
+the historical record of why identity was hard when cards were AI-clustered.
 **Author**: Claude (with user)
 **Date**: 2026-06-01
 **Predecessors**: DD-002 (pipeline), DD-011/012/013 (AI advisory, mechanical

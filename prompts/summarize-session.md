@@ -35,6 +35,7 @@ cwd: <copy verbatim>
 last_activity_at: <copy verbatim>
 user_turns: <copy verbatim>
 updated_at: <copy from context.now>
+title: HSF EagleEye 链路追踪修复          # see Rule 15. ≤ 24 chars semantic card name; STABLE across reruns
 status_guess: active | paused | done | abandoned
 next_step: 跑 daily 验证 tri 路由到 12222   # see Rule 14. one concrete next action, ≤ 80 chars. omit if none.
 awaiting_user: 确认是否接受仅兼容 3 个 _ALL ACL   # see Rule 14. ONLY when blocked on the human. omit otherwise.
@@ -144,6 +145,7 @@ weight that risks drift.)
 
    - **Body** (every H1 section): in `output_lang`.
    - **Frontmatter natural-language fields** (in `output_lang`):
+     - `title`
      - `tasks[].title`, `tasks[].evidence`
      - `artifacts[].title`
      - `blockers[]` strings
@@ -416,3 +418,19 @@ weight that risks drift.)
       user action, it IS awaiting_user even if the AI never literally asked a
       question. If you emit `awaiting_user`, `status_guess` must be `active`
       (not `done`); and `next_step` should usually echo the same hand-off action.
+
+15. **title: the card's display name (DD-033).** A short semantic name
+    for this session's work — what the user should read on the card in
+    the cockpit list. ≤ 24 chars, in `output_lang`, noun-phrase style:
+    name the WORK, not the activity narration. Good: "HSF EagleEye
+    链路追踪修复" / "cockpit 资源面板重构". Bad: "用户正在修复一个 bug" /
+    "继续开发" / a full sentence.
+
+    **Stability is the prime rule.** If a `<prior_title>` block is
+    present in the inputs, COPY IT BYTE-FOR-BYTE unless the session's
+    fundamental goal has genuinely changed (it pivoted to different
+    work) or the prior title is plainly wrong. Do NOT re-translate,
+    re-word, expand, or "improve" it — the card name flickering across
+    refreshes is worse than a slightly imperfect name. When you do
+    change it, the new title must describe the NEW goal, not append to
+    the old one.

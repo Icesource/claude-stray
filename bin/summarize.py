@@ -280,6 +280,40 @@ def load_prior_tasks_for_sid(sid: str) -> list[dict]:
     return list(seen.values())[:30]
 
 
+def load_prior_title_for_sid(sid: str) -> str:
+    """DD-033: the name this session's card currently shows, fed back so
+    Layer 1 keeps `title:` stable across reruns (same pattern as
+    prior_tasks / prior_sealed_segments).
+
+    Precedence: the dashboard card's `name` (covers user renames and
+    legacy Layer-2-minted names) over this session's own previous
+    summary `title:`. Returns "" when neither exists yet."""
+    if DASHBOARD_FILE.exists():
+        try:
+            d = json.loads(DASHBOARD_FILE.read_text(encoding="utf-8"))
+            for ws in (d.get("workspaces") or []):
+                for init in (ws.get("initiatives") or []):
+                    if init.get("sealed"):
+                        continue
+                    if sid in (init.get("sessions") or []):
+                        name = (init.get("name") or "").strip()
+                        if name:
+                            return name
+        except (OSError, json.JSONDecodeError):
+            pass
+    prior_md = SUMMARIES_DIR / f"{sid}.md"
+    if prior_md.exists():
+        try:
+            for line in prior_md.read_text(encoding="utf-8").splitlines():
+                if line.startswith("title:"):
+                    return line.split(":", 1)[1].strip().strip('"').strip("'")
+                if line.startswith("# "):  # past frontmatter — stop
+                    break
+        except OSError:
+            pass
+    return ""
+
+
 def load_prior_sealed_segments_for_sid(sid: str) -> list[dict]:
     """Return the sealed_segments already minted FROM this session
     (DD-019 intra-session segmentation). A sealed initiative is a frozen
@@ -373,6 +407,21 @@ def build_prompt(sid: str, meta: dict, turns_block: str, lang: str) -> str:
         "</session_meta>",
         "",
     ]
+
+    # DD-033: surface the card name this session already shows, so Layer 1
+    # re-emits `title:` byte-for-byte instead of re-wording it every rerun
+    # (card names must not flicker across refreshes). See Rule 15.
+    prior_title = load_prior_title_for_sid(sid)
+    if prior_title:
+        safe_pt = prior_title.replace('"', '\\"')
+        parts.append("<prior_title>")
+        parts.append("  <!-- The card name currently displayed for this session.")
+        parts.append("    COPY IT BYTE-FOR-BYTE into your `title:` frontmatter")
+        parts.append("    unless the session's goal has genuinely pivoted.")
+        parts.append("    See Rule 15. -->")
+        parts.append(f"  \"{safe_pt}\"")
+        parts.append("</prior_title>")
+        parts.append("")
 
     # DD-012: surface the task wordings that already exist on this
     # session's initiative(s), so Layer 1 reuses them verbatim instead

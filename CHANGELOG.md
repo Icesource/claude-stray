@@ -8,9 +8,29 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ## [Unreleased]
 
+### Changed
+
+- **DD-033: Layer-2 机械化——classify 从「作者」降为「装订工」**。
+  跨会话 AI 分类器及其九道防御工序整体拆除;dashboard.json 改由
+  `bin/_assemble.py` 机械装配:每条合格 session 一张 `card::<sid>` 卡
+  (合格门闩 = hot 或 prior 已有卡,薄会话/墓碑会话不铸),按 cwd 分组
+  workspace(worktree 归主仓),名字 prior 继承 → Layer-1 `title:`(新增,
+  Rule 15,prior 回喂防抖)→ 目标首句,tasks/artifacts 对 prior 单调并集。
+  classify 从分钟级 + 每轮 Haiku 成本变为亚秒 + 零成本,「准备中」窗口
+  缩到秒级,卡消失/改名/复活整族时序 bug 根因消除。
+  - `prompts/classify-cross-session.md` 删除;classify.py 2558→~1050 行,
+    保留为 CLI 入口壳 + 共享解析库(layer2-trigger/pipeline 零改动)。
+  - 存量迁移 `bin/_migrate_card_ids.py`:18 张 slug 卡 id 统一为
+    `card::<sid>`,3 张「空 sessions AI 尸体卡」按 workspace 唯一性
+    认领回真实会话(名字保留)或删除;迁移前整份 cache 备份。
+  - thread 层级移除(降为 card);DD-016 手动合并卡(`/api/merge` +
+    `initiative_links.json` + 「合并到…」按钮)退役——卡=session,无可合并。
+  - 真实生产快照对照验收:差异全部归因为「机械更正确」(含救回一条
+    98 轮从未被 AI 铸卡的会话);装配器 13 个单测 + 全套件绿。
+
 ### Added
 
-- **DD-033: 子卡自己是合并 agent**(`cdff798`):砍掉「合并 ⊳」agent 卡 ——
+- **DD-034: 子卡自己是合并 agent**(`cdff798`):砍掉「合并 ⊳」agent 卡 ——
   合并 = 把指令注入子卡自己的会话(活卡 send-keys / 死卡带全上下文 resume),
   在子卡分支上 merge 目标;落地 = FF 目标到子卡分支 tip;**落地后子卡保留**
   (可继续使用,手动 × 关闭)。落地后的新提交天然随落地带走。保留串行队列/

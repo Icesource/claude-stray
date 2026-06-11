@@ -1,6 +1,6 @@
 # DD-031: 子卡合并闭环 —— AI 解冲突、串行落地、合并即关卡
 
-**Status**: Partially superseded by [DD-033](DD-033-subcard-is-its-own-merge-agent.md)
+**Status**: Partially superseded by [DD-034](DD-034-subcard-is-its-own-merge-agent.md)
 (2026-06-11:合并 agent 卡机制被「子卡自己是合并 agent」取代;串行队列、
 三道闸门、FF 落地、人类一闸保留)。原文如下,作为决策历史。
 原 Status: Accepted (grilled to convergence with user, 2026-06-10)

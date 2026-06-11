@@ -198,7 +198,7 @@ class Harness:
             return []
 
     def wait_merge_ready(self, slug, target="main"):
-        """The human gate (DD-033): wait until the SUB branch contains the
+        """The human gate (DD-034): wait until the SUB branch contains the
         target (the sub-card merged the target into itself + committed)."""
         def ready():
             rc, _ = _git(self.repo, "merge-base", "--is-ancestor",
@@ -240,7 +240,7 @@ def _scenario(name, autoland=False):
 
 @_scenario("autoland", autoland=True)
 def test_single_button_auto_lands(h):
-    """DD-033 single button: clicking 合并 ONCE is enough — the sub-card merges
+    """DD-034 single button: clicking 合并 ONCE is enough — the sub-card merges
     the target into itself, then the auto-land watcher fast-forwards main with
     NO second click. Here the target hasn't moved, so the sub already contains
     it → the watcher lands within a couple of ticks."""
@@ -254,7 +254,7 @@ def test_single_button_auto_lands(h):
     # NO manual land call — the watcher must FF main on its own
     h._wait(lambda: os.path.exists(os.path.join(h.repo, "auto.txt"))
             and h.jobs() == [], 30, "auto-land never fast-forwarded main")
-    # sub-card SURVIVES (DD-033) — the branch/worktree are still there
+    # sub-card SURVIVES (DD-034) — the branch/worktree are still there
     assert h.branch_exists("worktree-" + slug)
 
 
@@ -274,15 +274,15 @@ def test_single_subcard_merge_and_land(h):
     st, j = h.post("/api/subcard-land", {"sub_sid": sid})
     assert st == 200 and j.get("ok"), (st, j)
     # target FF'd to the SUB branch tip: the work is on main, in the main checkout
-    assert j.get("kept"), "DD-033: landing must report the card was kept"
+    assert j.get("kept"), "DD-034: landing must report the card was kept"
     assert os.path.exists(os.path.join(h.repo, "alpha.txt"))
     rc, _ = _git(h.repo, "merge-base", "--is-ancestor", "HEAD", "main")
     assert rc == 0
-    # DD-033(用户决策): the sub-card SURVIVES landing — branch + worktree stay
+    # DD-034(用户决策): the sub-card SURVIVES landing — branch + worktree stay
     wts = os.path.join(h.repo, ".claude", "worktrees")
     assert h.branch_exists("worktree-" + slug), "sub branch must survive landing"
     assert os.path.isdir(os.path.join(wts, slug)), "sub worktree must survive landing"
-    assert not h.branch_exists("merge-" + slug), "no merge-agent branch in DD-033"
+    assert not h.branch_exists("merge-" + slug), "no merge-agent branch in DD-034"
     assert h.jobs() == [], h.jobs()
     # explicit × close is what cleans it up
     st, j = h.post("/api/subcard-close", {"sid": sid, "force": True})
@@ -347,7 +347,7 @@ def test_serial_queue(h):
 
 @_scenario("catchup")
 def test_late_commits_ride_and_catchup_auto_resolves(h):
-    """DD-033: ① sub commits made after merge-ready RIDE ALONG (landing FFs to
+    """DD-034: ① sub commits made after merge-ready RIDE ALONG (landing FFs to
     the sub TIP — nothing to drop anymore); ② target advancing after ready
     blocks with 409 AND auto-nudges the sub (here: dead session → detached
     resume of the fake claude), which re-merges so a retry lands."""
@@ -397,7 +397,7 @@ def test_late_commits_ride_and_catchup_auto_resolves(h):
 
 @_scenario("abort")
 def test_closing_sub_mid_merge_cancels_job(h):
-    """「中途放弃 → 手动关」(DD-033): closing a sub-card whose merge is in
+    """「中途放弃 → 手动关」(DD-034): closing a sub-card whose merge is in
     flight must cancel its job (else the stuck 'resolving' holds the serial
     gate forever) and auto-start the next queued merge."""
     sid1, slug1 = h.spawn_subcard("theta", [

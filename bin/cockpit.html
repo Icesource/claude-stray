@@ -360,7 +360,7 @@
   .sr-merge{flex:none;font-size:10.5px;padding:1px 7px;margin-left:2px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-dim);cursor:pointer;opacity:.6;transition:opacity .12s,color .12s,border-color .12s}
   .subrow:hover .sr-merge{opacity:.95}
   .sr-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
-  /* DD-033 单按钮的状态态(非按钮,不可点) */
+  /* DD-034 单按钮的状态态(非按钮,不可点) */
   .sr-merge.busy{cursor:default;opacity:.75;border-style:dashed}
   .sr-merge.warn{cursor:default;color:var(--needs);border-color:color-mix(in srgb,var(--needs) 45%,transparent);opacity:.95}
   .tside-item.pending{border-style:dashed;border-left-color:var(--run);color:var(--ink-faint);cursor:default}
@@ -722,7 +722,7 @@
     return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user,ms(r),
     // DD-025: include sub-cards' state too, else a child's band change alone (its own
     // running→done) doesn't move the signature and the subrow + parent ⑃ roll-up freeze.
-    // DD-033: include each child's merge_status so the 已合并/未合并 badge updates live.
+    // DD-034: include each child's merge_status so the 已合并/未合并 badge updates live.
     (r.children||[]).map(c=>[c.id,c.band,c.progress,ms(c)])]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
@@ -758,7 +758,7 @@
   // family roll-up rank: like RANK but running OUTRANKS done_unread — if anything
   // in the card family is still running, the whole card is 进行中, not 待查看.
   const FAM_RANK={needs_you:0,running:1,done_unread:2,idle:3,done:4,paused:5};
-  const LV={thread:'主线',card:'卡',chip:'片'};
+  const LV={card:'卡',chip:'片'};  // DD-033: thread level removed (card = session)
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
   const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
   const tierOf = ws => MAIN_WS.includes(ws)?'main':'side';
@@ -886,15 +886,14 @@
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
     h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||esc(r.level)||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
-    // DD-019: sealed cards have no live session — "进入会话" resumes the
-    // origin session; the merge action is meaningless (empty sessions[]).
-    const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">${r.sealed?'回到源会话':'终端 ▸'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    // main's layout (terminal button doubles as sealed-card resume); the
+    // DD-016 "合并到…" button stays retired per DD-033 (card = session).
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">${r.sealed?'回到源会话':'终端 ▸'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button><span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   // DD-025: a parent's sub-cards rendered as compact rows nested under it.
   // Row click → terminal; the ⌄ button expands a detail panel (full progress /
   // next-step / resources) so a sub-card isn't a second-class one-liner.
-  // DD-033: a sub-card's merge state relative to the trunk — the same signal the
+  // DD-034: a sub-card's merge state relative to the trunk — the same signal the
   // close-guard uses, surfaced up front so you see at a glance what's safe to close.
   // compact=true → icon-only (for the dense webterminal side-list); full text
   // (for the roomier dashboard sub-row). Same tooltip either way.
@@ -1093,7 +1092,7 @@
       else toast(j.hint||j.error||'关闭失败');
     }catch(_){ toast('关闭失败'); }
   }
-  // DD-033 单按钮:点「合并」= 子卡把目标合进自己 → stray 自动 FF 回目标。
+  // DD-034 单按钮:点「合并」= 子卡把目标合进自己 → stray 自动 FF 回目标。
   // 一个按钮按 job 状态变成状态文字(合并中…/排队中/落地受阻),无需第二次点。
   function mergeOrLandBtn(c,sid){
     const mj=(MJOBS||[]).find(j=>j.sub_sid===sid);
@@ -1105,7 +1104,7 @@
     }
     return `<button class="sr-merge" title="把这张子卡合并回主干:子卡先把目标合进来解冲突,stray 再自动 FF 回目标(一步到位,卡保留)" onclick="event.stopPropagation();mergeSubcard(event,'${sid}','${esc((c.name||'').replace(/'/g,''))}')">合并</button>`;
   }
-  // DD-033: start a merge — the sub-card merges the target into itself; stray auto-lands.
+  // DD-034: start a merge — the sub-card merges the target into itself; stray auto-lands.
   async function mergeSubcard(e,sid,name){ if(e)e.stopPropagation(); if(!sid)return;
     const t=prompt('把子卡「'+name+'」合并回哪个分支?\n留空 = 主卡所在分支(默认)。\n子卡会先把该分支合进自己解冲突(拿不准会问你),之后 stray 自动落地回去——你只点这一次。','');
     if(t===null) return;   // cancelled
@@ -1334,7 +1333,7 @@
     const item=(r,isSub)=>{ const s=r.session||(r.sessions||[])[0]||r.origin_session||'';
       const on=s===sid;
       const close=isSub?`<span class="ts-close" title="关闭子卡(删除它的 worktree + 分支)" onclick="event.stopPropagation();closeSubcard(event,'${esc(s)}','${esc(r.id||'')}','${esc((r.name||'').replace(/'/g,''))}')">×</span>`:'';
-      // DD-033 单按钮(同 dashboard 逻辑):合并 / 合并中… / 排队中… / 落地受阻
+      // DD-034 单按钮(同 dashboard 逻辑):合并 / 合并中… / 排队中… / 落地受阻
       let mrg='';
       if(isSub){ const _mj=(MJOBS||[]).find(j=>j.sub_sid===s);
         if(_mj){ const wb=(_mj.land||{}).wip_block;
@@ -1498,33 +1497,9 @@
     if(!rest.length){ try{sessionStorage.removeItem('strayOpenTerms');}catch(_){} m.remove(); return; }
     setActiveTerm((m.dataset.sid===sid)?rest[0].dataset.sid:m.dataset.sid);
   }
-  // DD-016: merge this card into another (durable; survives re-classify)
-  function mergeStart(e,id){
-    e.stopPropagation();
-    const self=DATA.rows.find(r=>r.id===id); if(!self) return;
-    const others=DATA.rows.filter(r=>r.id&&r.id!==id);
-    if(!others.length){ toast('没有可合并的目标'); return; }
-    const host=e.target.closest('.acts'); if(!host) return;
-    const opts=others.map(r=>`<option value="${esc(r.id)}">${esc(r.ws)} · ${esc(r.name)}</option>`).join('');
-    host.innerHTML=`<span style="font-size:12.5px;color:var(--ink-dim)">把「${esc(self.name)}」合并到:</span>`+
-      `<select id="mergeSel" style="font-size:12px;background:var(--bg-row);color:var(--ink);border:1px solid var(--hair);border-radius:6px;padding:6px 8px;max-width:280px">${opts}</select>`+
-      `<button class="btn primary" onclick="mergeConfirm(event,'${esc(id)}')">确认合并</button>`+
-      `<button class="btn" onclick="renderCurrent()">取消</button>`;
-  }
-  async function mergeConfirm(e,id){
-    e.stopPropagation();
-    const sel=document.getElementById('mergeSel'); if(!sel) return;
-    const self=DATA.rows.find(r=>r.id===id), target=DATA.rows.find(r=>r.id===sel.value);
-    if(!self||!target) return;
-    const sessions=[...new Set([...(self.sessions||[]),...(target.sessions||[])])];
-    try{
-      const r=await fetch(ORIGIN+'/api/merge',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({sessions, canonical_id:target.id, name:target.name})});
-      if(!r.ok) throw 0;
-      toast('已合并到「'+target.name+'」');
-      setTimeout(loadData, 500);
-    }catch(_){ toast('合并失败'); }
-  }
+  // (DD-033: the DD-016 card-merge UI was retired — card = session, there is
+  // nothing to merge. Sub-card branch merging (DD-031) is a different thing
+  // and lives in the terminal sidebar.)
   let tt;function toast(m,ms){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),ms||1800);}
 
   function setView(v){document.body.dataset.view=v;try{localStorage.setItem('cockpit-view',v)}catch(e){}
