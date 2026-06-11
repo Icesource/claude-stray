@@ -1007,9 +1007,13 @@ def deleted_session_ids_on_disk() -> dict[str, str]:
 # ---------- apply user overrides ------------------------------------------
 
 
-def apply_user_overrides_inplace(mindmap: dict) -> int:
+def apply_user_overrides_inplace(mindmap: dict, *, consume: bool = True) -> int:
     """Bake task_toggles + deleted_tasks from user_overrides.json into
     the in-memory mindmap. Returns count of changes.
+
+    consume=False (DD-033 shadow/diff runs) applies the toggles but does
+    NOT clear the overrides file — a non-canonical run must never eat
+    user intent meant for the real dashboard.
 
     DD-011: toggles carry a `status` enum (`pending|done|cancelled`).
     A pre-DD-011 toggle with `done: bool` is accepted for backward
@@ -1060,7 +1064,7 @@ def apply_user_overrides_inplace(mindmap: dict) -> int:
                         applied_tog += 1
                 new_tasks.append(t)
             init["tasks"] = new_tasks
-    if applied_tog or removed_tasks:
+    if (applied_tog or removed_tasks) and consume:
         print(f"[classify] applied {applied_tog} task toggles, "
               f"removed {removed_tasks} deleted tasks")
         # Clear the consumed task overrides. Persistent suppression
@@ -2242,9 +2246,15 @@ def main() -> int:
                     help="build prompt, print summary, do not call AI")
     ap.add_argument("--output", type=Path, default=None,
                     help=f"write result to FILE instead of {DASHBOARD_FILE}")
+    ap.add_argument("--mech", action="store_true",
+                    help="DD-033: mechanical assembly (no AI) via _assemble.py")
     args = ap.parse_args()
 
     output_path = args.output or DASHBOARD_FILE
+
+    if args.mech:
+        import _assemble
+        return _assemble.assemble_main(output_path)
 
     # ---- 1. Load + clean PRIOR ----
     prior = load_prior() or {"schema_version": 2, "workspaces": []}
