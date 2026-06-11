@@ -355,6 +355,12 @@ def test_late_commits_ride_and_catchup_auto_resolves(h):
     st, j = h.post("/api/subcard-merge", {"sid": sid2, "target": "main"})
     assert st == 200, (st, j)
     h.wait_merge_ready(slug2)
+    # let the nudge-resumed fake claude EXIT before advancing main — otherwise
+    # its in-flight `git merge main` races the advance and absorbs it (fine
+    # product behavior, but it makes the 409 below non-deterministic)
+    h._wait(lambda: subprocess.run(
+        [TMUX, "-L", h.sock, "has-session", "-t", "stray-" + sid2[:8]],
+        capture_output=True).returncode != 0, 30, "nudged fake never exited")
     with open(os.path.join(h.repo, "advance.txt"), "w") as f:
         f.write("x\n")
     _git(h.repo, "add", "-A"); _git(h.repo, "commit", "-q", "-m", "target-advances")
