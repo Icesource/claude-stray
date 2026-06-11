@@ -224,6 +224,7 @@
   .subdetail .sd-res{margin-top:8px;display:flex;flex-direction:column;gap:5px}
   .name .ws .lv.subc{color:var(--ink-dim);border-color:var(--hair)}
   .name .ws .lv.subc.needs{color:var(--needs);border-color:var(--needs-edge)}
+  .name .ws .lv.subc.run{color:var(--run);border-color:var(--run)}
   .detail .summary{font-size:12.5px;color:var(--ink-dim);margin-bottom:9px}
   .detail .fresh-tag{font-size:10.5px;color:var(--run);font-family:var(--mono);letter-spacing:.04em;margin-bottom:7px}
   .detail .await-line{font-size:12.5px;color:var(--needs);background:var(--needs-bg);border:1px solid var(--needs-edge);border-radius:7px;padding:7px 10px;margin:2px 0 8px;line-height:1.5}
@@ -824,6 +825,12 @@
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
+    // 主卡自己平静但子卡在跑:band/位置保持主卡真实状态(2026-06-11 反馈:不被
+    // 子卡活动遮蔽),但 mid 格必须大声标出子卡活动 —— 否则「两个子卡都在跑,
+    // 主卡却显示闲置」看起来像整件事死了。
+    const kr=(r.children||[]).filter(c=>c.band==='running').length;
+    if(kr&&(r.band==='idle'||r.band==='paused'||r.band==='done'))
+      return `<div class="mid running"><span class="rtext">⑃ ${kr} 个子卡进行中 · 主卡${r.band==='idle'?'闲置':r.band==='paused'?'搁置':'已完成'}</span></div>`;
     if(r.band==='idle'){const a=(r.artifacts||[]).find(x=>x&&(x.url||x.ref_id));
       const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
       return `<div class="mid idle"${tip}><span class="rtext">${p?esc(p):esc(r.idle)+' 未动'}</span>${a?chip(a):''}</div>`;}
@@ -885,7 +892,7 @@
     const seal=r.sealed?`<span class="lv sealed">沉淀</span>`:(r.archived?`<span class="lv arch">📦 已归档</span>`:'');
     let roll='';
     if(r.children&&r.children.length){const c=subRollup(r.children);
-      roll=`<span class="lv subc${c.needs?' needs':''}" title="${c.total} 个子任务">⑃ ${c.total}${c.needs?' · '+c.needs+'等你':(c.done?' · '+c.done+'完成':'')}</span>`;}
+      roll=`<span class="lv subc${c.needs?' needs':(c.running?' run':'')}" title="${c.total} 个子任务">⑃ ${c.total}${c.needs?' · '+c.needs+'等你':(c.running?' · '+c.running+'在跑':(c.done?' · '+c.done+'完成':''))}</span>`;}
     return `<div class="row${r.sealed?' is-sealed':''}${r.archived?' is-arch':''}${r.children?' has-subs':''}" data-band="${r.band}" data-id="${esc(r.id||'')}" data-sid="${esc(r.session||'')}">${statusIcon(r.band,12)}`+
       `<div class="name"><div class="t">${esc(r.name)}</div><div class="ws">${esc(r.ws)} ${lv}${seal}${roll}</div></div>`+
       midCell(r)+`<div class="timer">${esc(r.idle)}</div><div class="go" title="在内嵌终端打开这条会话">▸</div></div>`+detail(r)+subRowsEl(r.children);}
