@@ -681,7 +681,7 @@
       if(!weeks.length){ board.innerHTML='<div style="padding:48px;text-align:center;color:var(--ink-faint)">还没有完成 / 归档的工作</div>'; return; }
       board.innerHTML=weeks.map(w=>{
         const byWs={}; (w.items||[]).forEach(it=>{(byWs[it.ws]=byWs[it.ws]||[]).push(it);});
-        const groups=Object.keys(byWs).map(ws=>`<div class="aw-proj"><span class="aw-ws">${esc(ws)}</span><div class="aw-items">`+byWs[ws].map(it=>`<span class="aw-item ${it.kind}" title="${esc((it.when||'').slice(0,10))}">${it.kind==='archived'?'📦':'✓'} ${esc(it.name)}</span>`).join('')+`</div></div>`).join('');
+        const groups=Object.keys(byWs).map(ws=>`<div class="aw-proj"><span class="aw-ws">${esc(ws)}</span><div class="aw-items">`+byWs[ws].map(it=>`<span class="aw-item ${esc(it.kind)}" title="${esc((it.when||'').slice(0,10))}">${it.kind==='archived'?'📦':'✓'} ${esc(it.name)}</span>`).join('')+`</div></div>`).join('');
         const rep=w.has_report?`<span class="aw-rep" title="基于 DD-006 周报提炼">周报</span>`:'';
         const hl=(w.highlights&&w.highlights.length)?`<ul class="aw-hl">`+w.highlights.map(h=>`<li>${esc(h)}</li>`).join('')+`</ul>`:'';
         return `<section class="aw-week"><div class="aw-head"><span class="aw-label">${esc(w.label)}</span><span class="aw-wk">${esc(w.week)}</span>${rep}<span class="aw-cnt">${w.count} 项</span></div><div class="aw-summary">${esc(w.summary)}</div>${hl}${groups}</section>`;
@@ -839,7 +839,7 @@
       if(la.length)h+=`<div class="sectit">代码位置</div><div class="loc-row">`+la.map(locItem).join('')+`</div>`;
       if(nc>0)h+=`<div class="res-noise">+ ${nc} 个已折叠(commit 等噪声,下次同步自动清除)</div>`;}}
     if(r.sealed)h+=`<div class="sealed-note">📑 会话内沉淀 · 这段已完成的工作来自同一会话(<code>${esc((r.origin_session||'').slice(0,8))}</code>)的早期阶段,已封存为独立记录。</div>`;
-    h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||r.level||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
+    h+=`<div class="meta"><span>${r.sealed?'源自会话 '+esc((r.origin_session||'').slice(0,8)):'会话 '+(r.n_sessions||0)+' 个'}</span><span>层级 ${LV[r.level]||esc(r.level)||''}</span><span>工作区 ${esc(r.ws)}</span></div>`;
     const sid0=esc(r.session||'');
     // DD-019: sealed cards have no live session — "进入会话" resumes the
     // origin session; the merge action is meaningless (empty sessions[]).
@@ -1099,7 +1099,7 @@
       const turns=j.turns||[];
       const hb=m.querySelector('.histbody'); if(!hb)return;
       const atBottom = hb.scrollHeight-hb.scrollTop-hb.clientHeight < 80;
-      hb.innerHTML = turns.length?turns.map(t=>`<div class="ht ${t.role}"><div class="ht-role">${t.role==='user'?'你':'Claude'}</div><div class="ht-text">${esc(t.text)}</div></div>`).join(''):'<div style="color:var(--ink-faint);padding:24px;text-align:center">没有可显示的对话</div>';
+      hb.innerHTML = turns.length?turns.map(t=>`<div class="ht ${esc(t.role)}"><div class="ht-role">${t.role==='user'?'你':'Claude'}</div><div class="ht-text">${esc(t.text)}</div></div>`).join(''):'<div style="color:var(--ink-faint);padding:24px;text-align:center">没有可显示的对话</div>';
       const cnt=m.querySelector('.hist-cnt'); if(cnt)cnt.textContent=turns.length;
       if(atBottom) hb.scrollTop=hb.scrollHeight;
     }catch(_){}
