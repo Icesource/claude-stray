@@ -1096,6 +1096,11 @@
       if(land.blocked) return `<span class="sr-merge warn" title="${esc(land.reason||'落地受阻')} —— 处理后会自动落地">落地受阻</span>`;
       return `<span class="sr-merge busy" title="子卡正把 ${esc(mj.target_branch||'目标')} 合并进自己;合完 stray 会自动落地回去,你不用管">合并中…</span>`;
     }
+    // 已合并(没有任何未合并提交,ahead=0)→ 没东西可合,不渲染按钮;徽章
+    // ✓已合并 已表达状态。子卡再出新提交时 ahead>0,按钮自动回来。
+    // merge_status 缺失(非 worktree 子卡 / 取数失败)时保守显示按钮。
+    const ms=c.merge_status;
+    if(ms && !(ms.ahead>0)) return '';
     return `<button class="sr-merge" title="把这张子卡合并回主干:子卡先把目标合进来解冲突,stray 再自动 FF 回目标(一步到位,卡保留)" onclick="event.stopPropagation();mergeSubcard(event,'${sid}','${esc((c.name||'').replace(/'/g,''))}')">合并</button>`;
   }
   // DD-034: start a merge — the sub-card merges the target into itself; stray auto-lands.
@@ -1334,7 +1339,9 @@
           mrg = _mj.state==='queued' ? `<span class="ts-merge" title="排队中(串行)">排队中…</span>`
               : L.blocked ? `<span class="ts-merge" title="${esc(L.reason||'落地受阻')} —— 处理后自动落地">落地受阻</span>`
               : `<span class="ts-merge" title="子卡合并中,完成后自动落地回去">合并中…</span>`;
-        } else mrg=`<span class="ts-merge" title="合并这张子卡回主干(自动落地)" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`;
+        } else { const _ms=r.merge_status;   // 已合并(ahead=0)→ 不渲染按钮,同 mergeOrLandBtn
+          mrg = (_ms && !(_ms.ahead>0)) ? ''
+              : `<span class="ts-merge" title="合并这张子卡回主干(自动落地)" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`; }
       }
       return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
         statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+(isSub?mergeBadge(r,true):'')+mrg+close+`</button>`; };
