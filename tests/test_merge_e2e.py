@@ -363,6 +363,39 @@ def test_land_blocked_until_agent_catches_up(h):
     assert st == 200 and j.get("ok"), (st, j)
 
 
+@_scenario("abort")
+def test_closing_merge_agent_cancels_job(h):
+    """DD-031「中途放弃 → 手动关」: closing the merge-agent card must cancel its
+    job (else the stuck 'resolving' holds the serial gate forever), delete the
+    agent's REAL branch (merge-<slug>, not worktree-<slug>), and let the next
+    queued merge start."""
+    sid, slug = h.spawn_subcard("theta", [
+        "echo t > theta.txt", "git add -A && git commit -q -m theta"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200, (st, j)
+    h.wait_merge_ready(slug)
+    # the agent's sid is captured asynchronously — wait for it
+    msid = {}
+
+    def captured():
+        job = next((x for x in h.jobs() if x.get("sub_sid") == sid), None)
+        if job and job.get("merge_sid"):
+            msid["v"] = job["merge_sid"]
+            return True
+        return False
+    h._wait(captured, 30, "merge agent sid never captured")
+    st, j = h.post("/api/subcard-close", {"sid": msid["v"], "force": True})
+    assert st == 200 and j.get("ok"), (st, j)
+    assert h.jobs() == [], f"job must be cancelled, got {h.jobs()}"
+    h._wait(lambda: not h.branch_exists("merge-" + slug), 15,
+            "agent branch merge-<slug> not deleted on close")
+    # the abandoned ORIGINAL sub-card is untouched — user closes it explicitly
+    assert h.branch_exists("worktree-" + slug)
+
+
 @_scenario("wip")
 def test_wip_blocks_landing(h):
     sid, slug = h.spawn_subcard("epsilon", [

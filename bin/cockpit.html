@@ -648,23 +648,15 @@
     for(const r of rows){ const p=r.parent_session_id;
       if(p&&bySid.has(p)&&bySid.get(p)!==r){ const par=bySid.get(p);
         (par.children=par.children||[]).push(r); childIds.add(r.id); r.is_subcard=true; } }
-    // 交互优化: a parent's PLACEMENT band rolls up its sub-cards. If the parent's
-    // own turn ended (done_unread) while a sub-card is still running, the whole
-    // card belongs in 进行中 — not 待查看. needs_you stays top (most actionable).
-    // We keep the parent's own band in _own_band for its detail content.
+    // 注意力归带:只有子卡的 needs_you 会上卷到平静的主卡(埋在 idle 区的
+    // 「子卡等你」不能错过)。running/done 一律不上卷 —— 子卡在跑由 ⑃ 徽章表达,
+    // 主卡的 band 永远是它自己的真实状态,不被子卡活动遮蔽(用户 2026-06-11:
+    // 「子卡进行中把主卡也带成进行中,看不到主卡实际状态」)。
     for(const r of rows){ if(r.children&&r.children.length){
-      // A more-urgent child may bubble up onto a CALM parent so a buried needy
-      // sub-card isn't missed. But if the parent is itself active — running (you're
-      // talking to it) or needs_you (its OWN awaiting_user) — its own band WINS;
-      // child attention then shows only via the ⑃ badge, never by masking the
-      // parent's own state. (Fix: a sub-card's needs_you used to hijack a running
-      // main card so it never showed 进行中 while you worked in it.)
-      if(r.band==='running'||r.band==='needs_you') continue;
-      let best=r.band;
-      for(const c of r.children){ if((FAM_RANK[c.band]??9)<(FAM_RANK[best]??9)) best=c.band; }
-      if(best!==r.band){ r._own_band=r.band; r.band=best;
-        if(best==='running') r.activity=r.activity||'子卡进行中';
-        else if(best==='needs_you'){ const cn=r.children.find(c=>c.band==='needs_you'); if(cn&&!r.reason) r.reason=cn.reason||'子卡等你确认'; } } } }
+      if(r.band==='running'||r.band==='needs_you') continue;   // 主卡自己最优先
+      const cn=r.children.find(c=>c.band==='needs_you');
+      if(cn){ r._own_band=r.band; r.band='needs_you';
+        if(!r.reason) r.reason=cn.reason||'子卡等你确认'; } } }
     return rows.filter(r=>!childIds.has(r.id));
   }
   // roll-up of a parent's children: counts by band for the parent's badge

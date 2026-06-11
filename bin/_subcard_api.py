@@ -253,12 +253,14 @@ class SubcardAPI:
             return self._reply(400, {"error": "sid required"})
         # resolve the worktree + main repo from the child's own cwd up front, so the
         # guard can inspect it and the removal below can reuse it.
-        main_repo = wt_path = None
+        main_repo = wt_path = wt_branch = None
         try:
             cwd = S._resume_cwd_for(sid)
             cl = S._worktree.compute_code_location(cwd) if (cwd and S._worktree) else None
             if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
                 main_repo, wt_path = cl["main_repo"], cl["worktree"]
+                wt_branch = cl.get("branch")   # the REAL branch (merge agents are
+                # on merge-<slug>, not worktree-<slug> — guessing by slug missed it)
         except Exception:
             pass
         if not force:
@@ -283,8 +285,9 @@ class SubcardAPI:
                 rm = ["worktree", "remove"] + (["--force"] if force else []) + [wt_path]
                 S._worktree._git(main_repo, *rm, timeout=20)
                 S._worktree._git(main_repo, "worktree", "prune", timeout=10)
-                if slug:
-                    S._worktree._git(main_repo, "branch", "-D", "worktree-" + slug, timeout=10)
+                branch = wt_branch or ("worktree-" + slug if slug else "")
+                if branch:
+                    S._worktree._git(main_repo, "branch", "-D", branch, timeout=10)
                 removed_wt = wt_path
         except Exception:
             pass
@@ -322,6 +325,32 @@ class SubcardAPI:
                 self._remove_from_dashboard(iid)
             except Exception:
                 pass
+        # 5. DD-031「中途放弃 → 手动关」:closing either side of a merge (the
+        # merge AGENT card or the original sub-card) must CANCEL its job — a
+        # stuck 'resolving' job holds the serial gate and blocks every future
+        # merge. Sweep the agent's leftovers, then start the next queued merge.
+        if S._merge is not None:
+            try:
+                job = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
+                            if sid in (j.get("merge_sid"), j.get("sub_sid"))), None)
+                if job:
+                    if sid == job.get("sub_sid") and job.get("merge_slug"):
+                        # sub-card closed mid-merge → its agent is now pointless
+                        wt_dir = os.path.join(job["main_repo"], ".claude",
+                                              "worktrees", job["merge_slug"])
+                        if job.get("merge_sid"):
+                            self._teardown_worktree_card(job["merge_sid"], force=True)
+                        S._worktree._git(job["main_repo"], "worktree", "remove",
+                                         "--force", wt_dir, timeout=20)
+                        S._worktree._git(job["main_repo"], "worktree", "prune", timeout=10)
+                        S._worktree._git(job["main_repo"], "branch", "-D",
+                                         job["merge_slug"], timeout=10)
+                    S._merge.remove_job(str(S.MERGE_JOBS_JSON), job["sub_sid"])
+                    nxt = S._merge.next_queued(str(S.MERGE_JOBS_JSON))
+                    if nxt:
+                        self._start_merge_job(nxt)
+            except Exception as e:
+                print(f"[subcard-close] merge-job cancel failed: {e}", file=sys.stderr)
         return self._reply(200, {"ok": True, "removed_worktree": removed_wt})
 
     # ---- DD-031: sub-card merge closure -----------------------------------
