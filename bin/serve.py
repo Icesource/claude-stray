@@ -1572,6 +1572,10 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # respawn a fresh, correct one instead of reusing a broken black screen.
         if ex and _pid_alive(ex.get("pid")) and ex.get("holder") == _terminal_holder():
             return self._reply(200, {"url": f"http://127.0.0.1:{ex['port']}/", "reused": True})
+        # probe=true: pre-warm path (page-refresh reconnect) — ONLY reveal an
+        # already-live terminal; never resume/spawn anything as a side effect.
+        if body.get("probe"):
+            return self._reply(404, {"error": "no live terminal", "probe": "miss"})
         if ex:  # stale/mismatched — tear it down before respawning
             try:
                 os.kill(int(ex["pid"]), signal.SIGTERM)

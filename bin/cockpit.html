@@ -323,7 +323,8 @@
      terminal (mirror of the right resource dock) so the solid terminal keeps full size;
      panel is transparent, items are individual floating chips. */
   .termside{position:fixed;z-index:71;top:calc((100vh - min(80vh,880px))/2);right:calc(50% + 558px);
-    width:264px;max-height:min(80vh,880px);overflow-y:auto;overflow-x:visible;display:flex;flex-direction:column;gap:7px;padding:2px 8px 6px}
+    width:264px;max-height:min(80vh,880px);overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:7px;padding:2px 8px 6px;scrollbar-width:none}
+  .termside::-webkit-scrollbar{display:none}   /* 浮动 chip 旁的原生滚动条太丑;滚轮仍可竖滚 */
   .termside[hidden]{display:none}
   /* 主卡行:保持原来的「主标题」观感(无背景无边框),但整行可点(切回主卡终端) */
   .tside-h{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0;text-align:left;
@@ -386,7 +387,8 @@
   .termtl{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--hair);background:color-mix(in srgb,var(--bg-row) 60%,transparent);overflow:hidden}
   .termtl[hidden]{display:none}
   .termtl .ttl-cap{flex:none;font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
-  .ttl-track{display:flex;align-items:center;gap:0;overflow-x:auto;min-width:0;flex:1;padding-bottom:2px}
+  .ttl-track{display:flex;align-items:center;gap:0;overflow-x:auto;min-width:0;flex:1;padding-bottom:2px;scrollbar-width:none}
+  .ttl-track::-webkit-scrollbar{display:none}   /* 原生横向滚动条太丑;滚轮/触控板仍可横滚 */
   .ttl-node{position:relative;display:flex;align-items:center;gap:6px;flex:none;padding-right:14px;color:var(--ink-faint)}
   .ttl-node:not(:last-child)::after{content:'';width:18px;height:1.5px;background:var(--connector);flex:none;margin-left:2px}
   .ttl-node .ttl-dot{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--ink-faint);background:var(--bg-elev);flex:none;box-sizing:border-box}
@@ -1200,12 +1202,12 @@
     const m=getTermModal();
     // already have a live terminal for this sid → just reveal it (instant,
     // same WS, scroll preserved, zero re-resume).
-    if(m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`)){ m.style.display='flex'; setActiveTerm(sid); return; }
-    m.style.display='flex'; showTermLoading('正在 resume 会话 · 启动终端…','首次打开要等 claude resume + tmux,几秒');
+    if(m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`)){ _revealTerm(m); setActiveTerm(sid); return; }
+    _revealTerm(m); showTermLoading('正在 resume 会话 · 启动终端…','首次打开要等 claude resume + tmux,几秒');
     try{
       const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,force:!!force})});
       const j=await r.json().catch(()=>({}));
-      if(r.ok&&j.url){ addTerm(sid,j.url); setActiveTerm(sid); return; }
+      if(r.ok&&j.url){ addTerm(sid,j.url,!!j.reused); setActiveTerm(sid); return; }
       hideTermLoading();
       if(j.error==='maybe_live'&&j.need_force){ if(confirm(j.hint||'该会话可能还在别处开着,确定在驾驶舱新开一个副本?')) openTerminal(null,sid,true); return; }
       if(String(j.error||'').indexOf('ttyd')>=0){ toast('未装 ttyd:brew install ttyd'); return; }
@@ -1216,16 +1218,41 @@
     const o=m.querySelector('.term-loading'); if(!o)return;
     o.querySelector('.tl-msg').textContent=msg||'正在启动终端…'; o.querySelector('.tl-sub').textContent=sub||''; o.hidden=false; }
   function hideTermLoading(){ const o=document.getElementById('termModal')?.querySelector('.term-loading'); if(o)o.hidden=true; }
-  function addTerm(sid,url){
+  function addTerm(sid,url,reused){
     const stack=getTermModal().querySelector('.termstack');
     const f=document.createElement('iframe'); f.className='termframe'; f.dataset.sid=sid; f.src=url;
     f.setAttribute('allow','clipboard-read; clipboard-write');
-    // ttyd's page loads fast, but tmux + claude --resume keep painting for a few
-    // more seconds; keep the spinner a touch past load, with a hard cap.
-    f.addEventListener('load',()=>setTimeout(hideTermLoading,1800));
+    // ttyd's page loads fast. First-resume keeps painting a few more seconds →
+    // hold the spinner past load. Reconnect to an ALREADY-LIVE terminal (reused,
+    // e.g. after a page refresh) paints immediately → near-zero hold(沉浸感).
+    f.addEventListener('load',()=>setTimeout(hideTermLoading,reused?200:1800));
     setTimeout(hideTermLoading,8000);
     stack.appendChild(f);
+    _termsSave();
   }
+  // 沉浸感:记住开着的终端(本标签页内),刷新后后台预连,点「终端」秒开。
+  function _termsSave(){ try{ const m=document.getElementById('termModal'); if(!m)return;
+    const sids=[...m.querySelectorAll('.termstack iframe')].map(f=>f.dataset.sid).filter(s=>s&&s.indexOf('new-')!==0);
+    sessionStorage.setItem('strayOpenTerms', JSON.stringify({sids:sids.slice(0,4), active:m.dataset.sid||''})); }catch(_){} }
+  function _revealTerm(m){ m.style.display='flex'; m.style.visibility=''; m.style.pointerEvents=''; }
+  async function preWarmTerminals(){
+    let saved=null; try{ saved=JSON.parse(sessionStorage.getItem('strayOpenTerms')||'null'); }catch(_){}
+    if(!saved||!saved.sids||!saved.sids.length) return;
+    const m=getTermModal();
+    if(m.style.display==='flex'&&m.style.visibility!=='hidden') return;   // 用户已经打开了
+    // display:flex + visibility:hidden:iframe 拿到真实布局尺寸(xterm 不会 0 尺寸),
+    // 用户却看不到;首次 reveal 时清掉 visibility。
+    m.style.display='flex'; m.style.visibility='hidden'; m.style.pointerEvents='none';
+    let opened=[];
+    for(const sid of saved.sids){
+      try{ const r=await fetch(ORIGIN+'/api/terminal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,probe:true})});
+        const j=await r.json().catch(()=>({}));
+        if(r.ok&&j.url&&!m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`)){ addTerm(sid,j.url,true); opened.push(sid); } }catch(_){}
+    }
+    if(opened.length){ setActiveTerm(opened.includes(saved.active)?saved.active:opened[0]); hideTermLoading(); }
+    else { m.style.display='none'; m.style.visibility=''; m.style.pointerEvents=''; }
+  }
+  window.addEventListener('load',()=>setTimeout(preWarmTerminals,600));
   // DD-021②: the resources (MR/ISSUE/CR/doc) this session produced, shown
   // beside its terminal so you jump to the page in one click — no hunting.
   function findRowForSid(sid){ return (DATA.allRows||DATA.rows||[]).find(r=>r.session===sid||(r.sessions||[]).includes(sid)); }
@@ -1312,9 +1339,9 @@
     if(!r) return [];
     const segs=((r.progress||'').match(/[^。!?;；\n]+[。!?;；]?/g)||[])
       .map(s=>s.trim()).filter(s=>s.length>=4);
-    const nodes=segs.map(s=>({t:s.length>34?s.slice(0,34)+'…':s, done:true}));
+    const nodes=segs.map(s=>({t:s.length>34?s.slice(0,34)+'…':s, full:s, done:true}));
     const nx=r.next_step||r.awaiting_user;
-    if(nx) nodes.push({t:(nx.length>34?nx.slice(0,34)+'…':nx), done:false, next:true});
+    if(nx) nodes.push({t:(nx.length>34?nx.slice(0,34)+'…':nx), full:nx, done:false, next:true});
     return nodes;
   }
   function renderTermTimeline(sid){
@@ -1322,13 +1349,20 @@
     const tl=m.querySelector('.termtl'); if(!tl)return;
     const r=findRowForSid(sid);
     const nodes=termTLNodes(r);
-    if(!nodes.length){ tl.hidden=true; tl.innerHTML=''; return; }
+    if(!nodes.length){ tl.hidden=true; tl.innerHTML=''; tl.dataset.sig=''; return; }
     tl.hidden=false;
+    // 内容没变就不重渲染 —— 保住用户手动滚到的位置(数据每几秒刷一次)。
+    const sig=sid+'|'+nodes.map(n=>n.t).join('');
+    if(tl.dataset.sig===sig) return;
+    tl.dataset.sig=sig;
     const cur=nodes.filter(n=>n.done).length;   // index of the live edge
     tl.innerHTML=`<span class="ttl-cap" title="当前卡片的进度时间线">进度</span><div class="ttl-track">`+
-      nodes.map((n,i)=>`<div class="ttl-node${n.done?' done':''}${n.next?' next':''}${i===cur-1?' live':''}" title="${esc(n.t)}">`+
+      nodes.map((n,i)=>`<div class="ttl-node${n.done?' done':''}${n.next?' next':''}${i===cur-1?' live':''}" title="${esc(n.full||n.t)}">`+
         `<span class="ttl-dot"></span><span class="ttl-lbl">${esc(n.t)}</span></div>`).join('')+
       `</div>`;
+    // 默认停在最右(最新进展/下一步);旧节点往左滚或悬停看全文。
+    const track=tl.querySelector('.ttl-track');
+    if(track) track.scrollLeft=track.scrollWidth;
   }
   // 一个整洁的弹框替代之前连续两个 prompt():任务(多行)+ 可选名字,一次填完。
   function spawnSubcardFromUI(e,rootSid){ if(e)e.stopPropagation();
@@ -1382,6 +1416,7 @@
     renderTermTabs(sid);
     const act=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`), nt=m.querySelector('.ttnew');
     if(nt&&act) nt.href=act.src;
+    _termsSave();
   }
   // Header tabs (one per 一级卡片 family). Split out of setActiveTerm so the data
   // refresh loop can re-run it — otherwise the tab's status icon froze at whatever
@@ -1424,8 +1459,9 @@
     if(sid) fetch(ORIGIN+'/api/terminal-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid})}).catch(()=>{});
     const m=document.getElementById('termModal'); if(!m)return;
     const f=m.querySelector(`.termstack iframe[data-sid="${cssEsc(sid)}"]`); if(f)f.remove();
+    _termsSave();
     const rest=[...m.querySelectorAll('.termstack iframe')];
-    if(!rest.length){ m.remove(); return; }
+    if(!rest.length){ try{sessionStorage.removeItem('strayOpenTerms');}catch(_){} m.remove(); return; }
     setActiveTerm((m.dataset.sid===sid)?rest[0].dataset.sid:m.dataset.sid);
   }
   // DD-016: merge this card into another (durable; survives re-classify)
