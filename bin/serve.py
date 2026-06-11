@@ -554,7 +554,7 @@ def _attach_code_location(mindmap: dict) -> int:
             if cl:
                 init["code_location"] = cl
                 n += 1
-                # DD-033 视角:子卡相对主干的合并状态,挂到卡上让列表实时显示
+                # DD-034 视角:子卡相对主干的合并状态,挂到卡上让列表实时显示
                 # 「已合并 / N 未合并 / 未提交」。只算 worktree 子卡;merge_status
                 # 按 tip+mtime 缓存,稳态近零成本(只多一次 rev-parse)。
                 if cl.get("is_worktree") and cl.get("main_repo") and cl.get("branch"):
@@ -1342,7 +1342,7 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # analysis running / done / failed, and is claude even available.
         data["sync"] = _read_sync_status()
         data["claude_ok"] = bool(shutil.which("claude"))
-        # DD-033 single-button: merge jobs + each job's landing readiness, so the
+        # DD-034 single-button: merge jobs + each job's landing readiness, so the
         # sub-card row can render one 「合并中…/落地受阻」 status (the FF is auto).
         try:
             jobs = (_merge.load(str(MERGE_JOBS_JSON)).get("jobs", []) if _merge else [])
@@ -2387,7 +2387,7 @@ _BOUND_PORT = None  # set once serve binds — the auto-land watcher POSTs to se
 
 
 def _merge_autoland_loop(stop_event) -> None:
-    """DD-033 single-button: once a sub-card has merged the target into its own
+    """DD-034 single-button: once a sub-card has merged the target into its own
     branch (and the main checkout is clean), fast-forward the target to it —
     automatically, so the user only ever clicks 「合并」 once. The sub-card
     physically cannot update the checked-out target itself (git refuses), so
@@ -2533,7 +2533,7 @@ def serve(open_browser: bool = True):
             )
             update_thread.start()
 
-        # DD-033: auto-land ready merge jobs so 「合并」 is a single click. Gated
+        # DD-034: auto-land ready merge jobs so 「合并」 is a single click. Gated
         # separately from _NO_BG so integration tests can opt INTO it
         # (STRAY_AUTOLAND=1) while keeping the rest of the background off.
         if not _NO_BG or os.environ.get("STRAY_AUTOLAND") == "1":

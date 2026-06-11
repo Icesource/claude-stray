@@ -37,7 +37,7 @@ _TRUST_MARKERS = ("trust this folder", "Yes, I trust")
 
 
 def landing_state(job):
-    """DD-033 single-button flow: is this merge job ready to fast-forward the
+    """DD-034 single-button flow: is this merge job ready to fast-forward the
     target to the sub branch, and is anything blocking it? Pure git inspection
     (no Handler) so both the auto-land watcher and /api/data can call it.
       ready    = the sub branch CONTAINS the target (the sub merged the target
@@ -555,7 +555,7 @@ class SubcardAPI:
             return False
 
     def _start_merge_job(self, job: dict) -> bool:
-        """DD-033: the sub-card IS its own merge agent — no extra card, no
+        """DD-034: the sub-card IS its own merge agent — no extra card, no
         merge-<slug> branch. Inject the merge instruction into the sub-card's
         own session (live holder → send-keys; dead → detached resume); it runs
         `git merge <target>` on ITS OWN branch, then landing fast-forwards the
@@ -647,7 +647,7 @@ class SubcardAPI:
                      + instruction.splitlines()[0])})
 
     def _handle_subcard_land(self, body: dict):
-        """DD-033: fast-forward the target branch to the SUB-CARD branch tip
+        """DD-034: fast-forward the target branch to the SUB-CARD branch tip
         (the sub merged the target into itself beforehand), then start the next
         queued merge. The sub-card SURVIVES landing — it may keep working; the
         user closes it with × when done."""
@@ -661,7 +661,7 @@ class SubcardAPI:
             job = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
                         if j.get("sub_sid") == sub_sid), None)
         if not job and msid:
-            # DD-033: no separate agent sid anymore — the sub IS the agent, so a
+            # DD-034: no separate agent sid anymore — the sub IS the agent, so a
             # legacy client passing merge_sid may actually mean the sub itself.
             job = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
                         if j.get("sub_sid") == msid), None)
@@ -701,7 +701,7 @@ class SubcardAPI:
             return self._land_blocked_catchup(
                 job, "目标分支刚刚前进了,这次落地不再是 fast-forward —— 已让子卡追上",
                 self._merge_instruction(target))
-        # DD-033(用户决策): the sub-card SURVIVES landing. It may keep working
+        # DD-034(用户决策): the sub-card SURVIVES landing. It may keep working
         # on the same branch; the user closes it with × when truly done. No
         # teardown, no auto-close — just clear the job and advance the queue.
         S._merge.remove_job(str(S.MERGE_JOBS_JSON), job["sub_sid"])

@@ -30,7 +30,7 @@ described in [docs/RELEASE.md](docs/RELEASE.md).
 
 ### Added
 
-- **DD-033: 子卡自己是合并 agent**(`cdff798`):砍掉「合并 ⊳」agent 卡 ——
+- **DD-034: 子卡自己是合并 agent**(`cdff798`):砍掉「合并 ⊳」agent 卡 ——
   合并 = 把指令注入子卡自己的会话(活卡 send-keys / 死卡带全上下文 resume),
   在子卡分支上 merge 目标;落地 = FF 目标到子卡分支 tip;**落地后子卡保留**
   (可继续使用,手动 × 关闭)。落地后的新提交天然随落地带走。保留串行队列/

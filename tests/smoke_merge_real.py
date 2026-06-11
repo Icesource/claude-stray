@@ -170,7 +170,7 @@ try:
     (repo / "shared.py").write_text("VALUE = 1\n\ndef main_feature():\n    return \"main\"\n")
     _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "add main_feature")
 
-    # ---- phase 3: DD-033 — the sub-card ITSELF resolves (LIVE tmux nudge) ---
+    # ---- phase 3: DD-034 — the sub-card ITSELF resolves (LIVE tmux nudge) ---
     # the spawned interactive claude is still alive in its holder, so this
     # exercises the live send-keys injection path (e2e can't — fake exits).
     st, j = post(port, "/api/subcard-merge", {"sid": sids[0], "target": "main"})
@@ -188,16 +188,16 @@ try:
     assert not dirty.strip(), f"sub worktree not committed clean:\n{dirty}"
     log("conflict resolved by the sub-card itself (both functions kept)")
 
-    # ---- phase 4: land — DD-033: card SURVIVES --------------------------------
+    # ---- phase 4: land — DD-034: card SURVIVES --------------------------------
     st, j = post(port, "/api/subcard-land", {"sub_sid": sids[0]})
     assert st == 200 and j.get("ok") and j.get("kept"), (st, j)
     landed = (repo / "shared.py").read_text()
     assert "def sub_feature" in landed and "def main_feature" in landed, landed
     assert _git(repo, "rev-parse", "--verify", "--quiet", f"worktree-{slug}")[0] == 0, \
-        "DD-033: sub branch must SURVIVE landing"
-    assert sub_wt.is_dir(), "DD-033: sub worktree must SURVIVE landing"
+        "DD-034: sub branch must SURVIVE landing"
+    assert sub_wt.is_dir(), "DD-034: sub worktree must SURVIVE landing"
     assert json.loads((cache / "merge-jobs.json").read_text())["jobs"] == []
-    log("landed: main carries both sides; sub-card kept alive (DD-033)")
+    log("landed: main carries both sides; sub-card kept alive (DD-034)")
 
     # ---- phase 5: explicit × close cleans up ----------------------------------
     st, j = post(port, "/api/subcard-close", {"sid": sids[0], "force": True})
