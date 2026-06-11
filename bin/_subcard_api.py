@@ -221,6 +221,18 @@ class SubcardAPI:
                                 on_capture(sid)
                             except Exception:
                                 pass
+                        elif parent:
+                            # 父→子信息同步:让父卡的 claude 知道这张子卡的存在
+                            # (合并 agent 的 spawn 走 on_capture 分支,不打扰父卡)。
+                            try:
+                                first = (prompt or "").strip().splitlines()[0][:80]
+                                self._notify_parent_session(parent, (
+                                    "[stray] 用户已创建子卡「" + (name or wt_name) + "」(session "
+                                    + sid[:8] + ")并行处理:" + first
+                                    + " —— 它在独立 worktree 跑;之后需要它的进展时,运行 stray subtasks。"
+                                      "知悉即可,无需展开行动。"))
+                            except Exception:
+                                pass
                         return
                     if i == 15:
                         _probe_trust_dialog()
@@ -518,13 +530,10 @@ class SubcardAPI:
                                  "merge_slug": S._merge.merge_branch(sub_slug)})
 
 
-    def _nudge_merge_agent(self, job: dict, text: str) -> bool:
-        """Inject a catch-up instruction into the merge agent's live tmux
-        holder (it runs interactive claude there). Returns False when the
-        holder is gone — the caller falls back to a manual hint."""
-        ent = (S._TERMINALS.get(job.get("merge_sid") or "") or {})
-        holder = ent.get("name") or (
-            "stray-" + job["merge_token"][:8] if job.get("merge_token") else "")
+    @staticmethod
+    def _send_to_holder(holder: str, text: str) -> bool:
+        """Inject one message into a live tmux holder's interactive claude
+        (send-keys text + Enter). False when the holder is gone/dead."""
         if not holder:
             return False
         tmux = shutil.which("tmux")
@@ -542,6 +551,25 @@ class SubcardAPI:
             return True
         except Exception:
             return False
+
+    def _nudge_merge_agent(self, job: dict, text: str) -> bool:
+        """Inject a catch-up instruction into the merge agent's live tmux
+        holder (it runs interactive claude there). Returns False when the
+        holder is gone — the caller falls back to a manual hint."""
+        ent = (S._TERMINALS.get(job.get("merge_sid") or "") or {})
+        holder = ent.get("name") or (
+            "stray-" + job["merge_token"][:8] if job.get("merge_token") else "")
+        return self._send_to_holder(holder, text)
+
+    def _notify_parent_session(self, parent_sid: str, text: str) -> bool:
+        """父→子信息同步:UI 手动建子卡时,父卡的 claude 对此一无所知 ——
+        用户分派出去的任务它既不知道存在、也不知道去哪拉进展。子卡 sid 一捕获
+        就往父卡的活终端注入一行通知(它学到子卡的存在 + `stray subtasks` 这个
+        抓手)。父卡没有活终端 → 静默跳过(它之后仍可按需 stray subtasks)。"""
+        ent = S._TERMINALS.get(parent_sid) or {}
+        if ent.get("holder") != "tmux":
+            return False
+        return self._send_to_holder(ent.get("name") or "", text)
 
     def _land_blocked_catchup(self, job: dict, reason: str, instruction: str):
         """A landing that needs the merge agent to do more work first: nudge it
