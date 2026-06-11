@@ -106,6 +106,18 @@ def capture_sid(path, token, sid):
     return d
 
 
+def annotate(path, token, **fields):
+    """Merge extra fields into an entry (e.g. stuck_trust=True when the spawned
+    claude is sitting at the folder-trust dialog). No-op if the token is gone."""
+    with _locked(path):
+        d = load(path)
+        ent = d.get(token)
+        if ent is not None:
+            ent.update(fields)
+            _atomic_dump(path, d)
+    return d
+
+
 def remove(path, token):
     """Unregister by token. Returns True if it existed."""
     with _locked(path):
@@ -246,6 +258,9 @@ def _placeholder_card(token, ent, now):
         "code_location": cl,
         "parent_session_id": ent.get("parent"),
         "_pending": True,
+        # the spawned claude is sitting at Claude Code's folder-trust dialog —
+        # the cockpit renders an actionable hint instead of an eternal 准备中
+        "_stuck": "trust" if ent.get("stuck_trust") else None,
     }
 
 

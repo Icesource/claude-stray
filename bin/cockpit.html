@@ -615,7 +615,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
-        parent_session_id:init.parent_session_id||null, pending:!!init._pending,
+        parent_session_id:init.parent_session_id||null, pending:!!init._pending, stuck:init._stuck||null,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -805,7 +805,8 @@
   function midCell(r){
     // DD-030: 准备中 is orthogonal to band — show it whenever the card has no AI
     // content yet, styled by whatever its real band is (色彩跟随真实状态).
-    if(r.pending)return `<div class="mid ${esc(r.band)}"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`;
+    if(r.pending){ if(r.stuck==='trust')return `<div class="mid needs_you"><span class="rtext" title="Claude 对没打开过的目录会弹 folder-trust 确认;子卡在它后面动不了">⚠ 等 trust 确认 — 打开终端选 “Yes, I trust”</span></div>`;
+      return `<div class="mid ${esc(r.band)}"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`; }
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
     if(r.band==='done_unread')return progMid('dunread', r, esc(r.reason||'AI 已完成,待你查看'));
@@ -1312,6 +1313,7 @@
     dlg.innerHTML=`<div class="nsbox"><h3>＋ 子卡</h3><div class="nssub">在「${esc(pname)}」下起一个独立 worktree 的子任务(后台 <code>claude -p</code> 跑,跑完在左侧 resume 接管)。</div>`+
       `<label>任务</label><textarea id="scTask" class="nstext" rows="3" placeholder="要这个子卡去做的事,例:把鉴权超时改成可配置并补测试" spellcheck="false"></textarea>`+
       `<label style="margin-top:13px">名字 · worktree 名(可留空自动命名)</label><input type="text" id="scName" placeholder="如 authz-timeout(留空则 task-xxxx)" spellcheck="false">`+
+      `<div style="margin-top:11px;font-size:11px;color:var(--ink-faint);line-height:1.5">提示:也可以直接在这张卡的会话里说「拆子卡:任务A、任务B」,Claude 会列出拆分方案,确认后自动 fan out(stray-subcards skill)</div>`+
       `<div class="nsacts"><button class="btn" id="scCancel">取消</button><button class="btn primary" id="scGo">起子卡 ▸</button></div></div>`;
     document.body.appendChild(dlg);
     const ta=dlg.querySelector('#scTask'); ta.focus();
@@ -1330,7 +1332,7 @@
                             baseKids:((termFamily(rootSid)||{}).kids||[]).length});
           const tm=document.getElementById('termModal'); if(tm&&tm.dataset.sid) renderTermSide(tm.dataset.sid);
           loadData();   // DD-027: 子卡占位卡即时上板(嵌套在父卡下)
-          toast('✓ 子卡已起,正在创建…');
+          toast(j.trust_warning?('✓ 子卡已起;⚠ '+j.trust_warning):'✓ 子卡已起,正在创建…',j.trust_warning?7000:undefined);
         } else toast(j.hint||j.error||'起子卡失败');
       }catch(_){ toast('起子卡失败'); } };
     dlg.querySelector('#scGo').addEventListener('click',go);

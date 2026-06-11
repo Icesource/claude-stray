@@ -33,6 +33,32 @@ def install(serve_module) -> None:
     S = serve_module
 
 
+_TRUST_MARKERS = ("trust this folder", "Yes, I trust")
+
+
+def repo_probably_trusted(main_repo: str, projects: dict | None = None) -> bool:
+    """Will a claude spawned under main_repo hit the folder-trust dialog?
+    Observed rule (2026-06-11): the dialog fires only when ~/.claude.json has NO
+    `projects` entry for the cwd, any ancestor, or any prior child path — the
+    hasTrustDialogAccepted flag being False does NOT prompt by itself. This is
+    a heuristic over internal behavior → ADVISORY ONLY, never blocks a spawn."""
+    if projects is None:
+        try:
+            with open(os.path.expanduser("~/.claude.json")) as f:
+                projects = json.load(f).get("projects") or {}
+        except Exception:
+            return True   # can't tell → stay quiet
+    try:
+        rp = os.path.realpath(main_repo)
+        for k in projects:
+            kp = os.path.realpath(k)
+            if rp == kp or rp.startswith(kp + os.sep) or kp.startswith(rp + os.sep):
+                return True
+    except Exception:
+        return True
+    return False
+
+
 class SubcardAPI:
     def _handle_subtasks(self):
         from urllib.parse import parse_qs
@@ -156,14 +182,31 @@ class SubcardAPI:
         if S._subcards is not None:
             since = time.time() - 2
 
+            def _probe_trust_dialog():
+                """No sid after 15s → look at what the spawned claude is showing.
+                A folder-trust dialog means it will NEVER produce a session —
+                annotate the placeholder so the cockpit says so, actionably."""
+                try:
+                    cap = subprocess.run(
+                        [tmux, "-L", S._TMUX_SOCKET, "capture-pane", "-p", "-t", holder],
+                        capture_output=True, text=True, timeout=5).stdout
+                    if any(m in cap for m in _TRUST_MARKERS):
+                        print(f"[spawn] {wt_name}: child claude is stuck at the "
+                              "folder-trust dialog", file=sys.stderr)
+                        if S._created is not None:
+                            S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=True)
+                except Exception:
+                    pass
+
             def _capture():
-                for _ in range(60):
+                for i in range(60):
                     time.sleep(1)
                     sid = S._subcards.find_session_by_cwd(str(S.PROJECTS_DIR), wt_path, since)
                     if sid:
                         if S._created is not None:
                             try:
                                 S._created.capture_sid(str(S.CREATED_JSON), token, sid)
+                                S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=False)
                             except Exception:
                                 pass
                         try:
@@ -179,10 +222,16 @@ class SubcardAPI:
                             except Exception:
                                 pass
                         return
+                    if i == 15:
+                        _probe_trust_dialog()
             threading.Thread(target=_capture, daemon=True).start()
         url = ("http://127.0.0.1:" + str(port) + "/") if port else None
-        return (200, {"ok": True, "worktree_name": wt_name, "worktree": True,
-                                 "parent": parent, "url": url, "token": token})
+        payload = {"ok": True, "worktree_name": wt_name, "worktree": True,
+                   "parent": parent, "url": url, "token": token}
+        if not repo_probably_trusted(main_repo):
+            payload["trust_warning"] = ("该仓库似乎还没被 Claude 信任过 —— 子卡可能停在 "
+                                        "folder-trust 确认;若无进展,打开它的终端按一下回车")
+        return (200, payload)
 
 
     def _subcard_close_blockers(self, sid: str, wt_path: str | None) -> dict:
