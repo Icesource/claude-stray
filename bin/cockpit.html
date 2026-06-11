@@ -275,7 +275,7 @@
   .nsacts .btn.primary{border-color:var(--run);background:var(--run-bg);color:var(--run);font-weight:600}
   .nsacts .btn:hover{color:var(--ink)}
   .disc b{color:var(--idle);font-weight:600}
-  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--bg-elev);border:1px solid var(--hair);border-radius:7px;padding:9px 16px;font-size:12.5px;color:var(--ink);opacity:0;transition:all .2s;z-index:40;pointer-events:none}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--bg-elev);border:1px solid var(--hair);border-radius:7px;padding:9px 16px;font-size:12.5px;color:var(--ink);opacity:0;transition:all .2s;z-index:90;pointer-events:none}
   /* conversation history modal (DD-015 Stage 3a) */
   .histmask{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:60;display:flex;align-items:center;justify-content:center;padding:40px}
   .histbox{background:var(--bg-elev);border:1px solid var(--hair);border-radius:12px;max-width:760px;width:100%;max-height:82vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4)}
@@ -1083,6 +1083,13 @@
         if(confirm('⚠️ '+(j.reason||'主卡有未提交改动')+'\n\n仍要强制落地吗?')) return landSubcard(e,sid,true);
         toast('已取消'); return;
       }
+      if(r.status===409&&'catchup_sent' in j){
+        // DD-031 follow-up: target advanced / sub-card got new commits — the
+        // server already nudged the merge agent; just say so, clearly.
+        toast(j.catchup_sent?('⟳ '+(j.error||'需要先追赶')+';解完后再点落地')
+                            :('⚠ '+(j.error||'落地被拦')+';'+(j.hint||'')),6000);
+        return;
+      }
       if(r.ok&&j.ok){ toast('✓ 已落地到 '+j.target+',原子卡已自动关闭'); setTimeout(()=>loadData(),600); }
       else toast(j.hint||j.error||'落地失败');
     }catch(_){ toast('落地失败'); }
@@ -1422,7 +1429,7 @@
       setTimeout(loadData, 500);
     }catch(_){ toast('合并失败'); }
   }
-  let tt;function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),1800);}
+  let tt;function toast(m,ms){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),ms||1800);}
 
   function setView(v){document.body.dataset.view=v;try{localStorage.setItem('cockpit-view',v)}catch(e){}
     document.querySelectorAll('#viewtog button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));

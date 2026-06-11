@@ -315,6 +315,54 @@ def test_serial_queue(h):
     assert h.jobs() == [], h.jobs()
 
 
+@_scenario("catchup")
+def test_land_blocked_until_agent_catches_up(h):
+    """DD-031 follow-up: landing must not silently drop sub-card commits made
+    AFTER the agent merged, nor pretend a non-FF is the user's problem — both
+    block with 409 {catchup_sent} (the agent is auto-nudged when alive)."""
+    sid, slug = h.spawn_subcard("zeta", [
+        "echo z1 > zeta.txt", "git add -A && git commit -q -m zeta-1"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200, (st, j)
+    h.wait_merge_ready(slug)
+    # the sub-card keeps working AFTER the agent merged
+    wt = os.path.join(h.repo, ".claude", "worktrees", slug)
+    with open(os.path.join(wt, "zeta.txt"), "w") as f:
+        f.write("z2\n")
+    _git(wt, "add", "-A"); _git(wt, "commit", "-q", "-m", "zeta-2-late")
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
+    assert st == 409 and "catchup_sent" in j, (st, j)
+    assert h.branch_exists("merge-" + slug), "blocked landing must not tear down"
+    assert h.jobs(), "job must survive a blocked landing"
+    # simulate the agent catching up (the fake agent's session is gone), land OK
+    mwt = os.path.join(h.repo, ".claude", "worktrees", "merge-" + slug)
+    _git(mwt, "merge", "--no-edit", "worktree-" + slug)
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
+    assert st == 200 and j.get("ok"), (st, j)
+    assert open(os.path.join(h.repo, "zeta.txt")).read().strip() == "z2"
+    # the other catch-up shape: target advances after merge-ready → non-FF
+    sid2, slug2 = h.spawn_subcard("eta", [
+        "echo e1 > eta.txt", "git add -A && git commit -q -m eta-1"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug2)[1] == "1",
+            30, "second sub-card never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid2, "target": "main"})
+    assert st == 200, (st, j)
+    h.wait_merge_ready(slug2)
+    with open(os.path.join(h.repo, "advance.txt"), "w") as f:
+        f.write("x\n")
+    _git(h.repo, "add", "-A"); _git(h.repo, "commit", "-q", "-m", "target-advances")
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid2})
+    assert st == 409 and "catchup_sent" in j, (st, j)
+    mwt2 = os.path.join(h.repo, ".claude", "worktrees", "merge-" + slug2)
+    _git(mwt2, "merge", "--no-edit", "main")
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid2})
+    assert st == 200 and j.get("ok"), (st, j)
+
+
 @_scenario("wip")
 def test_wip_blocks_landing(h):
     sid, slug = h.spawn_subcard("epsilon", [

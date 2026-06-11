@@ -455,6 +455,42 @@ class SubcardAPI:
                                  "merge_slug": S._merge.merge_branch(sub_slug)})
 
 
+    def _nudge_merge_agent(self, job: dict, text: str) -> bool:
+        """Inject a catch-up instruction into the merge agent's live tmux
+        holder (it runs interactive claude there). Returns False when the
+        holder is gone — the caller falls back to a manual hint."""
+        ent = (S._TERMINALS.get(job.get("merge_sid") or "") or {})
+        holder = ent.get("name") or (
+            "stray-" + job["merge_token"][:8] if job.get("merge_token") else "")
+        if not holder:
+            return False
+        tmux = shutil.which("tmux")
+        if not tmux:
+            return False
+        if subprocess.run([tmux, "-L", S._TMUX_SOCKET, "has-session", "-t", holder],
+                          capture_output=True, timeout=5).returncode != 0:
+            return False
+        try:
+            subprocess.run([tmux, "-L", S._TMUX_SOCKET, "send-keys", "-t", holder,
+                            "-l", text], capture_output=True, timeout=5, check=True)
+            time.sleep(0.3)   # let the TUI ingest the paste before submitting
+            subprocess.run([tmux, "-L", S._TMUX_SOCKET, "send-keys", "-t", holder,
+                            "Enter"], capture_output=True, timeout=5, check=True)
+            return True
+        except Exception:
+            return False
+
+    def _land_blocked_catchup(self, job: dict, reason: str, instruction: str):
+        """A landing that needs the merge agent to do more work first: nudge it
+        automatically (DD-031 follow-up — the user shouldn't have to relay
+        'git merge … 追上' by hand), then tell the UI what happened."""
+        sent = self._nudge_merge_agent(job, instruction)
+        return self._reply(409, {
+            "error": reason, "catchup_sent": sent,
+            "hint": ("已自动通知合并 agent 处理,完成后再点落地" if sent else
+                     "合并 agent 会话已不在 —— 在驾驶舱打开它的终端,让它 "
+                     + instruction.splitlines()[0])})
+
     def _handle_subcard_land(self, body: dict):
         """Fast-forward target to the conflict-free merge branch, auto-close the
         original sub-card + merge-agent, then start the next queued merge. DD-031."""
@@ -472,6 +508,17 @@ class SubcardAPI:
         main_repo, target, merge_slug = job["main_repo"], job["target_branch"], job["merge_slug"]
         if S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet", merge_slug) is None:
             return self._reply(400, {"error": "合并分支还不存在(合并 agent 可能还没建好/没提交)"})
+        # The sub-card may have NEW commits made after the agent merged — landing
+        # now would silently drop them (the FF only carries the merge branch).
+        # Block + auto-nudge the agent to re-merge the sub branch first.
+        sub_branch = "worktree-" + (job.get("sub_slug") or "")
+        if (S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet", sub_branch) is not None
+                and S._worktree._git(main_repo, "merge-base", "--is-ancestor",
+                                     sub_branch, merge_slug) is None):
+            return self._land_blocked_catchup(
+                job, "子卡在合并之后又有新提交 —— 落地会丢掉它们,已先让合并 agent 重新合并",
+                "子卡分支 " + sub_branch + " 在你上次合并之后有了新提交。请再次执行: "
+                "git merge " + sub_branch + " ,解决冲突并 commit,完成后告诉用户可以重新落地。")
         cur = (S._worktree._git(main_repo, "branch", "--show-current") or "").strip()
         checked_out_here = (cur == target)
         # -uno: only TRACKED changes count as WIP. Untracked files (e.g. the
@@ -488,8 +535,13 @@ class SubcardAPI:
         else:  # ff_ref: target not checked out here → advance the ref (FF-enforced)
             out = S._worktree._git(main_repo, "push", ".", merge_slug + ":" + target, timeout=40)
         if out is None:
-            return self._reply(409, {"error": "落地失败(不是 fast-forward?目标可能已前进)",
-                                     "hint": "让合并 agent 先 `git merge " + target + "` 追上再落地"})
+            # Almost always: target advanced after the agent merged → not a FF
+            # anymore. Auto-nudge the agent to catch up instead of asking the
+            # user to relay it by hand.
+            return self._land_blocked_catchup(
+                job, "目标分支已前进,这次合并不再是 fast-forward —— 已先让合并 agent 追上",
+                "目标分支 " + target + " 已经前进了。请执行: git merge " + target
+                + " ,解决冲突并 commit,完成后告诉用户可以重新落地。")
         self._teardown_worktree_card(job["sub_sid"], force=True)
         # The merge-agent card. Its sid is captured ASYNCHRONOUSLY (~1s poll),
         # so re-read the job — the land click can legitimately beat the capture.
