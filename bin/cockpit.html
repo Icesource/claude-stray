@@ -358,6 +358,9 @@
   .ttab.on{border-color:var(--run);color:var(--ink)}
   .ttab b{color:var(--ink-faint);font-weight:600;cursor:pointer;font-size:12px;line-height:1}
   .ttab b:hover{color:var(--needs)}
+  /* 子卡状态小圆点(挂在所属卡片 tab 里,一眼扫到哪个子卡停了/等你) */
+  .ttab .ttd{display:inline-flex;align-items:center;margin-left:-2px;opacity:.92;cursor:pointer}
+  .ttab .ttd:hover{opacity:1;transform:scale(1.25)}
   .ttab .tt-l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
   .ttab .sic{flex:none}
   .ttab.closed{opacity:.62;border-style:dashed}   /* 一级卡片在册但终端未开 — 点开 */
@@ -1358,9 +1361,13 @@
       const rootOpen=openSids.has(rs), on=rs===activeRoot;
       const icon=r?statusIcon(r.band,11):'';   // r.band is the family-rolled-up band
       const lbl=rs.indexOf('new-')===0?'🆕 新会话':esc(nm?(nm.length>16?nm.slice(0,16)+'…':nm):rs.slice(0,8));
+      // 子卡状态小圆点:每个子卡一个,颜色=真实 band(running 转圈 / needs_you 红 / …),
+      // 悬停看「名字 · 状态」,点它直接开那张子卡的终端 —— 子卡停了在 Header 一眼可见。
+      const dots=((r&&r.children)||[]).slice(0,8).map(c=>
+        `<i class="ttd" onclick="event.stopPropagation();openTerminal(event,'${esc(c.session||'')}')" title="${esc((c.name||'')+' · '+(c.band==='needs_you'?'等你':c.band==='running'?'进行中':c.band==='done_unread'?'待查看':c.band||''))}">${statusIcon(c.band,8)}</i>`).join('');
       // focus the root terminal if it's open, else resume/open it
       const click=rootOpen?`setActiveTerm('${esc(rs)}')`:`openTerminal(event,'${esc(rs)}')`;
-      return `<span class="ttab${on?' on':''}${rootOpen?'':' closed'}" onclick="${click}" title="${esc((nm||rs)+' · 一级卡片')}">${icon}<span class="tt-l">${lbl}</span><b onclick="endTermFamily(event,'${esc(rs)}')" title="关闭这张卡片(及其已开的子卡终端)">×</b></span>`;
+      return `<span class="ttab${on?' on':''}${rootOpen?'':' closed'}" onclick="${click}" title="${esc((nm||rs)+' · 一级卡片')}">${icon}<span class="tt-l">${lbl}</span>${dots}<b onclick="endTermFamily(event,'${esc(rs)}')" title="关闭这张卡片(及其已开的子卡终端)">×</b></span>`;
     }).join('');
   }
   // close a whole 一级卡片 family: end every open terminal whose family root matches.
