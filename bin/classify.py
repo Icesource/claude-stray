@@ -693,11 +693,25 @@ def _strip_sealed_from_live(new_mm: dict, sid: str, sealed_id: str,
 
 
 def mint_sealed_initiatives(new_mm: dict, all_summaries: list,
-                            deleted_ids: list[str]) -> int:
+                            deleted_ids: list[str], prior: dict | None = None) -> int:
     """Mint/refresh sealed historical cards from Layer 1 sealed_segments.
     Runs AFTER artifact aggregation and BEFORE dedup_by_session so the empty
     sessions[] keeps these cards out of every merge pass. Idempotent: a sealed
-    card already carried forward (by id) is left frozen."""
+    card already carried forward (by id) is left frozen.
+
+    Name freeze: a sealed card is FROZEN history — its name/summary must never
+    drift. Layer-1 re-summarizes hot sessions, and the regenerated segment title
+    can differ wildly from the original (conversation-internal jargon like
+    "step 0 strip-group 探索及退出" replacing a good app-doc name). So when the
+    same sealed_id exists in PRIOR_MINDMAP (i.e. it was minted before but got
+    dropped from new_mm this round), re-mint it as a byte-copy of the PRIOR card
+    — never from the fresh segment fields."""
+    import copy as _copy
+    prior_sealed = {}
+    for w in ((prior or {}).get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            if i.get("sealed") and i.get("id"):
+                prior_sealed[i["id"]] = i
     deleted_set = set(deleted_ids or [])
     archived = archived_ids_on_disk()
     existing_ids: set[str] = set()
@@ -729,6 +743,25 @@ def mint_sealed_initiatives(new_mm: dict, all_summaries: list,
                 continue  # nothing stable to anchor on
             if (sealed_id in deleted_set or sealed_id in archived
                     or sealed_id in existing_ids):
+                continue
+            if sealed_id in prior_sealed:
+                # was minted before, dropped this round → resurrect FROZEN
+                # (prior byte-copy; never the re-generated segment title).
+                init = _copy.deepcopy(prior_sealed[sealed_id])
+                ws = ws_of_sid.get(sid)
+                if ws is None:
+                    cwd = cwd_by_sid.get(sid, "")
+                    name = os.path.basename(cwd.rstrip("/")) or "misc"
+                    ws = ws_by_name.get(name)
+                    if ws is None:
+                        ws = {"name": name, "cwd": cwd,
+                              "last_activity_at": init.get("last_activity_at") or now_utc_iso(),
+                              "initiatives": []}
+                        (new_mm.setdefault("workspaces", [])).append(ws)
+                        ws_by_name[name] = ws
+                ws.setdefault("initiatives", []).append(init)
+                existing_ids.add(sealed_id)
+                minted += 1
                 continue
             seg_status = (seg.get("status") or "done").lower()
             status = "archived" if seg_status == "abandoned" else "done"
@@ -2461,7 +2494,7 @@ def main() -> int:
     # DD-019: intra-session segmentation. Mint frozen historical cards for any
     # sealed_segments Layer 1 emitted. Runs BEFORE dedup/links: sealed cards
     # have empty sessions[], so every session-keyed pass below skips them.
-    sealed_n = mint_sealed_initiatives(new_mm, all_summaries, deleted_ids)
+    sealed_n = mint_sealed_initiatives(new_mm, all_summaries, deleted_ids, prior)
     if sealed_n:
         print(f"[classify] DD-019: minted {sealed_n} sealed historical card(s)")
 
