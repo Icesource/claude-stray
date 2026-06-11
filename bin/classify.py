@@ -853,11 +853,14 @@ def created_card_sids() -> set[str]:
 
 def _ws_name_for_cwd(cwd: str) -> str:
     """Workspace label for a cwd. A worktree (…/.claude/worktrees/<slug>) belongs to
-    its MAIN repo, so strip the worktree suffix → the repo's basename."""
-    c = cwd or ""
+    its MAIN repo, so strip the worktree suffix → the repo's basename. The home
+    dir itself reads as "home", not the user's login name."""
+    c = (cwd or "").rstrip("/")
     if "/.claude/worktrees/" in c:
         c = c.split("/.claude/worktrees/")[0]
-    return os.path.basename(c.rstrip("/")) or "misc"
+    if c and c == os.path.expanduser("~").rstrip("/"):
+        return "home"
+    return os.path.basename(c) or "misc"
 
 
 def mint_subcard_initiatives(new_mm: dict, all_summaries: list,

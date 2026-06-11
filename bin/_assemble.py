@@ -71,7 +71,8 @@ def first_sentence(text: str, max_len: int = 40) -> str:
         if ch in "。!?！？.;；":
             t = t[:i]
             break
-    return t[:max_len].strip()
+    t = t.strip()
+    return t if len(t) <= max_len else t[:max_len].rstrip() + "…"
 
 
 def derive_status(fm: dict) -> str:
