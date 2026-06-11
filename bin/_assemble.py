@@ -331,6 +331,26 @@ def assemble(all_summaries: list, prior: dict | None, created_map: dict,
         cards.append(card)
         cwd_of[sid] = fm.get("cwd") or ""
 
+    # ---- 1b. carry-forward guard: a PRIOR live card whose summary file is
+    # GONE (disk incident, manual deletion) must not silently vanish — that
+    # would also purge its name/tasks from the next round's PRIOR, losing
+    # them forever. Carry it verbatim, exactly like the old flow did.
+    summarized = {sid for sid, _fm, _b, _r in all_summaries}
+    carried: list[tuple[str, str, dict]] = []   # (ws_name, ws_cwd, init)
+    for w in ((prior or {}).get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            if i.get("sealed"):
+                continue
+            sids = i.get("sessions") or []
+            if not sids or any(s in summarized for s in sids):
+                continue   # has a summary → already handled (built or gated)
+            if i.get("id") in dead_ids:
+                continue
+            la = i.get("last_activity_at") or ""
+            if all(tomb_sids.get(s) and la <= tomb_sids[s] for s in sids):
+                continue   # user deleted/archived it — stays gone
+            carried.append((w.get("name") or "misc", w.get("cwd") or "", i))
+
     # ---- 2. group into workspaces by cwd (worktree → main repo) ----
     new_mm: dict = {"schema_version": 3, "generated_at": now_iso,
                     "workspaces": []}
@@ -353,7 +373,9 @@ def assemble(all_summaries: list, prior: dict | None, created_map: dict,
         ws = ws_for(c._ws_name_for_cwd(cwd), cwd)
         ws["initiatives"].append(card)
 
-    # ---- 3. sealed cards: carry PRIOR's verbatim, then mint new ones ----
+    # ---- 3. carry-forwards: summary-less live cards + PRIOR sealed cards ----
+    for ws_name, ws_cwd, init in carried:
+        ws_for(ws_name, ws_cwd)["initiatives"].append(init)
     for ws_name, ws_cwd, init in prior_sealed:
         if init.get("id") in dead_ids:
             continue

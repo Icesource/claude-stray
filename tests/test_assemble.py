@@ -214,6 +214,35 @@ def test_prior_sealed_carried_deleted_dropped():
     assert "sealed::a" in ids and "sealed::b" not in ids
 
 
+def test_summaryless_prior_card_carried_not_lost():
+    """A prior live card whose summary file vanished (disk incident) must
+    survive verbatim — names/tasks must never be silently purged."""
+    prior = {"workspaces": [{"name": "myproj", "cwd": "/repo/myproj",
+             "initiatives": [
+                 {"id": "card::lost1", "name": "重要工作", "sessions": ["lost1"],
+                  "status": "active", "last_activity_at": COLD_LA,
+                  "tasks": [{"id": "t", "title": "t", "status": "done"}]},
+                 {"id": "card::lost2", "name": "已删工作", "sessions": ["lost2"],
+                  "status": "active", "last_activity_at": COLD_LA},
+             ]}]}
+    tombs = {"lost2": "2026-06-02T00:00:00Z"}   # lost2 was user-deleted
+    mm = run([mk_summary("s1")], prior=prior, tombs=tombs)
+    by_id = {c["id"]: c for c in cards_of(mm)}
+    assert "card::lost1" in by_id                      # carried verbatim
+    assert by_id["card::lost1"]["name"] == "重要工作"
+    assert by_id["card::lost1"]["tasks"][0]["status"] == "done"
+    assert "card::lost2" not in by_id                  # tombstone respected
+
+
+def test_empty_summaries_keeps_prior_cards():
+    """Worst case: summaries dir wiped. The dashboard must not go blank."""
+    prior = {"workspaces": [{"name": "myproj", "cwd": "/repo/myproj",
+             "initiatives": [{"id": "card::a", "name": "A", "sessions": ["a"],
+                              "last_activity_at": COLD_LA}]}]}
+    mm = run([], prior=prior)
+    assert [c["id"] for c in cards_of(mm)] == ["card::a"]
+
+
 def test_level_set_at_stable_when_unchanged():
     prior = {"workspaces": [{"name": "myproj", "cwd": "/repo/myproj",
              "initiatives": [{"id": "x", "name": "n", "sessions": ["s1"],
