@@ -43,7 +43,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CACHE_DIR = REPO_ROOT / "cache"
+# STRAY_CACHE_DIR: test-isolation override (same contract as serve.py) —
+# e2e tests point classify at a throwaway cache; production leaves it unset.
+CACHE_DIR = Path(os.environ.get("STRAY_CACHE_DIR") or (REPO_ROOT / "cache"))
 SESSIONS_DIR = CACHE_DIR / "sessions"
 SUMMARIES_DIR = CACHE_DIR / "summaries"
 ARCHIVE_DIR = CACHE_DIR / "archive"
@@ -926,6 +928,8 @@ def regen_html() -> None:
     """Best-effort regeneration of the markmap export view (render-tree.py).
     The classic card dashboard (render-html.py) was retired — the cockpit is
     the only live UI now. Failures here don't fail the run."""
+    if os.environ.get("STRAY_NO_BG") == "1":
+        return   # test isolation: render-tree writes to the REAL repo cache
     for script in ("render-tree.py",):
         try:
             subprocess.run(
