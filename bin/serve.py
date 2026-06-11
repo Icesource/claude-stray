@@ -554,6 +554,17 @@ def _attach_code_location(mindmap: dict) -> int:
             if cl:
                 init["code_location"] = cl
                 n += 1
+                # DD-033 视角:子卡相对主干的合并状态,挂到卡上让列表实时显示
+                # 「已合并 / N 未合并 / 未提交」。只算 worktree 子卡;merge_status
+                # 按 tip+mtime 缓存,稳态近零成本(只多一次 rev-parse)。
+                if cl.get("is_worktree") and cl.get("main_repo") and cl.get("branch"):
+                    try:
+                        ms = _worktree.merge_status(cl["main_repo"], cl["worktree"],
+                                                    cl["branch"])
+                        if ms:
+                            init["merge_status"] = ms
+                    except Exception:
+                        pass
     # DD-030: tag cards that are registered created cards with their parent_session_id.
     if _created is not None:
         try:

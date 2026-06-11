@@ -341,6 +341,10 @@
   .tside-item .ts-merge{flex:none;font-size:10.5px;padding:1px 6px;border-radius:5px;border:1px solid var(--hair);color:var(--ink-dim);opacity:.55;transition:opacity .12s,color .12s,border-color .12s}
   .tside-item:hover .ts-merge{opacity:.9}
   .tside-item .ts-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
+  .mbadge{flex:none;font-size:10px;padding:1px 6px;border-radius:4px;white-space:nowrap;line-height:1.5}
+  .mbadge.merged{color:var(--done);background:color-mix(in srgb,var(--done) 12%,transparent)}
+  .mbadge.ahead{color:var(--needs);background:color-mix(in srgb,var(--needs) 13%,transparent)}
+  .mbadge.dirty{color:var(--run);background:color-mix(in srgb,var(--run) 13%,transparent)}
   .sr-merge{flex:none;font-size:10.5px;padding:1px 7px;margin-left:2px;border-radius:5px;border:1px solid var(--hair);background:transparent;color:var(--ink-dim);cursor:pointer;opacity:.6;transition:opacity .12s,color .12s,border-color .12s}
   .subrow:hover .sr-merge{opacity:.95}
   .sr-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
@@ -625,6 +629,7 @@
         band:b.band, reason:b.reason, activity:b.activity, pct:b.pct,
         idle:humanIdle(iso), idle_secs:idleSecs(iso),
         artifacts:init.artifacts||[], blockers:init.blockers||[], code_location:init.code_location||null,
+        merge_status:init.merge_status||null,
         tasks_total:tasks.length, tasks_pending:tasks.filter(x=>(x.status||(x.done?'done':'pending'))==='pending').length,
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
@@ -697,10 +702,12 @@
   // Signature of what's actually rendered (excludes the volatile idle timer),
   // so the 8s poll / SSE only re-render when something really changed — and
   // your expanded cards don't collapse under you.
-  function dataSig(){ return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user,
+  function dataSig(){ const ms=r=>r.merge_status?[r.merge_status.merged,r.merge_status.ahead,r.merge_status.dirty]:0;
+    return JSON.stringify((DATA.rows||[]).map(r=>[r.id,r.band,r.name,r.reason,r.tasks_pending,(r.artifacts||[]).length,r.progress,r.fresh,r.next_step,r.awaiting_user,ms(r),
     // DD-025: include sub-cards' state too, else a child's band change alone (its own
     // running→done) doesn't move the signature and the subrow + parent ⑃ roll-up freeze.
-    (r.children||[]).map(c=>[c.id,c.band,c.progress])]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
+    // DD-033: include each child's merge_status so the 已合并/未合并 badge updates live.
+    (r.children||[]).map(c=>[c.id,c.band,c.progress,ms(c)])]))+JSON.stringify(DATA.counts||{})+(SYNC.state||'')+(SYNC.reason||'')+CLAUDE_OK; }
   function refreshUI(force){ if(dragEl) return;   // never rebuild the board mid-drag (it'd destroy the element you're dragging → drag "breaks")
     const s=dataSig(); if(!force && s===lastSig) return; lastSig=s; rebuildHud(); renderCurrent();
     // keep the open terminal's resource panel fresh as the pipeline collects more
@@ -865,11 +872,17 @@
   // DD-025: a parent's sub-cards rendered as compact rows nested under it.
   // Row click → terminal; the ⌄ button expands a detail panel (full progress /
   // next-step / resources) so a sub-card isn't a second-class one-liner.
+  // DD-033: a sub-card's merge state relative to the trunk — the same signal the
+  // close-guard uses, surfaced up front so you see at a glance what's safe to close.
+  function mergeBadge(c){ const m=c.merge_status; if(!m)return '';
+    if(m.dirty)return `<span class="mbadge dirty" title="worktree 有未提交改动 — 关闭会丢失">●未提交</span>`;
+    if(m.ahead>0)return `<span class="mbadge ahead" title="有 ${m.ahead} 个提交还没合并回任何其它分支 — 关闭会丢失。先合并落地">⎌${m.ahead} 未合并</span>`;
+    return `<span class="mbadge merged" title="提交都已合并回主干 — 关闭安全">✓已合并</span>`;}
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
       const sid=esc(c.session||''); const prog=c.pending?'准备中…':(c.progress?firstSent(c.progress):(c.reason||''));
       return `<div class="subwrap"><div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
-        `<span class="sr-name">${esc(c.name)}</span><span class="sr-prog">${esc(prog)}</span>`+
+        `<span class="sr-name">${esc(c.name)}</span>${mergeBadge(c)}<span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
         `<button class="sr-go" title="打开子任务终端" onclick="event.stopPropagation();openTerminal(event,'${sid}')">▸</button>`+
         mergeOrLandBtn(c,sid)+

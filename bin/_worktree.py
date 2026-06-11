@@ -68,3 +68,47 @@ def code_location_for_cwd(cwd: str, _now=time.time):
     info = compute_code_location(cwd)
     _CACHE[cwd] = (now, info)
     return info
+
+
+_MERGE_CACHE: dict = {}   # worktree_path -> (tip, index_mtime, result)
+
+
+def merge_status(main_repo: str, worktree: str, branch: str):
+    """Is this sub-card branch's work already absorbed elsewhere, and is its
+    tree clean? Returns {merged, ahead, dirty} or None.
+      - merged: the branch tip is contained in some OTHER branch (its commits
+        survive a `branch -D`); also True when the branch has NO commits of its
+        own ahead of the rest of history.
+      - ahead:  commits on this branch not reachable from any other branch
+        (what you'd LOSE on close) — the count shown as 'N 未合并'.
+      - dirty:  uncommitted changes in the worktree (lost on `worktree remove`).
+    Cached per (tip, worktree-index mtime) so the 3s dashboard poll re-shells
+    git only when the branch actually moved or the tree changed."""
+    if not (main_repo and worktree and branch):
+        return None
+    tip = _git(main_repo, "rev-parse", "--verify", "--quiet", branch)
+    if not tip:
+        return None
+    try:
+        idx_mtime = os.path.getmtime(os.path.join(worktree, ".git"))
+    except OSError:
+        idx_mtime = 0.0
+    cached = _MERGE_CACHE.get(worktree)
+    if cached and cached[0] == tip and cached[1] == idx_mtime:
+        return cached[2]
+    contains = _git(main_repo, "branch", "--format=%(refname:short)",
+                    "--contains", tip) or ""
+    others = [b.strip() for b in contains.splitlines()
+              if b.strip() and b.strip() != branch]
+    # commits unique to this branch (unreachable from every other branch).
+    # NOTE: --exclude must precede the --branches it modifies (git pattern order).
+    ahead_out = _git(main_repo, "rev-list", "--count", tip,
+                     "--not", "--exclude=" + branch, "--branches")
+    try:
+        ahead = int((ahead_out or "0").strip() or "0")
+    except ValueError:
+        ahead = 0
+    dirty = bool((_git(worktree, "status", "--porcelain", "-uno") or "").strip())
+    result = {"merged": bool(others) or ahead == 0, "ahead": ahead, "dirty": dirty}
+    _MERGE_CACHE[worktree] = (tip, idx_mtime, result)
+    return result
