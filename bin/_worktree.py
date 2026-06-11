@@ -70,10 +70,11 @@ def code_location_for_cwd(cwd: str, _now=time.time):
     return info
 
 
-_MERGE_CACHE: dict = {}   # worktree_path -> (tip, index_mtime, result)
+_MERGE_CACHE: dict = {}   # worktree_path -> (tip, index_mtime, ts, result)
+_MERGE_TTL = 8.0          # wall-clock ceiling so UNCOMMITTED edits surface too
 
 
-def merge_status(main_repo: str, worktree: str, branch: str):
+def merge_status(main_repo: str, worktree: str, branch: str, _now=time.time):
     """Is this sub-card branch's work already absorbed elsewhere, and is its
     tree clean? Returns {merged, ahead, dirty} or None.
       - merged: the branch tip is contained in some OTHER branch (its commits
@@ -82,8 +83,11 @@ def merge_status(main_repo: str, worktree: str, branch: str):
       - ahead:  commits on this branch not reachable from any other branch
         (what you'd LOSE on close) — the count shown as 'N 未合并'.
       - dirty:  uncommitted changes in the worktree (lost on `worktree remove`).
-    Cached per (tip, worktree-index mtime) so the 3s dashboard poll re-shells
-    git only when the branch actually moved or the tree changed."""
+    Cache invalidates on tip move (a commit), on .git mtime change, OR after
+    _MERGE_TTL seconds — the last is essential: UNCOMMITTED edits move neither
+    the tip nor .git, so a pure (tip, mtime) key would let `dirty` go stale
+    forever. With the 3s poll this still re-shells git at most ~once / 8s per
+    actively-edited sub-card."""
     if not (main_repo and worktree and branch):
         return None
     tip = _git(main_repo, "rev-parse", "--verify", "--quiet", branch)
@@ -93,9 +97,10 @@ def merge_status(main_repo: str, worktree: str, branch: str):
         idx_mtime = os.path.getmtime(os.path.join(worktree, ".git"))
     except OSError:
         idx_mtime = 0.0
+    now = _now()
     cached = _MERGE_CACHE.get(worktree)
-    if cached and cached[0] == tip and cached[1] == idx_mtime:
-        return cached[2]
+    if cached and cached[0] == tip and cached[1] == idx_mtime and now - cached[2] < _MERGE_TTL:
+        return cached[3]
     contains = _git(main_repo, "branch", "--format=%(refname:short)",
                     "--contains", tip) or ""
     others = [b.strip() for b in contains.splitlines()
@@ -110,5 +115,5 @@ def merge_status(main_repo: str, worktree: str, branch: str):
         ahead = 0
     dirty = bool((_git(worktree, "status", "--porcelain", "-uno") or "").strip())
     result = {"merged": bool(others) or ahead == 0, "ahead": ahead, "dirty": dirty}
-    _MERGE_CACHE[worktree] = (tip, idx_mtime, result)
+    _MERGE_CACHE[worktree] = (tip, idx_mtime, now, result)
     return result

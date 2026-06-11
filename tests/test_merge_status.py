@@ -77,6 +77,23 @@ def test_cache_keyed_on_tip_and_mtime():
     assert c is not a and c["ahead"] == 1, (a, c)
 
 
+def test_ttl_refreshes_uncommitted_edit():
+    """Uncommitted edits move neither tip nor .git — the wall-clock TTL is what
+    lets `dirty` surface. A clock past the TTL must trigger a recompute."""
+    d = _setup()
+    wt, br = _worktree_add(d, "g")
+    clock = [1000.0]
+    a = _worktree.merge_status(d, wt, br, _now=lambda: clock[0])
+    assert a["dirty"] is False
+    open(os.path.join(wt, "f.txt"), "a").write("edit\n")   # uncommitted; tip/.git unchanged
+    # within TTL → still the cached clean result
+    clock[0] += 3
+    assert _worktree.merge_status(d, wt, br, _now=lambda: clock[0])["dirty"] is False
+    # past TTL → recompute picks up the dirty tree
+    clock[0] += 10
+    assert _worktree.merge_status(d, wt, br, _now=lambda: clock[0])["dirty"] is True
+
+
 def test_missing_branch_is_none():
     d = _setup()
     assert _worktree.merge_status(d, d, "worktree-nope") is None
