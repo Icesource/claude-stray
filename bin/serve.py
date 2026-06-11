@@ -574,6 +574,38 @@ def _attach_code_location(mindmap: dict) -> int:
     return n
 
 
+_ARCH_SIDS_CACHE: tuple = (None, set())   # (signature, sids)
+
+
+def _archived_sids() -> set:
+    """Sessions of every archived card on disk. An archived card left the
+    dashboard on purpose — its created-cards entry must NOT re-merge as a ghost
+    准备中 placeholder (the delete path already guards via tombstones; this is the
+    archive-path equivalent). Memoized on the archive tree's mtimes."""
+    global _ARCH_SIDS_CACHE
+    root = CACHE_DIR / "archive"
+    try:
+        sig = tuple(sorted((str(p), p.stat().st_mtime) for p in root.glob("*")))
+    except Exception:
+        sig = ()
+    if _ARCH_SIDS_CACHE[0] == sig:
+        return _ARCH_SIDS_CACHE[1]
+    sids: set = set()
+    try:
+        for f in root.glob("*/*.json"):
+            try:
+                init = (json.loads(f.read_text()) or {}).get("initiative") or {}
+                for s in (init.get("sessions") or []):
+                    if s:
+                        sids.add(s)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    _ARCH_SIDS_CACHE = (sig, sids)
+    return sids
+
+
 def _merge_pending_cards(mindmap: dict) -> int:
     """DD-030: overlay instant 准备中 placeholder cards (from the unified created-cards
     registry) onto the dashboard at render time; prune only failed launches (no sid
@@ -590,7 +622,8 @@ def _merge_pending_cards(mindmap: dict) -> int:
         tomb = {x.get("id") for x in (dd.get("initiatives") or []) if x.get("id")}
     except Exception:
         pass
-    added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb)
+    added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb,
+                                               archived_sids=_archived_sids())
     if stale:
         try:
             for k in stale:
@@ -2006,6 +2039,14 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                 payload = {"archived_at": now, "archived_by": "user",
                            "from_workspace": ws_name, "initiative": found}
                 (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            # DD-030: an archived card must also leave the created-cards registry,
+            # else it re-merges as a ghost 准备中 placeholder (same as the delete path).
+            if _created is not None:
+                for s in (found.get("sessions") or []):
+                    try:
+                        _created.remove_by_sid(str(CREATED_JSON), s)
+                    except Exception:
+                        pass
             self._remove_from_dashboard(iid)
             return self._reply(200, {"ok": True})
         except Exception as e:

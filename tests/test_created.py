@@ -98,6 +98,19 @@ def test_merge_honors_tombstone_so_delete_sticks():
     assert added2 == 0 and stale2 == ["t2"]
 
 
+def test_merge_honors_archive_so_no_ghost():
+    """归档复活 bug:真卡被归档离开 dashboard 后,注册表条目曾重新叠加出一张
+    幽灵「准备中」卡。归档的 sid 必须既不合并又标记 stale(调用方清源)。"""
+    doc = {"t1": {"sid": "s1", "name": "反序列化诊断", "created_at": 1}}
+    mm = {"workspaces": []}
+    added, stale = _created.merge_into_mindmap(mm, doc, _now=2, archived_sids={"s1"})
+    assert added == 0 and stale == ["t1"]
+    # 没归档的照常出占位
+    added2, stale2 = _created.merge_into_mindmap({"workspaces": []}, doc, _now=2,
+                                                 archived_sids={"other"})
+    assert added2 == 1 and stale2 == []
+
+
 def test_subtask_metadata():
     doc = {"t1": {"sid": "c1", "parent": "P"}, "t2": {"sid": "c2", "parent": "OTHER"}}
     mm = {"workspaces": [{"initiatives": [

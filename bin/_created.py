@@ -271,7 +271,7 @@ def placeholder_id(token, ent):
     return ("card::" + sid) if sid else ("pending::" + token)
 
 
-def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None):
+def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None, archived_sids=None):
     """Append a 准备中 placeholder for each registry entry not yet backed by a real
     card. Returns (added, stale_tokens). DURABLE: an entry is stale ONLY if it's a
     failed launch (no sid past TTL) OR the user tombstoned its placeholder; a
@@ -287,6 +287,7 @@ def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None):
         return 0, []
     now = _now if _now is not None else time.time()
     tomb = tombstoned_ids or set()
+    arch = archived_sids or set()
     real_sids, real_wts = _real_sids_wts(mindmap)
     workspaces = mindmap.setdefault("workspaces", [])
     added, stale = 0, []
@@ -296,6 +297,12 @@ def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None):
             continue
         if placeholder_id(token, ent) in tomb:
             stale.append(token)          # user deleted it → drop source so it sticks
+            continue
+        if ent.get("sid") and ent["sid"] in arch:
+            # user ARCHIVED the real card → it left the dashboard, which would
+            # otherwise re-merge as a ghost 准备中 placeholder. Archive ends the
+            # registry's job too — prune.
+            stale.append(token)
             continue
         if not ent.get("sid") and now - (ent.get("created_at") or 0) > TTL:
             stale.append(token)          # failed launch — never captured a sid
