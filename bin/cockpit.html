@@ -325,7 +325,14 @@
   .termside{position:fixed;z-index:71;top:calc((100vh - min(80vh,880px))/2);right:calc(50% + 558px);
     width:264px;max-height:min(80vh,880px);overflow-y:auto;overflow-x:visible;display:flex;flex-direction:column;gap:7px;padding:2px 8px 6px}
   .termside[hidden]{display:none}
-  .tside-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-dim);text-transform:uppercase;font-weight:700;margin:0 0 1px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+  /* 主卡行:保持原来的「主标题」观感(无背景无边框),但整行可点(切回主卡终端) */
+  .tside-h{display:flex;align-items:center;gap:6px;width:100%;background:none;border:none;padding:0;text-align:left;
+    font-family:var(--mono);color:var(--ink-dim);font-weight:700;margin:0 0 1px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7);
+    cursor:pointer;transition:color .12s}
+  .tside-h:hover .tside-h-n{color:var(--run)}
+  .tside-h.on{cursor:default}
+  .tside-h.on:hover .tside-h-n{color:var(--ink)}
+  .tside-h .ts-open{width:6px;height:6px;border-radius:50%;background:var(--run);box-shadow:0 0 5px var(--run-glow);flex:none}
   .tside-item{position:relative;display:flex;align-items:center;gap:8px;box-sizing:border-box;width:100%;height:33px;padding:0 11px;text-align:left;
     border:1px solid var(--hair);border-left:2.5px solid var(--connector);border-radius:8px;background:var(--bg-elev);box-shadow:0 4px 13px rgba(0,0,0,.38);
     color:var(--ink-dim);cursor:pointer;font-family:var(--sans);font-size:12px;transition:transform .14s,border-color .15s,box-shadow .15s}
@@ -376,7 +383,7 @@
   .ttab.closed{opacity:.62;border-style:dashed}   /* 一级卡片在册但终端未开 — 点开 */
   /* 左侧会话族:一级卡片标题 + 二级(子卡)分组小标题 */
   .tside-h{display:flex;align-items:center;gap:6px}
-  .tside-h .tside-h-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:600}
+  .tside-h .tside-h-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:11px;letter-spacing:.02em;text-transform:none;font-weight:600;transition:color .12s}
   .tside-sub-h{font-size:8.5px;font-family:var(--mono);letter-spacing:.13em;color:var(--ink-faint);text-transform:uppercase;font-weight:700;margin:7px 0 2px 2px;text-shadow:0 1px 4px rgba(0,0,0,.7)}
   .tside-empty{font-size:11px;color:var(--ink-faint);padding:4px 2px 2px;font-family:var(--mono)}
   /* #3 当前卡片进度时间线 — 横在终端顶部的一条 */
@@ -1300,7 +1307,9 @@
     // 交互优化: the 一级卡片 (parent) is the header tab; the LEFT panel is its 二级
     // (sub-cards). Header line names the active family; the list below is subcards.
     const nSub=fam.kids.length+myPending.length;
-    let html=`<div class="tside-h" title="当前一级卡片">${statusIcon(fam.root.band,11)}<span class="tside-h-n">${esc(fam.root.name||rootSid.slice(0,8))}</span></div>`;
+    // 主卡标题也可点:点击切回/打开主卡自己的终端(和子卡行为一致)。
+    const rootOn=rootSid===sid;
+    let html=`<button class="tside-h${rootOn?' on':''}" title="${esc(fam.root.name||'')} · 点击${rootOn?'(当前就在主卡)':'切回主卡终端'}" onclick="openTerminal(event,'${esc(rootSid)}')">${statusIcon(fam.root.band,11)}<span class="tside-h-n">${esc(fam.root.name||rootSid.slice(0,8))}</span>${(open.has(rootSid)&&!rootOn)?'<span class="ts-open" title="终端已开"></span>':''}</button>`;
     html+=`<div class="tside-sub-h">二级 · 子卡 ${nSub}</div>`;
     for(const c of fam.kids) html+=item(c,true);
     for(const p of myPending) html+=`<div class="tside-item sub pending" title="子卡正在后台创建+总结,稍候自动出现并可点击">`+
