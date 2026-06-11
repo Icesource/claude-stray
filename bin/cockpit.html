@@ -545,7 +545,7 @@
   <script>
   const ORIGIN = location.origin;
   let DATA = {counts:{}, rows:[]};
-  let LOCATIONS = {};        // session_id -> {zellij_pane_id, zellij_session, cwd}
+  let LOCATIONS = {};        // session_id -> {cwd, ...} (cwd 用于 spawn/新会话建议)
   const OPEN = new Set();   // expanded initiative ids — preserved across re-renders
   const PCOLLAPSE = {};      // ws -> 'o'|'c' : manual project collapse override
   let lastSig = null;        // skip re-render when nothing actually changed
@@ -836,7 +836,7 @@
     // DD-019: sealed cards have no live session — "进入会话" resumes the
     // origin session; the merge action is meaningless (empty sessions[]).
     const mergeBtn=r.sealed?'':`<button class="btn" onclick="mergeStart(event,'${esc(r.id||'')}')">合并到…</button>`;
-    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">终端 ▸</button><button class="btn" onclick="enterSession(event,'${sid0}')">${r.sealed?'回到源会话':'跳转 pane'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
+    h+=`<div class="acts"><button class="btn primary" onclick="openTerminal(event,'${sid0}')">${r.sealed?'回到源会话':'终端 ▸'}</button><button class="btn" onclick="viewHistory(event,'${sid0}')">查看对话</button>${mergeBtn}<span class="acts-sp"></span><button class="btn" onclick="archiveInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">归档</button><button class="btn danger" onclick="deleteInit(event,'${esc(r.id||'')}','${esc(r.name||'')}')">删除</button></div>`;
     return `<div class="detail">${h}</div>`;}
   // DD-025: a parent's sub-cards rendered as compact rows nested under it.
   // Row click → terminal; the ⌄ button expands a detail panel (full progress /
@@ -993,23 +993,8 @@
   }
   window.addEventListener('resize',()=>{if(document.body.dataset.view==='project')drawMindLinks();});
   function enter(e){ if(e&&e.stopPropagation)e.stopPropagation(); }  // legacy [→] in row: no-op (use detail buttons)
-  // Enter the session: focus its zellij pane if we know it, else open a new pane (claude --resume).
-  // DD-018 companion path: "enter" = jump to the session's zellij pane in YOUR
-  // terminal (focus), or open it in a new pane. No browser terminal here.
-  function enterSession(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
-    const loc=LOCATIONS[sid];
-    if(loc&&loc.zellij_pane_id){
-      fetch(ORIGIN+'/focus',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pane:loc.zellij_pane_id,session:loc.zellij_session||''})})
-        .then(r=>r.json()).then(j=>{ if(j.ok)toast('已跳到该会话窗格'); else if(j.error==='pane_gone'){toast('窗格已关闭,新开一个');openPane(sid);} else toast('聚焦失败:'+(j.error||'')); })
-        .catch(()=>toast('聚焦失败'));
-    } else { openPane(sid); }
-  }
-  function openPane(sid){
-    const loc=LOCATIONS[sid]||{};
-    fetch(ORIGIN+'/newpane',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sid,cwd:loc.cwd||''})})
-      .then(r=>r.json()).then(j=>toast(j.ok?'已在 zellij 新窗格打开 claude --resume':(j.error==='zellij not installed'?'未装 zellij':'打开失败:'+(j.error||''))))
-      .catch(()=>toast('打开失败'));
-  }
+  // (zellij focus/newpane retired 2026-06-11 — the cockpit is fully web+webterminal
+  //  now; 终端 ▸ (openTerminal) covers attach AND resume, single-driver gated.)
   async function archiveInit(e,id,name){ e.stopPropagation(); if(!id)return;
     if(!confirm('归档「'+name+'」?可在 cache/archive 找回。')) return;
     try{ const r=await fetch(ORIGIN+'/api/archive',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})}); if(!r.ok)throw 0; OPEN.delete(id); toast('已归档'); setTimeout(()=>loadData(),400);}catch(_){toast('归档失败');}
@@ -1106,13 +1091,13 @@
   function viewHistory(e,sid){ e.stopPropagation(); if(!sid){toast('该工作没有关联会话');return;}
     let m=document.getElementById('histModal');
     if(!m){m=document.createElement('div');m.id='histModal';m.className='histmask';document.body.appendChild(m);}
-    m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 <b class="hist-cnt">…</b> 轮 · <span style="color:var(--run)">● 实时</span></span><button class="btn" onclick="closeHist()">关闭</button></div><div class="histbody"><div style="color:var(--ink-faint);padding:24px;text-align:center">加载中…</div></div><div class="histfoot"><input id="histInput" class="histin" placeholder="发条消息到这个会话(注入到 zellij pane)…" onkeydown="if(event.key==='Enter'){event.preventDefault();sendMsg('${esc(sid)}')}"><button class="btn primary" onclick="sendMsg('${esc(sid)}')">发送</button></div></div>`;
+    m.innerHTML=`<div class="histbox"><div class="histhead"><span>会话对话 · 最近 <b class="hist-cnt">…</b> 轮 · <span style="color:var(--run)">● 实时</span></span><button class="btn" onclick="closeHist()">关闭</button></div><div class="histbody"><div style="color:var(--ink-faint);padding:24px;text-align:center">加载中…</div></div><div class="histfoot"><input id="histInput" class="histin" placeholder="发条消息到这个会话(注入到它的终端)…" onkeydown="if(event.key==='Enter'){event.preventDefault();sendMsg('${esc(sid)}')}"><button class="btn primary" onclick="sendMsg('${esc(sid)}')">发送</button></div></div>`;
     m.onclick=ev=>{if(ev.target===m)closeHist();};
     loadHist(sid);
     clearInterval(_histTimer); _histTimer=setInterval(()=>loadHist(sid), 4000);
   }
   function closeHist(){ clearInterval(_histTimer); _histTimer=null; const m=document.getElementById('histModal'); if(m)m.remove(); }
-  // Send a message into the session's live zellij pane (drives the real claude)
+  // Send a message into the session's live webterminal (tmux holder; drives the real claude)
   async function sendMsg(sid){
     const inp=document.getElementById('histInput'); if(!inp||!inp.value.trim())return;
     const text=inp.value; inp.disabled=true;

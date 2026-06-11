@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 """
-Record the current Claude Code session's location (Zellij pane, cwd, etc.)
-into cache/session_locations.json.
+Record the current Claude Code session's location (cwd) into
+cache/session_locations.json.
 
 Called from refresh-bg.sh which is wired up as a Claude Code hook
 (SessionStart, Stop). Reads the hook JSON payload from stdin to get the
-authoritative session_id; reads env vars for terminal multiplexer info.
+authoritative session_id.
 
-This data lets the HTML mindmap UI jump back to the right pane via
-  zellij action focus-pane-id <id>
-or open a new pane via
-  zellij run -- claude --resume <session_id>.
+The cwd is the durable value: serve.py uses it as the resume-cwd fallback
+(`claude --resume` must run in the session's project dir) and the cockpit
+uses it for spawn/new-session directory suggestions. (The zellij pane
+fields this hook used to record were retired 2026-06-11 with the
+/focus + /newpane endpoints — the cockpit is fully web + webterminal.)
 
 Non-fatal: any error here is silently swallowed so it never blocks the
 hook chain.
@@ -71,10 +72,6 @@ def main() -> int:
     record = {
         "session_id": session_id,
         "cwd": cwd,
-        "zellij_session": os.environ.get("ZELLIJ_SESSION_NAME") or None,
-        "zellij_pane_id": os.environ.get("ZELLIJ_PANE_ID") or None,
-        "tmux_session": os.environ.get("TMUX") and os.environ.get("TMUX", "").split(",")[0] or None,
-        "tmux_pane": os.environ.get("TMUX_PANE") or None,
         "term_program": os.environ.get("TERM_PROGRAM") or None,
         "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }

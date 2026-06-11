@@ -188,13 +188,12 @@ echo "[3/3] installed Claude Code hooks (Stop, SessionStart + live: UserPromptSu
 
 # Optional: in-browser terminal (DD-015). Off by default; needs ttyd. Never required.
 if ! command -v ttyd >/dev/null 2>&1; then
-  echo "      (optional) in-browser terminal needs ttyd — install it to enable:"
+  echo "      (required for terminals) the cockpit's 终端 is a browser webterminal via ttyd:"
   case "$OS" in
     Darwin) echo "         brew install ttyd" ;;
     *)      echo "         apt install ttyd   # or your distro's package / https://github.com/tsl0922/ttyd" ;;
   esac
-  echo "      with ttyd installed, the cockpit's 在终端打开 opens a browser terminal;"
-  echo "      without it, that action falls back to opening a zellij pane."
+  echo "      without ttyd you can browse cards but not enter sessions from the cockpit."
 fi
 
 # --- 4. Resource-collection global prompt (DD-021) --------------------------
