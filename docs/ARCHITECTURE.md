@@ -105,7 +105,6 @@ claude-stray/
 │   │
 │   ├── _created.py               # DD-030: card creation registry (fcntl-locked, atomic)
 │   ├── _merge.py                 # DD-031: sub-card merge orchestration (queue + landing plan)
-│   ├── _pending.py               # Pending/blocked card state helper
 │   ├── _subcards.py              # DD-025: sub-card registration (spawn/list/close)
 │   ├── _worktree.py              # Worktree lifecycle helpers (create/clean up git worktrees)
 │   ├── _lifecycle.py             # Card lifecycle transitions

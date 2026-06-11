@@ -5,9 +5,9 @@
 #
 # Forks bin/pipeline-run.sh with the current session id.
 #
-# Also captures the current Claude Code session's terminal location
-# (Zellij/tmux pane) into cache/session_locations.json — used by the
-# HTML UI to jump back to the right pane.
+# Also captures the current Claude Code session's cwd into
+# cache/session_locations.json — serve.py's resume-cwd fallback and the
+# cockpit's directory suggestions read it.
 
 set -u
 

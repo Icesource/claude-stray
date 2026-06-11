@@ -68,3 +68,52 @@ def code_location_for_cwd(cwd: str, _now=time.time):
     info = compute_code_location(cwd)
     _CACHE[cwd] = (now, info)
     return info
+
+
+_MERGE_CACHE: dict = {}   # worktree_path -> (tip, index_mtime, ts, result)
+_MERGE_TTL = 8.0          # wall-clock ceiling so UNCOMMITTED edits surface too
+
+
+def merge_status(main_repo: str, worktree: str, branch: str, _now=time.time):
+    """Is this sub-card branch's work already absorbed elsewhere, and is its
+    tree clean? Returns {merged, ahead, dirty} or None.
+      - merged: the branch tip is contained in some OTHER branch (its commits
+        survive a `branch -D`); also True when the branch has NO commits of its
+        own ahead of the rest of history.
+      - ahead:  commits on this branch not reachable from any other branch
+        (what you'd LOSE on close) — the count shown as 'N 未合并'.
+      - dirty:  uncommitted changes in the worktree (lost on `worktree remove`).
+    Cache invalidates on tip move (a commit), on .git mtime change, OR after
+    _MERGE_TTL seconds — the last is essential: UNCOMMITTED edits move neither
+    the tip nor .git, so a pure (tip, mtime) key would let `dirty` go stale
+    forever. With the 3s poll this still re-shells git at most ~once / 8s per
+    actively-edited sub-card."""
+    if not (main_repo and worktree and branch):
+        return None
+    tip = _git(main_repo, "rev-parse", "--verify", "--quiet", branch)
+    if not tip:
+        return None
+    try:
+        idx_mtime = os.path.getmtime(os.path.join(worktree, ".git"))
+    except OSError:
+        idx_mtime = 0.0
+    now = _now()
+    cached = _MERGE_CACHE.get(worktree)
+    if cached and cached[0] == tip and cached[1] == idx_mtime and now - cached[2] < _MERGE_TTL:
+        return cached[3]
+    contains = _git(main_repo, "branch", "--format=%(refname:short)",
+                    "--contains", tip) or ""
+    others = [b.strip() for b in contains.splitlines()
+              if b.strip() and b.strip() != branch]
+    # commits unique to this branch (unreachable from every other branch).
+    # NOTE: --exclude must precede the --branches it modifies (git pattern order).
+    ahead_out = _git(main_repo, "rev-list", "--count", tip,
+                     "--not", "--exclude=" + branch, "--branches")
+    try:
+        ahead = int((ahead_out or "0").strip() or "0")
+    except ValueError:
+        ahead = 0
+    dirty = bool((_git(worktree, "status", "--porcelain", "-uno") or "").strip())
+    result = {"merged": bool(others) or ahead == 0, "ahead": ahead, "dirty": dirty}
+    _MERGE_CACHE[worktree] = (tip, idx_mtime, now, result)
+    return result

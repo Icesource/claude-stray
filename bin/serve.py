@@ -13,8 +13,7 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   POST /api/refresh       -> trigger background AI refresh
   POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
                              body: {"action": "pause"|"resume", "reason": "..."}
-  POST /focus             -> body {pane, session?} -> zellij focus-pane-id
-  POST /newpane           -> body {sid, cwd?}      -> zellij run -- claude --dangerously-skip-permissions --resume
+  POST /api/send          -> body {sid, text}      -> inject into the session's live tmux holder
 
 Only loopback (127.0.0.1) is bound. CORS allows any origin so file:// HTML
 still works as a fallback. No authentication beyond loopback binding — fine
@@ -45,6 +44,12 @@ try:
     REPO_ROOT = repo_root()
 except Exception:
     REPO_ROOT = Path(__file__).resolve().parent.parent
+
+try:
+    from _cache_lock import cache_lock as _cache_lock
+except Exception:
+    import contextlib
+    _cache_lock = contextlib.nullcontext  # type: ignore[assignment]
 # STRAY_CACHE_DIR / STRAY_PROJECTS_DIR / STRAY_PORTS / STRAY_TMUX_SOCKET /
 # STRAY_NO_BG are test-isolation overrides: integration tests run a REAL serve
 # against a throwaway cache + fake projects dir + ephemeral port without ever
@@ -441,10 +446,6 @@ try:
 except Exception:
     _resources = None
 try:
-    import _pending  # DD-027: instant-citizen placeholder cards (先创建后丰富)
-except Exception:
-    _pending = None
-try:
     import _created  # DD-030: unified created-cards registry (取代 pending+subcards)
 except Exception:
     _created = None
@@ -472,7 +473,6 @@ class _LiveGlobals:
 
 _subcard_api.install(_LiveGlobals())
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
-PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"
 _RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
 _RES_REMOTE_CACHE: dict = {}   # cwd -> (epoch, remote_url)
@@ -554,6 +554,17 @@ def _attach_code_location(mindmap: dict) -> int:
             if cl:
                 init["code_location"] = cl
                 n += 1
+                # DD-033 视角:子卡相对主干的合并状态,挂到卡上让列表实时显示
+                # 「已合并 / N 未合并 / 未提交」。只算 worktree 子卡;merge_status
+                # 按 tip+mtime 缓存,稳态近零成本(只多一次 rev-parse)。
+                if cl.get("is_worktree") and cl.get("main_repo") and cl.get("branch"):
+                    try:
+                        ms = _worktree.merge_status(cl["main_repo"], cl["worktree"],
+                                                    cl["branch"])
+                        if ms:
+                            init["merge_status"] = ms
+                    except Exception:
+                        pass
     # DD-030: tag cards that are registered created cards with their parent_session_id.
     if _created is not None:
         try:
@@ -561,6 +572,38 @@ def _attach_code_location(mindmap: dict) -> int:
         except Exception:
             pass
     return n
+
+
+_ARCH_SIDS_CACHE: tuple = (None, set())   # (signature, sids)
+
+
+def _archived_sids() -> set:
+    """Sessions of every archived card on disk. An archived card left the
+    dashboard on purpose — its created-cards entry must NOT re-merge as a ghost
+    准备中 placeholder (the delete path already guards via tombstones; this is the
+    archive-path equivalent). Memoized on the archive tree's mtimes."""
+    global _ARCH_SIDS_CACHE
+    root = CACHE_DIR / "archive"
+    try:
+        sig = tuple(sorted((str(p), p.stat().st_mtime) for p in root.glob("*")))
+    except Exception:
+        sig = ()
+    if _ARCH_SIDS_CACHE[0] == sig:
+        return _ARCH_SIDS_CACHE[1]
+    sids: set = set()
+    try:
+        for f in root.glob("*/*.json"):
+            try:
+                init = (json.loads(f.read_text()) or {}).get("initiative") or {}
+                for s in (init.get("sessions") or []):
+                    if s:
+                        sids.add(s)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    _ARCH_SIDS_CACHE = (sig, sids)
+    return sids
 
 
 def _merge_pending_cards(mindmap: dict) -> int:
@@ -579,7 +622,8 @@ def _merge_pending_cards(mindmap: dict) -> int:
         tomb = {x.get("id") for x in (dd.get("initiatives") or []) if x.get("id")}
     except Exception:
         pass
-    added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb)
+    added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb,
+                                               archived_sids=_archived_sids())
     if stale:
         try:
             for k in stale:
@@ -807,10 +851,6 @@ def _claude_suggest(prompt: str, timeout: int = 70) -> list[str]:
     except Exception:
         return []
     return _parse_suggestions(env.get("result", "") or "")
-
-
-def has_zellij() -> bool:
-    return shutil.which("zellij") is not None
 
 
 def run_cmd(argv: list[str], background: bool = False) -> tuple[int, str, str]:
@@ -1265,7 +1305,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
     def _handle_ping(self):
         return self._reply(200, {
             "service": "claude-stray", "version": 2,
-            "has_zellij": has_zellij(),
             "can_write_disk": True,  # the server CAN write to cache/
             "terminal": shutil.which("ttyd") is not None,
             "ttyd": shutil.which("ttyd") is not None,
@@ -1303,6 +1342,18 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # analysis running / done / failed, and is claude even available.
         data["sync"] = _read_sync_status()
         data["claude_ok"] = bool(shutil.which("claude"))
+        # DD-033 single-button: merge jobs + each job's landing readiness, so the
+        # sub-card row can render one 「合并中…/落地受阻」 status (the FF is auto).
+        try:
+            jobs = (_merge.load(str(MERGE_JOBS_JSON)).get("jobs", []) if _merge else [])
+            for j in jobs:
+                try:
+                    j["land"] = _subcard_api.landing_state(j)
+                except Exception:
+                    j["land"] = {}
+            data["merge_jobs"] = jobs
+        except Exception:
+            data["merge_jobs"] = []
         try: data["locations"] = json.load(open(LOCATIONS_JSON))
         except Exception: data["locations"] = None
         # Archived items from cache/archive/<ws>/<id>.json — these are
@@ -1427,8 +1478,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
 
     # path -> handler-method name; every handler takes the parsed JSON body.
     _POST_ROUTES = {
-        "/focus": "_handle_focus",
-        "/newpane": "_handle_newpane",
         "/api/save": "_handle_save",
         "/api/refresh": "_handle_refresh",
         "/api/lifecycle": "_handle_lifecycle",
@@ -1461,43 +1510,37 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_send(self, body: dict):
-        """Inject a message into a session's LIVE zellij pane — writes to the
-        real interactive claude's stdin, so Ghostty + the read-only view both
-        update (true two-way, NO attach/resize). Needs a known live pane."""
+        """Inject a message into a session's LIVE tmux holder (the webterminal
+        substrate: every cockpit terminal is `ttyd → tmux -L stray <holder>` with
+        interactive claude inside). Writes to the real claude's stdin, so the
+        webterminal and the read-only view both update. tmux targets the named
+        session directly — no focus dance, no wrong-window risk (the old zellij
+        path needed focus-then-type). 409 when there is no live holder: injecting
+        into a dead session is meaningless — resume it via 终端 instead."""
         sid = (body.get("sid") or "").strip()
         text = body.get("text") or ""
         if not sid or not text.strip():
             return self._reply(400, {"error": "sid and text required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
+        tmux = shutil.which("tmux")
+        if not tmux:
+            return self._reply(503, {"error": "tmux not found"})
+        ent = _TERMINALS.get(sid) or {}
+        holder = ent.get("name") or ""
+        if not holder or ent.get("holder") != "tmux":
+            return self._reply(409, {"error": "no live terminal",
+                "hint": "该会话没有活着的 webterminal。用卡片上的『终端』打开它,而不是注入。"})
+        if subprocess.run([tmux, "-L", _TMUX_SOCKET, "has-session", "-t", holder],
+                          capture_output=True, timeout=5).returncode != 0:
+            return self._reply(409, {"error": "terminal_gone",
+                "hint": "原终端已结束。用卡片上的『终端』resume 这个会话,而不是注入。"})
         try:
-            loc = json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}
-        except Exception:
-            loc = {}
-        zsess, zpane = loc.get("zellij_session"), loc.get("zellij_pane_id")
-        if not zsess or not zpane:
-            return self._reply(409, {"error": "no live pane",
-                                     "hint": "该会话不在已知的 zellij pane 里(可能已结束)"})
-        rc, out, _ = run_cmd(["zellij", "list-sessions"])
-        alive = rc == 0 and any(
-            (re.sub(r"\x1b\[[0-9;]*m", "", l).strip().split() or [""])[0] == zsess and "EXITED" not in l
-            for l in (out or "").splitlines())
-        if not alive:
-            return self._reply(409, {"error": "zellij session not alive"})
-        base = ["zellij", "--session", zsess, "action"]
-        # SAFETY: session_locations.json is never pruned, so a long-dead session
-        # still "remembers" its old pane id. If focus-pane-id fails (pane gone),
-        # the follow-up write-chars would type into whatever pane is CURRENTLY
-        # focused — your message + Enter land in the WRONG window. So check the
-        # focus rc and refuse to write when the target pane no longer exists.
-        rcf, _, _ = run_cmd(base + ["focus-pane-id", str(zpane)])
-        if rcf != 0:
-            return self._reply(409, {"error": "pane_gone",
-                "hint": "原窗格已关闭。用卡片上的『终端』resume 这个会话,而不是注入。"})
-        rc, _, err = run_cmd(base + ["write-chars", text])
-        if rc != 0:
-            return self._reply(500, {"error": err.strip() or "write-chars failed"})
-        run_cmd(base + ["write", "13"])  # Enter (CR) to submit the prompt
+            subprocess.run([tmux, "-L", _TMUX_SOCKET, "send-keys", "-t", holder,
+                            "-l", text], capture_output=True, timeout=5, check=True)
+            time.sleep(0.3)   # let the TUI ingest the paste before submitting
+            subprocess.run([tmux, "-L", _TMUX_SOCKET, "send-keys", "-t", holder,
+                            "Enter"], capture_output=True, timeout=5, check=True)
+        except Exception as e:
+            return self._reply(500, {"error": "send-keys failed: " + str(e)})
         return self._reply(200, {"ok": True})
 
     def _handle_suggest(self, body: dict):
@@ -1555,9 +1598,9 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
 
     def _handle_terminal(self, body: dict):
         """DD-015 Stage 3: spawn a localhost ttyd running `claude --resume <sid>`
-        and return its URL. Needs ttyd (localhost-trust model, same as /newpane
-        which already runs `claude --dangerously-skip-permissions`); degrades
-        gracefully — the cockpit falls back to a zellij pane when ttyd absent."""
+        and return its URL. Needs ttyd (localhost-trust model; runs
+        `claude --dangerously-skip-permissions`). ttyd absent → 503 with hint
+        (the webterminal IS the access path — zellij fallback retired 2026-06-11)."""
         ttyd = shutil.which("ttyd")
         if not ttyd:
             return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
@@ -1571,6 +1614,10 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # respawn a fresh, correct one instead of reusing a broken black screen.
         if ex and _pid_alive(ex.get("pid")) and ex.get("holder") == _terminal_holder():
             return self._reply(200, {"url": f"http://127.0.0.1:{ex['port']}/", "reused": True})
+        # probe=true: pre-warm path (page-refresh reconnect) — ONLY reveal an
+        # already-live terminal; never resume/spawn anything as a side effect.
+        if body.get("probe"):
+            return self._reply(404, {"error": "no live terminal", "probe": "miss"})
         if ex:  # stale/mismatched — tear it down before respawning
             try:
                 os.kill(int(ex["pid"]), signal.SIGTERM)
@@ -1731,17 +1778,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name,
                              "name": "stray-" + token[:8]}
         _save_terminals()
-        # DD-027: register the placeholder card the INSTANT the session is created,
-        # so the dashboard shows it at once (instead of a void until classify runs).
-        if _pending is not None:
-            try:
-                _pending.register(str(PENDING_JSON), token,
-                                  name=(body.get("name") or "").strip(), cwd=cwd,
-                                  worktree_path=wt_path or None,
-                                  worktree_name=wt_name if want_wt else None,
-                                  parent=parent or None)
-            except Exception:
-                pass
         if _created is not None:
             try:
                 _created.register(str(CREATED_JSON), token,
@@ -1776,11 +1812,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                 _created.capture_sid(str(CREATED_JSON), token, sid)
                             except Exception:
                                 pass
-                        if _pending is not None:
-                            try:
-                                _pending.capture_sid(str(PENDING_JSON), token, sid)
-                            except Exception:
-                                pass
                         # re-key token→sid so "open terminal" reuses this live ttyd.
                         try:
                             ent = _TERMINALS.pop(token, None)
@@ -1791,7 +1822,7 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                             pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
-        elif _pending is not None and _subcards is not None:
+        elif _subcards is not None:
             # DD-027: a no-worktree new session has no wt_path to align on, so capture
             # its sid (newest session whose first cwd is this cwd) as the alignment key.
             def _capture_plain():
@@ -1804,10 +1835,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                 _created.capture_sid(str(CREATED_JSON), token, sid)
                             except Exception:
                                 pass
-                        try:
-                            _pending.capture_sid(str(PENDING_JSON), token, sid)
-                        except Exception:
-                            pass
                         return
             threading.Thread(target=_capture_plain, daemon=True).start()
         time.sleep(0.4)
@@ -1836,48 +1863,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         return self._reply(400, {"error": "action must be 'pause' or 'resume'"})
 
     # ---- Zellij actions ----------------------------------------------------
-
-    def _handle_focus(self, body: dict):
-        pane = str(body.get("pane") or "")
-        sess = body.get("session") or ""
-        if not pane:
-            return self._reply(400, {"error": "pane required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
-        argv = ["zellij"]
-        if sess:
-            argv += ["--session", str(sess)]
-        argv += ["action", "focus-pane-id", pane]
-        rc, out, err = run_cmd(argv)
-        err_msg = (err or "").strip()
-        if rc != 0 and "already focused" in err_msg.lower():
-            return self._reply(200, {"ok": True, "noop": True, "note": "already-focused"})
-        if rc != 0 and ("not found" in err_msg.lower() or "no such" in err_msg.lower()):
-            return self._reply(404, {"error": "pane_gone", "detail": err_msg})
-        if rc != 0:
-            return self._reply(500, {"error": err_msg or "focus failed"})
-        return self._reply(200, {"ok": True})
-
-    def _handle_newpane(self, body: dict):
-        sid = (body.get("sid") or "").strip()
-        if not sid:
-            return self._reply(400, {"error": "sid required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
-        # Resolve the session's project cwd so `claude --resume` finds it (the
-        # latest cwd from session_locations may be a subdir → "No conversation
-        # found"). Fall back to whatever the client passed.
-        cwd = _resume_cwd_for(sid) or (body.get("cwd") or "")
-        if cwd.startswith("~"):
-            cwd = os.path.expanduser(cwd)
-        inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
-        if cwd:
-            inner = "cd " + shlex.quote(cwd) + " && " + inner
-        argv = ["zellij", "run", "-f", "--", "bash", "-lc", inner]
-        rc, out, err = run_cmd(argv, background=True)
-        if rc != 0:
-            return self._reply(500, {"error": err.strip() or "newpane failed"})
-        return self._reply(200, {"ok": True})
 
     # ---- Per-item delete / archive (append, not overwrite) ----------------
 
@@ -1920,17 +1905,18 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sessions = self._sessions_for_init_id(iid)
         try:
-            try:
-                doc = json.loads(DELETED_JSON.read_text())
-                if not isinstance(doc, dict): doc = {}
-            except Exception:
-                doc = {}
-            inits = doc.setdefault("initiatives", [])
-            if not any(x.get("id") == iid for x in inits):
-                inits.append({"id": iid, "deleted_at": now, "sessions": sessions})
-            doc["version"] = 1
-            doc["updated_at"] = now
-            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+            with _cache_lock("overrides"):
+                try:
+                    doc = json.loads(DELETED_JSON.read_text())
+                    if not isinstance(doc, dict): doc = {}
+                except Exception:
+                    doc = {}
+                inits = doc.setdefault("initiatives", [])
+                if not any(x.get("id") == iid for x in inits):
+                    inits.append({"id": iid, "deleted_at": now, "sessions": sessions})
+                doc["version"] = 1
+                doc["updated_at"] = now
+                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
             # DD-030: a deleted card must also leave the created-cards registry, else
             # it's re-shown as a 准备中 placeholder / re-exempted next render. Match by
             # the placeholder id too (a no-sid 准备中 card is `pending::<token>`, a
@@ -1971,18 +1957,19 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         from datetime import datetime, timezone
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
-            try:
-                doc = json.loads(DELETED_JSON.read_text())
-                if not isinstance(doc, dict):
+            with _cache_lock("overrides"):
+                try:
+                    doc = json.loads(DELETED_JSON.read_text())
+                    if not isinstance(doc, dict):
+                        doc = {}
+                except Exception:
                     doc = {}
-            except Exception:
-                doc = {}
-            inits = doc.setdefault("initiatives", [])
-            if not any(x.get("id") == iid for x in inits):
-                inits.append({"id": iid, "deleted_at": now, "sessions": [sid] if sid else []})
-            doc["version"] = 1
-            doc["updated_at"] = now
-            DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
+                inits = doc.setdefault("initiatives", [])
+                if not any(x.get("id") == iid for x in inits):
+                    inits.append({"id": iid, "deleted_at": now, "sessions": [sid] if sid else []})
+                doc["version"] = 1
+                doc["updated_at"] = now
+                DELETED_JSON.write_text(json.dumps(doc, indent=2, ensure_ascii=False))
             self._remove_from_dashboard(iid)
         except Exception:
             pass
@@ -2005,11 +1992,20 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
             if not found:
                 return self._reply(404, {"error": "not found"})
             ws_name = fws.get("name") or "unknown"
-            ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
-            ws_dir.mkdir(parents=True, exist_ok=True)
-            payload = {"archived_at": now, "archived_by": "user",
-                       "from_workspace": ws_name, "initiative": found}
-            (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            with _cache_lock("overrides"):
+                ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
+                ws_dir.mkdir(parents=True, exist_ok=True)
+                payload = {"archived_at": now, "archived_by": "user",
+                           "from_workspace": ws_name, "initiative": found}
+                (ws_dir / f"{iid}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+            # DD-030: an archived card must also leave the created-cards registry,
+            # else it re-merges as a ghost 准备中 placeholder (same as the delete path).
+            if _created is not None:
+                for s in (found.get("sessions") or []):
+                    try:
+                        _created.remove_by_sid(str(CREATED_JSON), s)
+                    except Exception:
+                        pass
             self._remove_from_dashboard(iid)
             return self._reply(200, {"ok": True})
         except Exception as e:
@@ -2037,44 +2033,45 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-            # 1) user_overrides.json — task_toggles + deleted_tasks are
-            # consumed by classify (cleared after applying). hidden_artifacts
-            # is a persistent suppression list: it stays in the file across
-            # classify runs so a user-deleted MR / PR / etc. never reappears
-            # even when Layer 1 keeps re-emitting it from session frontmatter.
-            ov = {
-                "version": 1,
-                "task_toggles": body.get("task_toggles") or [],
-                "deleted_tasks": body.get("deleted_tasks") or [],
-                "hidden_artifacts": body.get("hidden_artifacts") or [],
-                "updated_at": now,
-            }
-            OVERRIDES_JSON.write_text(json.dumps(ov, indent=2, ensure_ascii=False))
-
-            # 2) deleted_ids.json
-            del_ids = body.get("deleted") or []
-            del_doc = {
-                "version": 1,
-                "initiatives": [{"id": i, "deleted_at": now} for i in del_ids],
-                "updated_at": now,
-            }
-            DELETED_JSON.write_text(json.dumps(del_doc, indent=2, ensure_ascii=False))
-
-            # 3) archive/<ws>/<init_id>.json — write any archived entries we have
-            archived_data = body.get("archived_data") or {}
-            for init_id, rec in archived_data.items():
-                if not init_id or not isinstance(rec, dict):
-                    continue
-                ws_name = rec.get("ws_name") or "unknown"
-                ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
-                ws_dir.mkdir(parents=True, exist_ok=True)
-                payload = {
-                    "archived_at": now,
-                    "archived_by": "user",
-                    "from_workspace": ws_name,
-                    "initiative": rec.get("init"),
+            with _cache_lock("overrides"):
+                # 1) user_overrides.json — task_toggles + deleted_tasks are
+                # consumed by classify (cleared after applying). hidden_artifacts
+                # is a persistent suppression list: it stays in the file across
+                # classify runs so a user-deleted MR / PR / etc. never reappears
+                # even when Layer 1 keeps re-emitting it from session frontmatter.
+                ov = {
+                    "version": 1,
+                    "task_toggles": body.get("task_toggles") or [],
+                    "deleted_tasks": body.get("deleted_tasks") or [],
+                    "hidden_artifacts": body.get("hidden_artifacts") or [],
+                    "updated_at": now,
                 }
-                (ws_dir / f"{init_id}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+                OVERRIDES_JSON.write_text(json.dumps(ov, indent=2, ensure_ascii=False))
+
+                # 2) deleted_ids.json
+                del_ids = body.get("deleted") or []
+                del_doc = {
+                    "version": 1,
+                    "initiatives": [{"id": i, "deleted_at": now} for i in del_ids],
+                    "updated_at": now,
+                }
+                DELETED_JSON.write_text(json.dumps(del_doc, indent=2, ensure_ascii=False))
+
+                # 3) archive/<ws>/<init_id>.json — write any archived entries we have
+                archived_data = body.get("archived_data") or {}
+                for init_id, rec in archived_data.items():
+                    if not init_id or not isinstance(rec, dict):
+                        continue
+                    ws_name = rec.get("ws_name") or "unknown"
+                    ws_dir = ARCHIVE_DIR / safe_dir_name(ws_name)
+                    ws_dir.mkdir(parents=True, exist_ok=True)
+                    payload = {
+                        "archived_at": now,
+                        "archived_by": "user",
+                        "from_workspace": ws_name,
+                        "initiative": rec.get("init"),
+                    }
+                    (ws_dir / f"{init_id}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
 
             # Regenerate HTML so a reload reflects the save (dashboard.json is
             # untouched until next refresh; the HTML uses overrides to compute
@@ -2386,6 +2383,37 @@ def _check_updates_interactive() -> None:
               "Run `stray --update` to install on demand.\n")
 
 
+_BOUND_PORT = None  # set once serve binds — the auto-land watcher POSTs to self here
+
+
+def _merge_autoland_loop(stop_event) -> None:
+    """DD-033 single-button: once a sub-card has merged the target into its own
+    branch (and the main checkout is clean), fast-forward the target to it —
+    automatically, so the user only ever clicks 「合并」 once. The sub-card
+    physically cannot update the checked-out target itself (git refuses), so
+    this is the one step stray must do. WIP-blocked jobs just wait (the FF
+    never touches the user's uncommitted work)."""
+    import urllib.request
+    while not stop_event.wait(4.0):
+        if _merge is None or _BOUND_PORT is None:
+            continue
+        try:
+            jobs = _merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
+        except Exception:
+            continue
+        for j in jobs:
+            try:
+                if not _subcard_api.landing_state(j).get("landable"):
+                    continue
+                body = json.dumps({"sub_sid": j.get("sub_sid")}).encode()
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{_BOUND_PORT}/api/subcard-land",
+                    data=body, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=45).read()
+            except Exception:
+                pass  # transient; retried next tick
+
+
 def _update_recheck_loop(stop_event) -> None:
     """Daemon thread: re-run the update check every 24h while serve
     is alive. Silent — updates `cache/update_state.json` only. The
@@ -2436,6 +2464,8 @@ def serve(open_browser: bool = True):
             continue
         # Daemon threads so any in-flight handlers don't block process exit.
         httpd.daemon_threads = True
+        global _BOUND_PORT
+        _BOUND_PORT = port   # the auto-land watcher POSTs /api/subcard-land here
 
         url = f"http://{BIND}:{port}/"
         print(f"\n  ▸ {url}\n")
@@ -2502,6 +2532,13 @@ def serve(open_browser: bool = True):
                 name="ccw-update-check",
             )
             update_thread.start()
+
+        # DD-033: auto-land ready merge jobs so 「合并」 is a single click. Gated
+        # separately from _NO_BG so integration tests can opt INTO it
+        # (STRAY_AUTOLAND=1) while keeping the rest of the background off.
+        if not _NO_BG or os.environ.get("STRAY_AUTOLAND") == "1":
+            threading.Thread(target=_merge_autoland_loop, args=(stop_scheduler,),
+                             daemon=True, name="ccw-merge-autoland").start()
 
         try:
             httpd.serve_forever()

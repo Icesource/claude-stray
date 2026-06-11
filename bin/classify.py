@@ -539,10 +539,24 @@ def _strip_sealed_from_live(new_mm: dict, sid: str, sealed_id: str,
 
 
 def mint_sealed_initiatives(new_mm: dict, all_summaries: list,
-                            deleted_ids: list[str]) -> int:
+                            deleted_ids: list[str], prior: dict | None = None) -> int:
     """Mint/refresh sealed historical cards from Layer 1 sealed_segments.
     The empty sessions[] keeps these cards out of every session-keyed pass.
-    Idempotent: a sealed card already carried forward (by id) is left frozen."""
+    Idempotent: a sealed card already carried forward (by id) is left frozen.
+
+    Name freeze: a sealed card is FROZEN history — its name/summary must never
+    drift. Layer-1 re-summarizes hot sessions, and the regenerated segment title
+    can differ wildly from the original (conversation-internal jargon like
+    "step 0 strip-group 探索及退出" replacing a good app-doc name). So when the
+    same sealed_id exists in PRIOR_MINDMAP (i.e. it was minted before but got
+    dropped from new_mm this round), re-mint it as a byte-copy of the PRIOR card
+    — never from the fresh segment fields."""
+    import copy as _copy
+    prior_sealed = {}
+    for w in ((prior or {}).get("workspaces") or []):
+        for i in (w.get("initiatives") or []):
+            if i.get("sealed") and i.get("id"):
+                prior_sealed[i["id"]] = i
     deleted_set = set(deleted_ids or [])
     archived = archived_ids_on_disk()
     existing_ids: set[str] = set()
@@ -574,6 +588,25 @@ def mint_sealed_initiatives(new_mm: dict, all_summaries: list,
                 continue  # nothing stable to anchor on
             if (sealed_id in deleted_set or sealed_id in archived
                     or sealed_id in existing_ids):
+                continue
+            if sealed_id in prior_sealed:
+                # was minted before, dropped this round → resurrect FROZEN
+                # (prior byte-copy; never the re-generated segment title).
+                init = _copy.deepcopy(prior_sealed[sealed_id])
+                ws = ws_of_sid.get(sid)
+                if ws is None:
+                    cwd = cwd_by_sid.get(sid, "")
+                    name = os.path.basename(cwd.rstrip("/")) or "misc"
+                    ws = ws_by_name.get(name)
+                    if ws is None:
+                        ws = {"name": name, "cwd": cwd,
+                              "last_activity_at": init.get("last_activity_at") or now_utc_iso(),
+                              "initiatives": []}
+                        (new_mm.setdefault("workspaces", [])).append(ws)
+                        ws_by_name[name] = ws
+                ws.setdefault("initiatives", []).append(init)
+                existing_ids.add(sealed_id)
+                minted += 1
                 continue
             seg_status = (seg.get("status") or "done").lower()
             status = "archived" if seg_status == "abandoned" else "done"
@@ -773,69 +806,80 @@ def apply_user_overrides_inplace(mindmap: dict, *, consume: bool = True) -> int:
     compatibility — `done: true` → status `done`, `done: false` →
     status `pending`. The user-toggle path is the only way to revive
     a terminal task; AI never sees it (overrides are applied to PRIOR
-    before slim_prior runs)."""
-    overrides = load_overrides()
-    if not overrides:
-        return 0
-    task_toggles = overrides.get("task_toggles") or []
-    deleted_tasks = overrides.get("deleted_tasks") or []
-    if not (task_toggles or deleted_tasks):
-        return 0
+    before slim_prior runs).
 
-    def coerce_status(tt: dict) -> str:
-        v = tt.get("status")
-        if v in TASK_STATUSES:
-            return v
-        if "done" in tt:
-            return "done" if tt["done"] else "pending"
-        return "pending"
+    P11.0: the read + clear of user_overrides.json is wrapped in
+    cache_lock("overrides") so concurrent /api/save writes don't lose
+    toggles between this function's read and its clear."""
+    try:
+        from _cache_lock import cache_lock as _cache_lock
+    except Exception:
+        import contextlib
+        _cache_lock = contextlib.nullcontext  # type: ignore[assignment]
 
-    toggle_idx = {(tt["init_id"], tt["task_title"]): coerce_status(tt)
-                  for tt in task_toggles}
-    del_set = {(dt["init_id"], dt["task_title"]) for dt in deleted_tasks}
-    applied_tog = 0
-    removed_tasks = 0
-    now = now_utc_iso()
-    for ws in mindmap.get("workspaces") or []:
-        for init in ws.get("initiatives") or []:
-            iid = init.get("id")
-            new_tasks = []
-            for t in init.get("tasks") or []:
-                title = t.get("title")
-                if (iid, title) in del_set:
-                    removed_tasks += 1
-                    continue
-                if (iid, title) in toggle_idx:
-                    desired = toggle_idx[(iid, title)]
-                    if t.get("status") != desired:
-                        t["status"] = desired
-                        if desired in TASK_TERMINAL:
-                            t["terminal_at"] = now
-                        else:
-                            t.pop("terminal_at", None)
-                            t.pop("evidence", None)
-                        applied_tog += 1
-                new_tasks.append(t)
-            init["tasks"] = new_tasks
-    if (applied_tog or removed_tasks) and consume:
-        print(f"[classify] applied {applied_tog} task toggles, "
-              f"removed {removed_tasks} deleted tasks")
-        # Clear the consumed task overrides. Persistent suppression
-        # lists (hidden_artifacts) carry forward — they must keep
-        # filtering on every classify run.
-        try:
-            persistent = overrides.get("hidden_artifacts") or []
-            OVERRIDES_FILE.write_text(
-                json.dumps({"version": 1, "task_toggles": [],
-                            "deleted_tasks": [],
-                            "hidden_artifacts": persistent,
-                            "consumed_at": now_utc_iso()},
-                           indent=2, ensure_ascii=False),
-                encoding="utf-8")
-        except OSError as e:
-            print(f"[classify] warning: failed to clear overrides: {e}",
-                  file=sys.stderr)
-    return applied_tog + removed_tasks
+    with _cache_lock("overrides"):
+        overrides = load_overrides()
+        if not overrides:
+            return 0
+        task_toggles = overrides.get("task_toggles") or []
+        deleted_tasks = overrides.get("deleted_tasks") or []
+        if not (task_toggles or deleted_tasks):
+            return 0
+
+        def coerce_status(tt: dict) -> str:
+            v = tt.get("status")
+            if v in TASK_STATUSES:
+                return v
+            if "done" in tt:
+                return "done" if tt["done"] else "pending"
+            return "pending"
+
+        toggle_idx = {(tt["init_id"], tt["task_title"]): coerce_status(tt)
+                      for tt in task_toggles}
+        del_set = {(dt["init_id"], dt["task_title"]) for dt in deleted_tasks}
+        applied_tog = 0
+        removed_tasks = 0
+        now = now_utc_iso()
+        for ws in mindmap.get("workspaces") or []:
+            for init in ws.get("initiatives") or []:
+                iid = init.get("id")
+                new_tasks = []
+                for t in init.get("tasks") or []:
+                    title = t.get("title")
+                    if (iid, title) in del_set:
+                        removed_tasks += 1
+                        continue
+                    if (iid, title) in toggle_idx:
+                        desired = toggle_idx[(iid, title)]
+                        if t.get("status") != desired:
+                            t["status"] = desired
+                            if desired in TASK_TERMINAL:
+                                t["terminal_at"] = now
+                            else:
+                                t.pop("terminal_at", None)
+                                t.pop("evidence", None)
+                            applied_tog += 1
+                    new_tasks.append(t)
+                init["tasks"] = new_tasks
+        if (applied_tog or removed_tasks) and consume:
+            print(f"[classify] applied {applied_tog} task toggles, "
+                  f"removed {removed_tasks} deleted tasks")
+            # Clear the consumed task overrides. Persistent suppression
+            # lists (hidden_artifacts) carry forward — they must keep
+            # filtering on every classify run.
+            try:
+                persistent = overrides.get("hidden_artifacts") or []
+                OVERRIDES_FILE.write_text(
+                    json.dumps({"version": 1, "task_toggles": [],
+                                "deleted_tasks": [],
+                                "hidden_artifacts": persistent,
+                                "consumed_at": now_utc_iso()},
+                               indent=2, ensure_ascii=False),
+                    encoding="utf-8")
+            except OSError as e:
+                print(f"[classify] warning: failed to clear overrides: {e}",
+                      file=sys.stderr)
+        return applied_tog + removed_tasks
 
 
 # ---------- shared task/artifact record helpers -----------------------------

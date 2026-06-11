@@ -9,7 +9,7 @@ For full design docs see [design/](design/).
 
 | Item | Status | Doc |
 |---|---|---|
-| P11.0 cache lock | Partially Implemented (see note) | — |
+| P11.0 cache lock | Implemented | — |
 | P11.1 CLI subcommands | Proposed (below) | — |
 | P11.2 SKILL.md | Implemented | — |
 | P14 AI Pipeline redesign | Implemented | [DD-002](design/DD-002-ai-pipeline-redesign.md) |
@@ -26,20 +26,25 @@ For full design docs see [design/](design/).
 `~/.claude/skills/stray/` on the local machine. The raw GitHub URL enables
 one-prompt remote installation.
 
-### P11.0 — Cache lock (Partially implemented)
+### P11.0 — Cache lock (Implemented)
 
-The `bin/_cache_lock.py` module proposed here was not created. However, the
-three registry helpers introduced in DD-025/DD-030/DD-031 (`_subcards.py`,
-`_created.py`, `_merge.py`) each implement an equivalent pattern inline:
-`fcntl.flock(LOCK_EX)` on a sibling `.lock` file, reused forever (no
-per-entry leak). This covers the most write-contended paths.
+`bin/_cache_lock.py` is the shared context manager (`cache_lock(name)`) used
+by all writers to `user_overrides.json`, `deleted_ids.json`, and the archive
+dir. Lock files live at `cache/.locks/<name>.lock`; the cache dir is derived
+from `STRAY_CACHE_DIR` (test-isolation env) or `_repo_root.repo_root()/cache`.
+Degrades to no-op on non-POSIX platforms (no `fcntl`).
 
-What remains from the original spec:
-- `serve.py /api/save` does not yet take the lock before writing
-  `user_overrides.json` / `deleted_ids.json` / archive dir.
-- No shared `bin/_cache_lock.py` context manager for use by CLI commands
-  (P11.1) and the serve endpoint.
-- `dashboard.json` final write does not yet use atomic `tmp + rename`.
+Write points protected as of this delivery:
+- `serve.py _handle_save` — `user_overrides.json`, `deleted_ids.json`,
+  `archive/<ws>/<id>.json` (all three in one lock acquisition).
+- `serve.py _handle_delete` — `deleted_ids.json` read-modify-write.
+- `serve.py _handle_archive` — `archive/<ws>/<id>.json` write.
+- `serve.py _tombstone_card` — `deleted_ids.json` read-modify-write.
+- `classify.py apply_user_overrides_inplace` — lock held across the full
+  read + clear cycle of `user_overrides.json` so no toggle is lost between
+  classify's read and its clear.
+- `classify.py atomic_write_json` — `dashboard.json` final write uses
+  `tmp.write_text + tmp.replace(path)` (was already atomic; confirmed).
 
 ## P11.0 — Concurrency lock for cache writes
 

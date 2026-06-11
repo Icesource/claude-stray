@@ -11,5 +11,9 @@ set -u
 # `|| true` + :- fallback keep the hook working even if the helper is missing.
 . "$(dirname "$0")/_repo-root.sh" 2>/dev/null || true
 REPO_ROOT="${STRAY_REPO_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-cat 2>/dev/null | python3 "$REPO_ROOT/bin/live-state.py" 2>/dev/null || true
+PAYLOAD="$(cat 2>/dev/null || true)"
+printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/live-state.py" 2>/dev/null || true
+# 父←子信息同步(惰性):有未告知的子卡动态时输出一行 → UserPromptSubmit 的
+# stdout 会作为上下文附进该轮。无动态时无输出,零开销。见 bin/subcard-context.py。
+printf '%s' "$PAYLOAD" | python3 "$REPO_ROOT/bin/subcard-context.py" 2>/dev/null || true
 exit 0

@@ -85,7 +85,7 @@ def _git(cwd, *args):
 class Harness:
     """One isolated serve + user repo per scenario."""
 
-    def __init__(self, name):
+    def __init__(self, name, autoland=False):
         self.dir = os.path.realpath(tempfile.mkdtemp(prefix=f"stray-e2e-{name}-"))
         self.cache = os.path.join(self.dir, "cache")
         self.projects = os.path.join(self.dir, "projects")
@@ -119,6 +119,8 @@ class Harness:
             "STRAY_TMUX_SOCKET": self.sock,
             "STRAY_NO_BG": "1",
         })
+        if autoland:
+            env["STRAY_AUTOLAND"] = "1"   # opt the auto-land watcher back on
         self.log = open(os.path.join(self.dir, "serve.log"), "w")
         self.proc = subprocess.Popen(
             [sys.executable, os.path.join(REPO, "bin", "serve.py"), "--no-open"],
@@ -176,13 +178,14 @@ class Harness:
         sid = {}
 
         def captured():
+            # the unified created-cards registry (DD-030) is the only writer now
             try:
-                reg = json.load(open(os.path.join(self.cache, "subcards.json")))
+                reg = json.load(open(os.path.join(self.cache, "created-cards.json")))
             except Exception:
                 return False
-            for s, e in reg.items():
-                if e.get("slug") == slug:
-                    sid["v"] = s
+            for e in reg.values():
+                if e.get("worktree_name") == slug and e.get("sid"):
+                    sid["v"] = e["sid"]
                     return True
             return False
         self._wait(captured, 30, f"sub-card {slug} sid never captured")
@@ -194,14 +197,14 @@ class Harness:
         except Exception:
             return []
 
-    def wait_merge_ready(self, slug):
-        """The human gate: wait until the merge agent's branch contains the
-        sub-card branch (i.e. it merged + committed)."""
+    def wait_merge_ready(self, slug, target="main"):
+        """The human gate (DD-033): wait until the SUB branch contains the
+        target (the sub-card merged the target into itself + committed)."""
         def ready():
             rc, _ = _git(self.repo, "merge-base", "--is-ancestor",
-                         "worktree-" + slug, "merge-" + slug)
+                         target, "worktree-" + slug)
             return rc == 0
-        self._wait(ready, 40, f"merge-{slug} never absorbed worktree-{slug}")
+        self._wait(ready, 40, f"worktree-{slug} never absorbed {target}")
 
     def branch_exists(self, name):
         rc, _ = _git(self.repo, "rev-parse", "--verify", "--quiet", name)
@@ -219,10 +222,10 @@ class Harness:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-def _scenario(name):
+def _scenario(name, autoland=False):
     def deco(fn):
         def wrapped():
-            h = Harness(name)
+            h = Harness(name, autoland=autoland)
             try:
                 fn(h)
             except Exception:
@@ -233,6 +236,26 @@ def _scenario(name):
         wrapped.__name__ = fn.__name__
         return wrapped
     return deco
+
+
+@_scenario("autoland", autoland=True)
+def test_single_button_auto_lands(h):
+    """DD-033 single button: clicking 合并 ONCE is enough — the sub-card merges
+    the target into itself, then the auto-land watcher fast-forwards main with
+    NO second click. Here the target hasn't moved, so the sub already contains
+    it → the watcher lands within a couple of ticks."""
+    sid, slug = h.spawn_subcard("auto", [
+        "echo a > auto.txt", "git add -A && git commit -q -m auto-work"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200 and j.get("ok"), (st, j)
+    # NO manual land call — the watcher must FF main on its own
+    h._wait(lambda: os.path.exists(os.path.join(h.repo, "auto.txt"))
+            and h.jobs() == [], 30, "auto-land never fast-forwarded main")
+    # sub-card SURVIVES (DD-033) — the branch/worktree are still there
+    assert h.branch_exists("worktree-" + slug)
 
 
 @_scenario("single")
@@ -250,17 +273,23 @@ def test_single_subcard_merge_and_land(h):
     h.wait_merge_ready(slug)
     st, j = h.post("/api/subcard-land", {"sub_sid": sid})
     assert st == 200 and j.get("ok"), (st, j)
-    # target FF'd: the work is on main, in the main checkout
+    # target FF'd to the SUB branch tip: the work is on main, in the main checkout
+    assert j.get("kept"), "DD-033: landing must report the card was kept"
     assert os.path.exists(os.path.join(h.repo, "alpha.txt"))
     rc, _ = _git(h.repo, "merge-base", "--is-ancestor", "HEAD", "main")
     assert rc == 0
-    # both worktrees + branches cleaned, queue empty
-    h._wait(lambda: not h.branch_exists("worktree-" + slug)
-            and not h.branch_exists("merge-" + slug), 20, "branches not cleaned")
+    # DD-033(用户决策): the sub-card SURVIVES landing — branch + worktree stay
     wts = os.path.join(h.repo, ".claude", "worktrees")
-    assert not os.path.isdir(os.path.join(wts, slug)), "sub worktree not removed"
-    assert not os.path.isdir(os.path.join(wts, "merge-" + slug)), "merge worktree not removed"
+    assert h.branch_exists("worktree-" + slug), "sub branch must survive landing"
+    assert os.path.isdir(os.path.join(wts, slug)), "sub worktree must survive landing"
+    assert not h.branch_exists("merge-" + slug), "no merge-agent branch in DD-033"
     assert h.jobs() == [], h.jobs()
+    # explicit × close is what cleans it up
+    st, j = h.post("/api/subcard-close", {"sid": sid, "force": True})
+    assert st == 200 and j.get("ok"), (st, j)
+    h._wait(lambda: not h.branch_exists("worktree-" + slug), 15,
+            "close must remove the sub branch")
+    assert not os.path.isdir(os.path.join(wts, slug)), "close must remove the worktree"
 
 
 @_scenario("conflict")
@@ -302,7 +331,8 @@ def test_serial_queue(h):
     assert st == 200 and j.get("queued"), ("second merge must queue", st, j)
     states = {x["sub_sid"]: x["state"] for x in h.jobs()}
     assert states[sid1] == "resolving" and states[sid2] == "queued", states
-    assert not h.branch_exists("merge-" + slug2), "queued merge must not start"
+    # queued job must NOT have nudged the sub yet: sub2 hasn't absorbed main
+    # (nothing to absorb yet anyway — just assert the state machine)
     h.wait_merge_ready(slug1)
     st, j = h.post("/api/subcard-land", {"sub_sid": sid1})
     assert st == 200 and j.get("ok"), (st, j)
@@ -316,10 +346,11 @@ def test_serial_queue(h):
 
 
 @_scenario("catchup")
-def test_land_blocked_until_agent_catches_up(h):
-    """DD-031 follow-up: landing must not silently drop sub-card commits made
-    AFTER the agent merged, nor pretend a non-FF is the user's problem — both
-    block with 409 {catchup_sent} (the agent is auto-nudged when alive)."""
+def test_late_commits_ride_and_catchup_auto_resolves(h):
+    """DD-033: ① sub commits made after merge-ready RIDE ALONG (landing FFs to
+    the sub TIP — nothing to drop anymore); ② target advancing after ready
+    blocks with 409 AND auto-nudges the sub (here: dead session → detached
+    resume of the fake claude), which re-merges so a retry lands."""
     sid, slug = h.spawn_subcard("zeta", [
         "echo z1 > zeta.txt", "git add -A && git commit -q -m zeta-1"])
     h._wait(lambda: _git(h.repo, "rev-list", "--count",
@@ -328,22 +359,16 @@ def test_land_blocked_until_agent_catches_up(h):
     st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
     assert st == 200, (st, j)
     h.wait_merge_ready(slug)
-    # the sub-card keeps working AFTER the agent merged
+    # ① late sub commit → included automatically, not dropped/blocked
     wt = os.path.join(h.repo, ".claude", "worktrees", slug)
     with open(os.path.join(wt, "zeta.txt"), "w") as f:
         f.write("z2\n")
     _git(wt, "add", "-A"); _git(wt, "commit", "-q", "-m", "zeta-2-late")
     st, j = h.post("/api/subcard-land", {"sub_sid": sid})
-    assert st == 409 and "catchup_sent" in j, (st, j)
-    assert h.branch_exists("merge-" + slug), "blocked landing must not tear down"
-    assert h.jobs(), "job must survive a blocked landing"
-    # simulate the agent catching up (the fake agent's session is gone), land OK
-    mwt = os.path.join(h.repo, ".claude", "worktrees", "merge-" + slug)
-    _git(mwt, "merge", "--no-edit", "worktree-" + slug)
-    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
     assert st == 200 and j.get("ok"), (st, j)
     assert open(os.path.join(h.repo, "zeta.txt")).read().strip() == "z2"
-    # the other catch-up shape: target advances after merge-ready → non-FF
+    # ② target advances after ready → 409 + auto-nudge; the resumed fake
+    #    claude re-merges main into the sub, then the retry lands clean
     sid2, slug2 = h.spawn_subcard("eta", [
         "echo e1 > eta.txt", "git add -A && git commit -q -m eta-1"])
     h._wait(lambda: _git(h.repo, "rev-list", "--count",
@@ -352,48 +377,79 @@ def test_land_blocked_until_agent_catches_up(h):
     st, j = h.post("/api/subcard-merge", {"sid": sid2, "target": "main"})
     assert st == 200, (st, j)
     h.wait_merge_ready(slug2)
+    # let the nudge-resumed fake claude EXIT before advancing main — otherwise
+    # its in-flight `git merge main` races the advance and absorbs it (fine
+    # product behavior, but it makes the 409 below non-deterministic)
+    h._wait(lambda: subprocess.run(
+        [TMUX, "-L", h.sock, "has-session", "-t", "stray-" + sid2[:8]],
+        capture_output=True).returncode != 0, 30, "nudged fake never exited")
     with open(os.path.join(h.repo, "advance.txt"), "w") as f:
         f.write("x\n")
     _git(h.repo, "add", "-A"); _git(h.repo, "commit", "-q", "-m", "target-advances")
     st, j = h.post("/api/subcard-land", {"sub_sid": sid2})
-    assert st == 409 and "catchup_sent" in j, (st, j)
-    mwt2 = os.path.join(h.repo, ".claude", "worktrees", "merge-" + slug2)
-    _git(mwt2, "merge", "--no-edit", "main")
+    assert st == 409 and j.get("catchup_sent") is True, (st, j)
+    assert h.jobs(), "job must survive a blocked landing"
+    h.wait_merge_ready(slug2)          # the auto-nudged resume re-merges main
     st, j = h.post("/api/subcard-land", {"sub_sid": sid2})
     assert st == 200 and j.get("ok"), (st, j)
+    assert os.path.exists(os.path.join(h.repo, "eta.txt"))
 
 
 @_scenario("abort")
-def test_closing_merge_agent_cancels_job(h):
-    """DD-031「中途放弃 → 手动关」: closing the merge-agent card must cancel its
-    job (else the stuck 'resolving' holds the serial gate forever), delete the
-    agent's REAL branch (merge-<slug>, not worktree-<slug>), and let the next
-    queued merge start."""
-    sid, slug = h.spawn_subcard("theta", [
+def test_closing_sub_mid_merge_cancels_job(h):
+    """「中途放弃 → 手动关」(DD-033): closing a sub-card whose merge is in
+    flight must cancel its job (else the stuck 'resolving' holds the serial
+    gate forever) and auto-start the next queued merge."""
+    sid1, slug1 = h.spawn_subcard("theta", [
         "echo t > theta.txt", "git add -A && git commit -q -m theta"])
+    sid2, slug2 = h.spawn_subcard("iota", [
+        "echo i > iota.txt", "git add -A && git commit -q -m iota"])
+    for slug in (slug1, slug2):
+        h._wait(lambda s=slug: _git(h.repo, "rev-list", "--count",
+                                    "main..worktree-" + s)[1] == "1",
+                30, f"{slug} work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid1, "target": "main"})
+    assert st == 200 and not j.get("queued"), (st, j)
+    st, j = h.post("/api/subcard-merge", {"sid": sid2, "target": "main"})
+    assert st == 200 and j.get("queued"), (st, j)
+    # abandon #1 mid-merge → its job is cancelled, #2 starts automatically
+    st, j = h.post("/api/subcard-close", {"sid": sid1, "force": True})
+    assert st == 200 and j.get("ok"), (st, j)
+    states = {x["sub_sid"]: x["state"] for x in h.jobs()}
+    assert sid1 not in states, f"closed sub's job must be cancelled: {states}"
+    assert states.get(sid2) == "resolving", states
+    h._wait(lambda: not h.branch_exists("worktree-" + slug1), 15,
+            "closed sub's branch not deleted")
+    h.wait_merge_ready(slug2)
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid2})
+    assert st == 200 and j.get("ok"), (st, j)
+    assert os.path.exists(os.path.join(h.repo, "iota.txt"))
+
+
+@_scenario("closeguard")
+def test_close_blocks_on_unmerged_not_on_terminal(h):
+    """关卡守卫(用户实测驱动):一张已合并干净的卡能直接关(终端连着不算);
+    有未合并提交的卡要拦下来(branch -D 会丢这些提交)。"""
+    sid, slug = h.spawn_subcard("kappa", [
+        "echo k > kappa.txt", "git add -A && git commit -q -m kappa"])
     h._wait(lambda: _git(h.repo, "rev-list", "--count",
                          "main..worktree-" + slug)[1] == "1",
             30, "sub-card work never committed")
+    # unmerged commit → must block (even though a terminal is attached)
+    st, j = h.post("/api/subcard-close", {"sid": sid})
+    assert st == 409 and j.get("unmerged") is True, (st, j)
+    # merge it back and land, so the branch tip becomes contained in main
     st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
     assert st == 200, (st, j)
     h.wait_merge_ready(slug)
-    # the agent's sid is captured asynchronously — wait for it
-    msid = {}
-
-    def captured():
-        job = next((x for x in h.jobs() if x.get("sub_sid") == sid), None)
-        if job and job.get("merge_sid"):
-            msid["v"] = job["merge_sid"]
-            return True
-        return False
-    h._wait(captured, 30, "merge agent sid never captured")
-    st, j = h.post("/api/subcard-close", {"sid": msid["v"], "force": True})
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
     assert st == 200 and j.get("ok"), (st, j)
-    assert h.jobs() == [], f"job must be cancelled, got {h.jobs()}"
-    h._wait(lambda: not h.branch_exists("merge-" + slug), 15,
-            "agent branch merge-<slug> not deleted on close")
-    # the abandoned ORIGINAL sub-card is untouched — user closes it explicitly
-    assert h.branch_exists("worktree-" + slug)
+    # now fully merged → close must NOT be blocked (attached terminal alone is
+    # not a reason) and it tears the worktree down
+    st, j = h.post("/api/subcard-close", {"sid": sid})
+    assert st == 200 and j.get("ok"), ("merged card must close freely", st, j)
+    h._wait(lambda: not h.branch_exists("worktree-" + slug), 15,
+            "close should have removed the merged branch")
 
 
 @_scenario("wip")
