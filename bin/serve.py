@@ -1298,6 +1298,13 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         # analysis running / done / failed, and is claude even available.
         data["sync"] = _read_sync_status()
         data["claude_ok"] = bool(shutil.which("claude"))
+        # DD-033: merge jobs, so sub-card rows can render the 合并/落地 two-phase
+        # button without a separate merge-agent card existing.
+        try:
+            data["merge_jobs"] = (_merge.load(str(MERGE_JOBS_JSON)).get("jobs", [])
+                                  if _merge else [])
+        except Exception:
+            data["merge_jobs"] = []
         try: data["locations"] = json.load(open(LOCATIONS_JSON))
         except Exception: data["locations"] = None
         # Archived items from cache/archive/<ws>/<id>.json — these are

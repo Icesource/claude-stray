@@ -453,33 +453,65 @@ class SubcardAPI:
         return removed
 
 
-    def _start_merge_job(self, job: dict):
-        """Spawn the merge-agent sub-card for a queued job (on merge-<slug> off target,
-        seeded with the merge task). Sets state=resolving + records merge_sid on capture."""
-        sub_slug, target, main_repo = job["sub_slug"], job["target_branch"], job["main_repo"]
-        merge_slug = job["merge_slug"]
-        sub_branch = "worktree-" + sub_slug
-        parent = self._parent_of_sid(job["sub_sid"]) or ""
-        prompt = (
-            "你是一个「合并 agent」。当前 worktree 在分支 " + merge_slug
-            + "(基于目标分支 " + target + ")。任务:把子卡分支 " + sub_branch + " 合并进来。\n"
-            "步骤:\n"
-            "1) 运行: git merge " + sub_branch + "\n"
-            "2) 若有冲突,逐个解决 —— 理解双方代码的语义,合出正确的结果(不是简单二选一)。\n"
-            "3) 解决后: git add -A && git commit(默认合并提交信息即可)。\n"
-            "4) 若某处冲突你拿不准怎么解才对,【停下来,把冲突点和你的疑问清楚地告诉用户,等用户回答】,不要瞎猜。\n"
-            "5) 全部解决并 commit 后,告诉用户:「合并完成,可以落地了」。\n"
-            "只做这一件事,不要改与本次合并无关的东西。")
-        sub_sid = job["sub_sid"]
-        code, payload = self._spawn_subcard(
-            main_repo, "合并 ⊳ " + sub_slug, parent, prompt,
-            wt_name=merge_slug, branch=merge_slug, base=target,
-            on_capture=lambda msid: S._merge.update_job(str(S.MERGE_JOBS_JSON), sub_sid, merge_sid=msid))
-        # merge_token: lets landing close the agent's terminal even if its sid
-        # was never captured (capture polls ~1s; the agent may also die early).
-        S._merge.update_job(str(S.MERGE_JOBS_JSON), sub_sid, state="resolving",
-                            merge_token=(payload or {}).get("token"))
-        return code
+    def _merge_instruction(self, target: str) -> str:
+        return ("请把目标分支 " + target + " 合并进当前分支:运行 git merge " + target + " 。"
+                "若有冲突,理解双方代码的语义合出正确结果(不是简单二选一),"
+                "然后 git add -A && git commit(默认合并提交信息即可)。"
+                "若某处冲突拿不准怎么解,停下来把冲突点和疑问清楚地告诉用户,等用户回答。"
+                "全部解决并 commit 后告诉用户:「合并完成,可以在驾驶舱点落地了」。"
+                "只做这一件事,不要改与合并无关的东西。")
+
+    def _nudge_sub_session(self, sid: str, text: str) -> bool:
+        """Deliver an instruction to the sub-card's OWN session if it's live in
+        a tmux holder (spawned cards are token-named; resume terminals use
+        stray-<sid8> — try both)."""
+        ent = S._TERMINALS.get(sid) or {}
+        for holder in dict.fromkeys([ent.get("name"), "stray-" + sid[:8]]):
+            if holder and self._send_to_holder(holder, text):
+                return True
+        return False
+
+    def _resume_sub_with(self, sid: str, text: str) -> bool:
+        """The sub-card session is dead → resume it DETACHED in the standard
+        holder, seeded with the instruction. It carries its full conversation
+        context (it wrote the code — better at resolving its own conflicts than
+        any fresh agent). The cockpit terminal later attaches to this SAME
+        holder, so it stays single-driver."""
+        cwd = S._resume_cwd_for(sid)
+        if not cwd or not os.path.isdir(cwd):
+            return False
+        claude, tmux = shutil.which("claude"), shutil.which("tmux")
+        if not (claude and tmux):
+            return False
+        holder = "stray-" + sid[:8]
+        inner = ("cd " + shlex.quote(cwd) + " && exec " + shlex.quote(claude)
+                 + " --dangerously-skip-permissions --resume " + shlex.quote(sid)
+                 + " " + shlex.quote(text))
+        try:
+            if not S._TMUX_CONF.exists():
+                S._TMUX_CONF.write_text("set -g status off\nset -g mouse off\nset -g escape-time 10\n")
+        except Exception:
+            pass
+        try:
+            r = subprocess.run([tmux, "-L", S._TMUX_SOCKET, "-f", str(S._TMUX_CONF),
+                                "new-session", "-d", "-s", holder, "bash", "-lc", inner],
+                               capture_output=True, timeout=20)
+            return r.returncode == 0
+        except Exception:
+            return False
+
+    def _start_merge_job(self, job: dict) -> bool:
+        """DD-033: the sub-card IS its own merge agent — no extra card, no
+        merge-<slug> branch. Inject the merge instruction into the sub-card's
+        own session (live holder → send-keys; dead → detached resume); it runs
+        `git merge <target>` on ITS OWN branch, then landing fast-forwards the
+        target to the sub branch tip."""
+        sub_sid, target = job["sub_sid"], job["target_branch"]
+        text = self._merge_instruction(target)
+        ok = self._nudge_sub_session(sub_sid, text) or self._resume_sub_with(sub_sid, text)
+        if ok:
+            S._merge.update_job(str(S.MERGE_JOBS_JSON), sub_sid, state="resolving")
+        return ok
 
 
     def _handle_subcard_merge(self, body: dict):
@@ -517,9 +549,13 @@ class SubcardAPI:
         job, started = S._merge.add_job(str(S.MERGE_JOBS_JSON), sub_sid=sid, sub_slug=sub_slug,
                                       target_branch=target, main_repo=main_repo)
         if started and job.get("state") == "queued":
-            self._start_merge_job(job)
-        return self._reply(200, {"ok": True, "queued": not started, "target": target,
-                                 "merge_slug": S._merge.merge_branch(sub_slug)})
+            if not self._start_merge_job(job):
+                # can't reach the sub session (no holder, no resumable cwd) —
+                # don't leave a stuck job holding the serial gate
+                S._merge.remove_job(str(S.MERGE_JOBS_JSON), sid)
+                return self._reply(500, {"error": "无法唤起子卡会话来执行合并",
+                                         "hint": "打开这张子卡的终端再点合并"})
+        return self._reply(200, {"ok": True, "queued": not started, "target": target})
 
 
     @staticmethod
@@ -544,30 +580,23 @@ class SubcardAPI:
         except Exception:
             return False
 
-    def _nudge_merge_agent(self, job: dict, text: str) -> bool:
-        """Inject a catch-up instruction into the merge agent's live tmux
-        holder (it runs interactive claude there). Returns False when the
-        holder is gone — the caller falls back to a manual hint."""
-        ent = (S._TERMINALS.get(job.get("merge_sid") or "") or {})
-        holder = ent.get("name") or (
-            "stray-" + job["merge_token"][:8] if job.get("merge_token") else "")
-        return self._send_to_holder(holder, text)
-
-
     def _land_blocked_catchup(self, job: dict, reason: str, instruction: str):
-        """A landing that needs the merge agent to do more work first: nudge it
-        automatically (DD-031 follow-up — the user shouldn't have to relay
+        """A landing that needs the sub-card to do more merge work first: nudge
+        its own session automatically (the user shouldn't have to relay
         'git merge … 追上' by hand), then tell the UI what happened."""
-        sent = self._nudge_merge_agent(job, instruction)
+        sent = (self._nudge_sub_session(job["sub_sid"], instruction)
+                or self._resume_sub_with(job["sub_sid"], instruction))
         return self._reply(409, {
             "error": reason, "catchup_sent": sent,
-            "hint": ("已自动通知合并 agent 处理,完成后再点落地" if sent else
-                     "合并 agent 会话已不在 —— 在驾驶舱打开它的终端,让它 "
+            "hint": ("已自动让子卡处理,完成后再点落地" if sent else
+                     "子卡会话无法唤起 —— 打开它的终端,让它 "
                      + instruction.splitlines()[0])})
 
     def _handle_subcard_land(self, body: dict):
-        """Fast-forward target to the conflict-free merge branch, auto-close the
-        original sub-card + merge-agent, then start the next queued merge. DD-031."""
+        """DD-033: fast-forward the target branch to the SUB-CARD branch tip
+        (the sub merged the target into itself beforehand), then start the next
+        queued merge. The sub-card SURVIVES landing — it may keep working; the
+        user closes it with × when done."""
         if S._merge is None or S._worktree is None:
             return self._reply(503, {"error": "merge unavailable"})
         msid = (body.get("merge_sid") or "").strip()
@@ -577,22 +606,27 @@ class SubcardAPI:
         if not job and sub_sid:
             job = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
                         if j.get("sub_sid") == sub_sid), None)
+        if not job and msid:
+            # DD-033: no separate agent sid anymore — the sub IS the agent, so a
+            # legacy client passing merge_sid may actually mean the sub itself.
+            job = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
+                        if j.get("sub_sid") == msid), None)
         if not job:
             return self._reply(404, {"error": "找不到合并任务"})
-        main_repo, target, merge_slug = job["main_repo"], job["target_branch"], job["merge_slug"]
-        if S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet", merge_slug) is None:
-            return self._reply(400, {"error": "合并分支还不存在(合并 agent 可能还没建好/没提交)"})
-        # The sub-card may have NEW commits made after the agent merged — landing
-        # now would silently drop them (the FF only carries the merge branch).
-        # Block + auto-nudge the agent to re-merge the sub branch first.
+        main_repo, target = job["main_repo"], job["target_branch"]
         sub_branch = "worktree-" + (job.get("sub_slug") or "")
-        if (S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet", sub_branch) is not None
-                and S._worktree._git(main_repo, "merge-base", "--is-ancestor",
-                                     sub_branch, merge_slug) is None):
+        if S._worktree._git(main_repo, "rev-parse", "--verify", "--quiet", sub_branch) is None:
+            return self._reply(400, {"error": "子卡分支不存在:" + sub_branch})
+        # Readiness = the sub branch CONTAINS the target (it merged target into
+        # itself). Covers both "hasn't merged yet" and "target advanced since" —
+        # either way, nudge the sub to (re-)merge. New sub commits made after
+        # the merge are NOT a problem anymore: landing FFs to the sub TIP, so
+        # they ride along instead of being dropped (the DD-031 gate is obsolete).
+        if S._worktree._git(main_repo, "merge-base", "--is-ancestor",
+                            target, sub_branch) is None:
             return self._land_blocked_catchup(
-                job, "子卡在合并之后又有新提交 —— 落地会丢掉它们,已先让合并 agent 重新合并",
-                "子卡分支 " + sub_branch + " 在你上次合并之后有了新提交。请再次执行: "
-                "git merge " + sub_branch + " ,解决冲突并 commit,完成后告诉用户可以重新落地。")
+                job, "子卡还没合并目标分支(或目标又前进了)—— 已让子卡先 merge " + target,
+                self._merge_instruction(target))
         cur = (S._worktree._git(main_repo, "branch", "--show-current") or "").strip()
         checked_out_here = (cur == target)
         # -uno: only TRACKED changes count as WIP. Untracked files (e.g. the
@@ -605,36 +639,17 @@ class SubcardAPI:
             return self._reply(409, {"needs_confirm": True,
                                      "reason": "主卡有未提交改动 —— 先 commit/stash 再落地(或强制)"})
         if plan == "ff_here" or (plan == "blocked_wip" and force):
-            out = S._worktree._git(main_repo, "merge", "--ff-only", merge_slug, timeout=40)
+            out = S._worktree._git(main_repo, "merge", "--ff-only", sub_branch, timeout=40)
         else:  # ff_ref: target not checked out here → advance the ref (FF-enforced)
-            out = S._worktree._git(main_repo, "push", ".", merge_slug + ":" + target, timeout=40)
+            out = S._worktree._git(main_repo, "push", ".", sub_branch + ":" + target, timeout=40)
         if out is None:
-            # Almost always: target advanced after the agent merged → not a FF
-            # anymore. Auto-nudge the agent to catch up instead of asking the
-            # user to relay it by hand.
+            # race: target advanced between the readiness check and the FF
             return self._land_blocked_catchup(
-                job, "目标分支已前进,这次合并不再是 fast-forward —— 已先让合并 agent 追上",
-                "目标分支 " + target + " 已经前进了。请执行: git merge " + target
-                + " ,解决冲突并 commit,完成后告诉用户可以重新落地。")
-        self._teardown_worktree_card(job["sub_sid"], force=True)
-        # The merge-agent card. Its sid is captured ASYNCHRONOUSLY (~1s poll),
-        # so re-read the job — the land click can legitimately beat the capture.
-        fresh = next((j for j in S._merge.load(str(S.MERGE_JOBS_JSON)).get("jobs", [])
-                      if j.get("sub_sid") == job["sub_sid"]), None) or job
-        if fresh.get("merge_sid"):
-            self._teardown_worktree_card(fresh["merge_sid"], force=True)
-        elif fresh.get("merge_token"):
-            try:
-                self._close_terminal(fresh["merge_token"])
-            except Exception:
-                pass
-        # Deterministic sweep: the merge worktree/branch are named merge-<slug>
-        # by construction — remove them by name so landing NEVER leaks them,
-        # even when the sid was not captured (idempotent after the teardown).
-        wt_dir = os.path.join(main_repo, ".claude", "worktrees", merge_slug)
-        S._worktree._git(main_repo, "worktree", "remove", "--force", wt_dir, timeout=20)
-        S._worktree._git(main_repo, "worktree", "prune", timeout=10)
-        S._worktree._git(main_repo, "branch", "-D", merge_slug, timeout=10)
+                job, "目标分支刚刚前进了,这次落地不再是 fast-forward —— 已让子卡追上",
+                self._merge_instruction(target))
+        # DD-033(用户决策): the sub-card SURVIVES landing. It may keep working
+        # on the same branch; the user closes it with × when truly done. No
+        # teardown, no auto-close — just clear the job and advance the queue.
         S._merge.remove_job(str(S.MERGE_JOBS_JSON), job["sub_sid"])
         nxt = S._merge.next_queued(str(S.MERGE_JOBS_JSON))
         if nxt:
@@ -643,5 +658,7 @@ class SubcardAPI:
             except Exception:
                 pass
         threading.Thread(target=S.regenerate_html, daemon=True).start()
-        return self._reply(200, {"ok": True, "target": target, "landed": merge_slug})
+        return self._reply(200, {"ok": True, "target": target, "landed": sub_branch,
+                                 "kept": True,
+                                 "hint": "子卡保留,可继续使用;不需要时点 × 关闭"})
 
