@@ -441,10 +441,6 @@ try:
 except Exception:
     _resources = None
 try:
-    import _pending  # DD-027: instant-citizen placeholder cards (先创建后丰富)
-except Exception:
-    _pending = None
-try:
     import _created  # DD-030: unified created-cards registry (取代 pending+subcards)
 except Exception:
     _created = None
@@ -472,7 +468,6 @@ class _LiveGlobals:
 
 _subcard_api.install(_LiveGlobals())
 SUBCARDS_JSON = CACHE_DIR / "subcards.json"
-PENDING_JSON = CACHE_DIR / "pending-cards.json"
 CREATED_JSON = CACHE_DIR / "created-cards.json"
 _RES_JSONL_CACHE: dict = {}    # jsonl_path -> (mtime, text)
 _RES_REMOTE_CACHE: dict = {}   # cwd -> (epoch, remote_url)
@@ -1738,17 +1733,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         _TERMINALS[token] = {"port": port, "pid": proc.pid, "holder": holder_name,
                              "name": "stray-" + token[:8]}
         _save_terminals()
-        # DD-027: register the placeholder card the INSTANT the session is created,
-        # so the dashboard shows it at once (instead of a void until classify runs).
-        if _pending is not None:
-            try:
-                _pending.register(str(PENDING_JSON), token,
-                                  name=(body.get("name") or "").strip(), cwd=cwd,
-                                  worktree_path=wt_path or None,
-                                  worktree_name=wt_name if want_wt else None,
-                                  parent=parent or None)
-            except Exception:
-                pass
         if _created is not None:
             try:
                 _created.register(str(CREATED_JSON), token,
@@ -1783,11 +1767,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                 _created.capture_sid(str(CREATED_JSON), token, sid)
                             except Exception:
                                 pass
-                        if _pending is not None:
-                            try:
-                                _pending.capture_sid(str(PENDING_JSON), token, sid)
-                            except Exception:
-                                pass
                         # re-key token→sid so "open terminal" reuses this live ttyd.
                         try:
                             ent = _TERMINALS.pop(token, None)
@@ -1798,7 +1777,7 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                             pass
                         return
             threading.Thread(target=_capture, daemon=True).start()
-        elif _pending is not None and _subcards is not None:
+        elif _subcards is not None:
             # DD-027: a no-worktree new session has no wt_path to align on, so capture
             # its sid (newest session whose first cwd is this cwd) as the alignment key.
             def _capture_plain():
@@ -1811,10 +1790,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                 _created.capture_sid(str(CREATED_JSON), token, sid)
                             except Exception:
                                 pass
-                        try:
-                            _pending.capture_sid(str(PENDING_JSON), token, sid)
-                        except Exception:
-                            pass
                         return
             threading.Thread(target=_capture_plain, daemon=True).start()
         time.sleep(0.4)

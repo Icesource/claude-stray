@@ -176,13 +176,14 @@ class Harness:
         sid = {}
 
         def captured():
+            # the unified created-cards registry (DD-030) is the only writer now
             try:
-                reg = json.load(open(os.path.join(self.cache, "subcards.json")))
+                reg = json.load(open(os.path.join(self.cache, "created-cards.json")))
             except Exception:
                 return False
-            for s, e in reg.items():
-                if e.get("slug") == slug:
-                    sid["v"] = s
+            for e in reg.values():
+                if e.get("worktree_name") == slug and e.get("sid"):
+                    sid["v"] = e["sid"]
                     return True
             return False
         self._wait(captured, 30, f"sub-card {slug} sid never captured")

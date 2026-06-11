@@ -145,12 +145,6 @@ class SubcardAPI:
             except Exception:
                 port = None
         # DD-027/030: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
-        if S._pending is not None:
-            try:
-                S._pending.register(str(S.PENDING_JSON), token, name=name, cwd=cwd,
-                                  worktree_path=wt_path, worktree_name=wt_name, parent=parent or None)
-            except Exception:
-                pass
         if S._created is not None:
             try:
                 S._created.register(str(S.CREATED_JSON), token, name=name, cwd=cwd,
@@ -167,18 +161,9 @@ class SubcardAPI:
                     time.sleep(1)
                     sid = S._subcards.find_session_by_cwd(str(S.PROJECTS_DIR), wt_path, since)
                     if sid:
-                        try:
-                            S._subcards.record(str(S.SUBCARDS_JSON), sid, parent, wt_name)
-                        except Exception:
-                            pass
                         if S._created is not None:
                             try:
                                 S._created.capture_sid(str(S.CREATED_JSON), token, sid)
-                            except Exception:
-                                pass
-                        if S._pending is not None:
-                            try:
-                                S._pending.capture_sid(str(S.PENDING_JSON), token, sid)
                             except Exception:
                                 pass
                         try:
