@@ -346,9 +346,14 @@
   .tside-item .ts-close{flex:none;display:flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;color:var(--ink-faint);font-size:15px;line-height:1;opacity:.35;transition:opacity .12s,color .12s,background .12s}
   .tside-item:hover .ts-close{opacity:.75}
   .tside-item .ts-close:hover{opacity:1;color:var(--needs);background:var(--needs-bg)}
-  .tside-item .ts-merge{flex:none;font-size:10.5px;padding:1px 6px;border-radius:5px;border:1px solid var(--hair);color:var(--ink-dim);opacity:.55;transition:opacity .12s,color .12s,border-color .12s}
-  .tside-item:hover .ts-merge{opacity:.9}
+  /* 密集侧栏:合并/落地按钮平时收起(不占名字宽度),hover 行时才浮现 */
+  .tside-item .ts-merge{flex:none;font-size:10.5px;border-radius:5px;border:1px solid var(--hair);color:var(--ink-dim);
+    max-width:0;padding:1px 0;border-width:0;opacity:0;overflow:hidden;white-space:nowrap;
+    transition:max-width .15s,opacity .12s,padding .15s,color .12s,border-color .12s}
+  .tside-item:hover .ts-merge{max-width:46px;padding:1px 6px;border-width:1px;opacity:.9}
   .tside-item .ts-merge:hover{color:var(--run);border-color:var(--run);opacity:1}
+  /* 紧凑徽章:只一个图标,完整说明在 tooltip */
+  .mbadge.compact{padding:1px 5px;font-size:11px;font-weight:600}
   .mbadge{flex:none;font-size:10px;padding:1px 6px;border-radius:4px;white-space:nowrap;line-height:1.5}
   .mbadge.merged{color:var(--done);background:color-mix(in srgb,var(--done) 12%,transparent)}
   .mbadge.ahead{color:var(--needs);background:color-mix(in srgb,var(--needs) 13%,transparent)}
@@ -883,10 +888,13 @@
   // next-step / resources) so a sub-card isn't a second-class one-liner.
   // DD-033: a sub-card's merge state relative to the trunk — the same signal the
   // close-guard uses, surfaced up front so you see at a glance what's safe to close.
-  function mergeBadge(c){ const m=c.merge_status; if(!m)return '';
-    if(m.dirty)return `<span class="mbadge dirty" title="worktree 有未提交改动 — 关闭会丢失">●未提交</span>`;
-    if(m.ahead>0)return `<span class="mbadge ahead" title="有 ${m.ahead} 个提交还没合并回任何其它分支 — 关闭会丢失。先合并落地">⎌${m.ahead} 未合并</span>`;
-    return `<span class="mbadge merged" title="提交都已合并回主干 — 关闭安全">✓已合并</span>`;}
+  // compact=true → icon-only (for the dense webterminal side-list); full text
+  // (for the roomier dashboard sub-row). Same tooltip either way.
+  function mergeBadge(c,compact){ const m=c.merge_status; if(!m)return '';
+    const k=compact?' compact':'';
+    if(m.dirty)return `<span class="mbadge dirty${k}" title="worktree 有未提交改动 — 关闭会丢失">${compact?'●':'●未提交'}</span>`;
+    if(m.ahead>0)return `<span class="mbadge ahead${k}" title="有 ${m.ahead} 个提交还没合并回任何其它分支 — 关闭会丢失。先合并落地">⎌${m.ahead}${compact?'':' 未合并'}</span>`;
+    return `<span class="mbadge merged${k}" title="提交都已合并回主干 — 关闭安全">${compact?'✓':'✓已合并'}</span>`;}
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
       const sid=esc(c.session||''); const prog=c.pending?'准备中…':(c.progress?firstSent(c.progress):(c.reason||''));
@@ -1323,7 +1331,7 @@
           ?`<span class="ts-merge" title="排队中 — 前面还有合并在进行(串行)">排队中…</span>`
           :`<span class="ts-merge" title="合并这张子卡回主干" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`)):'';
       return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
-        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+(isSub?mergeBadge(r):'')+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+mrg+close+`</button>`; };
+        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+(isSub?mergeBadge(r,true):'')+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+mrg+close+`</button>`; };
     const rootSid=fam.root.session||(fam.root.sessions||[])[0]||'';
     // DD-025: optimistic "creating…" rows — a freshly-spawned sub-card needs ~10-40s
     // (worktree → -p turn → summarize → classify) before it's a real card. Show a
