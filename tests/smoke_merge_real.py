@@ -155,9 +155,11 @@ try:
     log("sub-card committed its work")
 
     def sub_sid():
+        # the unified created-cards registry (DD-030) is the only writer now
         try:
-            reg = json.loads((cache / "subcards.json").read_text())
-            return next((s for s, e in reg.items() if e.get("slug") == slug), None)
+            reg = json.loads((cache / "created-cards.json").read_text())
+            return next((e["sid"] for e in reg.values()
+                         if e.get("worktree_name") == slug and e.get("sid")), None)
         except Exception:
             return None
     wait(lambda: sub_sid(), 60, "sub sid capture")
@@ -168,33 +170,41 @@ try:
     (repo / "shared.py").write_text("VALUE = 1\n\ndef main_feature():\n    return \"main\"\n")
     _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "add main_feature")
 
-    # ---- phase 3: REAL merge agent resolves ---------------------------------
+    # ---- phase 3: DD-033 — the sub-card ITSELF resolves (LIVE tmux nudge) ---
+    # the spawned interactive claude is still alive in its holder, so this
+    # exercises the live send-keys injection path (e2e can't — fake exits).
     st, j = post(port, "/api/subcard-merge", {"sid": sids[0], "target": "main"})
     assert st == 200 and j.get("ok"), (st, j)
-    log("merge agent spawned — waiting for it to resolve the conflict…")
+    log("merge instruction injected into the sub-card's LIVE session…")
     wait(lambda: _git(repo, "merge-base", "--is-ancestor",
-                      f"worktree-{slug}", f"merge-{slug}")[0] == 0,
-         360, "merge agent never produced a conflict-free merge commit")
-    merged = (repo / ".claude" / "worktrees" / f"merge-{slug}" / "shared.py").read_text()
+                      "main", f"worktree-{slug}")[0] == 0,
+         360, "sub-card never absorbed main (conflict unresolved?)")
+    sub_wt = repo / ".claude" / "worktrees" / slug
+    merged = (sub_wt / "shared.py").read_text()
     assert "<<<<<<<" not in merged, "conflict markers left behind!"
     assert "def sub_feature" in merged and "def main_feature" in merged, \
-        f"agent dropped a side!\n{merged}"
-    log("conflict resolved correctly (both functions kept)")
-    job = next(x for x in json.loads((cache / "merge-jobs.json").read_text())["jobs"]
-               if x.get("sub_sid") == sids[0])
-    if job.get("merge_sid"):
-        sids.append(job["merge_sid"])
+        f"sub dropped a side!\n{merged}"
+    rc, dirty = _git(sub_wt, "status", "--porcelain", "-uno")
+    assert not dirty.strip(), f"sub worktree not committed clean:\n{dirty}"
+    log("conflict resolved by the sub-card itself (both functions kept)")
 
-    # ---- phase 4: land -------------------------------------------------------
+    # ---- phase 4: land — DD-033: card SURVIVES --------------------------------
     st, j = post(port, "/api/subcard-land", {"sub_sid": sids[0]})
-    assert st == 200 and j.get("ok"), (st, j)
+    assert st == 200 and j.get("ok") and j.get("kept"), (st, j)
     landed = (repo / "shared.py").read_text()
     assert "def sub_feature" in landed and "def main_feature" in landed, landed
-    wait(lambda: _git(repo, "rev-parse", "--verify", "--quiet", f"worktree-{slug}")[0] != 0
-         and _git(repo, "rev-parse", "--verify", "--quiet", f"merge-{slug}")[0] != 0,
-         30, "branches not cleaned after landing")
+    assert _git(repo, "rev-parse", "--verify", "--quiet", f"worktree-{slug}")[0] == 0, \
+        "DD-033: sub branch must SURVIVE landing"
+    assert sub_wt.is_dir(), "DD-033: sub worktree must SURVIVE landing"
     assert json.loads((cache / "merge-jobs.json").read_text())["jobs"] == []
-    log("landed: main carries both sides; worktrees/branches/queue all clean")
+    log("landed: main carries both sides; sub-card kept alive (DD-033)")
+
+    # ---- phase 5: explicit × close cleans up ----------------------------------
+    st, j = post(port, "/api/subcard-close", {"sid": sids[0], "force": True})
+    assert st == 200 and j.get("ok"), (st, j)
+    wait(lambda: _git(repo, "rev-parse", "--verify", "--quiet", f"worktree-{slug}")[0] != 0,
+         30, "close did not remove the sub branch")
+    log("explicit close cleaned worktree+branch")
     ok = True
 finally:
     # ---- cleanup -------------------------------------------------------------
