@@ -1323,7 +1323,7 @@
           ?`<span class="ts-merge" title="排队中 — 前面还有合并在进行(串行)">排队中…</span>`
           :`<span class="ts-merge" title="合并这张子卡回主干" onclick="event.stopPropagation();mergeSubcard(event,'${esc(s)}','${esc((r.name||'').replace(/'/g,''))}')">合并</span>`)):'';
       return `<button class="tside-item${isSub?' sub':''}${on?' on':''}" onclick="openTerminal(event,'${esc(s)}')" title="${esc((r.name||'')+(r.reason?' · '+r.reason:''))}">`+
-        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+mrg+close+`</button>`; };
+        statusIcon(r.band,11)+`<span class="ts-name">${esc(r.name||s.slice(0,8))}</span>`+(isSub?mergeBadge(r):'')+((open.has(s)&&!on)?'<span class="ts-open" title="终端已开"></span>':'')+mrg+close+`</button>`; };
     const rootSid=fam.root.session||(fam.root.sessions||[])[0]||'';
     // DD-025: optimistic "creating…" rows — a freshly-spawned sub-card needs ~10-40s
     // (worktree → -p turn → summarize → classify) before it's a real card. Show a
