@@ -13,8 +13,7 @@ Listens on 127.0.0.1:9876 (falls back to 9877, 9878 if busy):
   POST /api/refresh       -> trigger background AI refresh
   POST /api/lifecycle     -> pause / resume the pipeline (DD-005)
                              body: {"action": "pause"|"resume", "reason": "..."}
-  POST /focus             -> body {pane, session?} -> zellij focus-pane-id
-  POST /newpane           -> body {sid, cwd?}      -> zellij run -- claude --dangerously-skip-permissions --resume
+  POST /api/send          -> body {sid, text}      -> inject into the session's live tmux holder
 
 Only loopback (127.0.0.1) is bound. CORS allows any origin so file:// HTML
 still works as a fallback. No authentication beyond loopback binding — fine
@@ -804,10 +803,6 @@ def _claude_suggest(prompt: str, timeout: int = 70) -> list[str]:
     return _parse_suggestions(env.get("result", "") or "")
 
 
-def has_zellij() -> bool:
-    return shutil.which("zellij") is not None
-
-
 def run_cmd(argv: list[str], background: bool = False) -> tuple[int, str, str]:
     try:
         if background:
@@ -1260,7 +1255,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
     def _handle_ping(self):
         return self._reply(200, {
             "service": "claude-stray", "version": 2,
-            "has_zellij": has_zellij(),
             "can_write_disk": True,  # the server CAN write to cache/
             "terminal": shutil.which("ttyd") is not None,
             "ttyd": shutil.which("ttyd") is not None,
@@ -1428,8 +1422,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
 
     # path -> handler-method name; every handler takes the parsed JSON body.
     _POST_ROUTES = {
-        "/focus": "_handle_focus",
-        "/newpane": "_handle_newpane",
         "/api/save": "_handle_save",
         "/api/refresh": "_handle_refresh",
         "/api/lifecycle": "_handle_lifecycle",
@@ -1463,43 +1455,37 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         self._reply(404, {"error": "not found", "path": path})
 
     def _handle_send(self, body: dict):
-        """Inject a message into a session's LIVE zellij pane — writes to the
-        real interactive claude's stdin, so Ghostty + the read-only view both
-        update (true two-way, NO attach/resize). Needs a known live pane."""
+        """Inject a message into a session's LIVE tmux holder (the webterminal
+        substrate: every cockpit terminal is `ttyd → tmux -L stray <holder>` with
+        interactive claude inside). Writes to the real claude's stdin, so the
+        webterminal and the read-only view both update. tmux targets the named
+        session directly — no focus dance, no wrong-window risk (the old zellij
+        path needed focus-then-type). 409 when there is no live holder: injecting
+        into a dead session is meaningless — resume it via 终端 instead."""
         sid = (body.get("sid") or "").strip()
         text = body.get("text") or ""
         if not sid or not text.strip():
             return self._reply(400, {"error": "sid and text required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
+        tmux = shutil.which("tmux")
+        if not tmux:
+            return self._reply(503, {"error": "tmux not found"})
+        ent = _TERMINALS.get(sid) or {}
+        holder = ent.get("name") or ""
+        if not holder or ent.get("holder") != "tmux":
+            return self._reply(409, {"error": "no live terminal",
+                "hint": "该会话没有活着的 webterminal。用卡片上的『终端』打开它,而不是注入。"})
+        if subprocess.run([tmux, "-L", _TMUX_SOCKET, "has-session", "-t", holder],
+                          capture_output=True, timeout=5).returncode != 0:
+            return self._reply(409, {"error": "terminal_gone",
+                "hint": "原终端已结束。用卡片上的『终端』resume 这个会话,而不是注入。"})
         try:
-            loc = json.loads(LOCATIONS_JSON.read_text()).get("by_session_id", {}).get(sid) or {}
-        except Exception:
-            loc = {}
-        zsess, zpane = loc.get("zellij_session"), loc.get("zellij_pane_id")
-        if not zsess or not zpane:
-            return self._reply(409, {"error": "no live pane",
-                                     "hint": "该会话不在已知的 zellij pane 里(可能已结束)"})
-        rc, out, _ = run_cmd(["zellij", "list-sessions"])
-        alive = rc == 0 and any(
-            (re.sub(r"\x1b\[[0-9;]*m", "", l).strip().split() or [""])[0] == zsess and "EXITED" not in l
-            for l in (out or "").splitlines())
-        if not alive:
-            return self._reply(409, {"error": "zellij session not alive"})
-        base = ["zellij", "--session", zsess, "action"]
-        # SAFETY: session_locations.json is never pruned, so a long-dead session
-        # still "remembers" its old pane id. If focus-pane-id fails (pane gone),
-        # the follow-up write-chars would type into whatever pane is CURRENTLY
-        # focused — your message + Enter land in the WRONG window. So check the
-        # focus rc and refuse to write when the target pane no longer exists.
-        rcf, _, _ = run_cmd(base + ["focus-pane-id", str(zpane)])
-        if rcf != 0:
-            return self._reply(409, {"error": "pane_gone",
-                "hint": "原窗格已关闭。用卡片上的『终端』resume 这个会话,而不是注入。"})
-        rc, _, err = run_cmd(base + ["write-chars", text])
-        if rc != 0:
-            return self._reply(500, {"error": err.strip() or "write-chars failed"})
-        run_cmd(base + ["write", "13"])  # Enter (CR) to submit the prompt
+            subprocess.run([tmux, "-L", _TMUX_SOCKET, "send-keys", "-t", holder,
+                            "-l", text], capture_output=True, timeout=5, check=True)
+            time.sleep(0.3)   # let the TUI ingest the paste before submitting
+            subprocess.run([tmux, "-L", _TMUX_SOCKET, "send-keys", "-t", holder,
+                            "Enter"], capture_output=True, timeout=5, check=True)
+        except Exception as e:
+            return self._reply(500, {"error": "send-keys failed: " + str(e)})
         return self._reply(200, {"ok": True})
 
     def _handle_suggest(self, body: dict):
@@ -1557,9 +1543,9 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
 
     def _handle_terminal(self, body: dict):
         """DD-015 Stage 3: spawn a localhost ttyd running `claude --resume <sid>`
-        and return its URL. Needs ttyd (localhost-trust model, same as /newpane
-        which already runs `claude --dangerously-skip-permissions`); degrades
-        gracefully — the cockpit falls back to a zellij pane when ttyd absent."""
+        and return its URL. Needs ttyd (localhost-trust model; runs
+        `claude --dangerously-skip-permissions`). ttyd absent → 503 with hint
+        (the webterminal IS the access path — zellij fallback retired 2026-06-11)."""
         ttyd = shutil.which("ttyd")
         if not ttyd:
             return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
@@ -1857,48 +1843,6 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         return self._reply(400, {"error": "action must be 'pause' or 'resume'"})
 
     # ---- Zellij actions ----------------------------------------------------
-
-    def _handle_focus(self, body: dict):
-        pane = str(body.get("pane") or "")
-        sess = body.get("session") or ""
-        if not pane:
-            return self._reply(400, {"error": "pane required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
-        argv = ["zellij"]
-        if sess:
-            argv += ["--session", str(sess)]
-        argv += ["action", "focus-pane-id", pane]
-        rc, out, err = run_cmd(argv)
-        err_msg = (err or "").strip()
-        if rc != 0 and "already focused" in err_msg.lower():
-            return self._reply(200, {"ok": True, "noop": True, "note": "already-focused"})
-        if rc != 0 and ("not found" in err_msg.lower() or "no such" in err_msg.lower()):
-            return self._reply(404, {"error": "pane_gone", "detail": err_msg})
-        if rc != 0:
-            return self._reply(500, {"error": err_msg or "focus failed"})
-        return self._reply(200, {"ok": True})
-
-    def _handle_newpane(self, body: dict):
-        sid = (body.get("sid") or "").strip()
-        if not sid:
-            return self._reply(400, {"error": "sid required"})
-        if not has_zellij():
-            return self._reply(503, {"error": "zellij not installed"})
-        # Resolve the session's project cwd so `claude --resume` finds it (the
-        # latest cwd from session_locations may be a subdir → "No conversation
-        # found"). Fall back to whatever the client passed.
-        cwd = _resume_cwd_for(sid) or (body.get("cwd") or "")
-        if cwd.startswith("~"):
-            cwd = os.path.expanduser(cwd)
-        inner = "claude --dangerously-skip-permissions --resume " + shlex.quote(sid)
-        if cwd:
-            inner = "cd " + shlex.quote(cwd) + " && " + inner
-        argv = ["zellij", "run", "-f", "--", "bash", "-lc", inner]
-        rc, out, err = run_cmd(argv, background=True)
-        if rc != 0:
-            return self._reply(500, {"error": err.strip() or "newpane failed"})
-        return self._reply(200, {"ok": True})
 
     # ---- Per-item delete / archive (append, not overwrite) ----------------
 
