@@ -38,20 +38,24 @@ _TRUST_MARKERS = ("trust this folder", "Yes, I trust")
 
 def landing_state(job):
     """DD-034 single-button flow: is this merge job ready to fast-forward the
-    target to the sub branch, and is anything blocking it? Pure git inspection
-    (no Handler) so both the auto-land watcher and /api/data can call it.
+    target to the sub branch? Pure git inspection (no Handler) so both the
+    auto-land watcher and /api/data can call it.
       ready    = the sub branch CONTAINS the target (the sub merged the target
                  in — or the target never moved since the sub was branched);
-                 the FF is then conflict-free.
-      blocked  = ready, but the target is checked out in main_repo with
-                 uncommitted TRACKED changes — we never FF over the user's WIP.
-      landable = ready and not blocked → the watcher will auto-land it.
-    Returns {ready, landable, blocked, reason}."""
+                 the FF is then guaranteed conflict-free at the commit level.
+    We DON'T pre-block on a dirty main checkout: git's own `merge --ff-only`
+    only refuses when the WIP touches a file the FF would update (verified
+    2026-06-11) — unrelated WIP fast-forwards fine and is preserved. So the
+    watcher just attempts the land and lets git be the precise judge; a genuine
+    same-file conflict comes back as `wip_block` (recorded on the job for the
+    UI). `wip_block` (a prior attempt's reason) rides along on the job dict.
+    Returns {ready, landable, reason, wip_block}."""
     wt = getattr(S, "_worktree", None)
     main_repo = (job or {}).get("main_repo")
     target = (job or {}).get("target_branch")
     sub_branch = "worktree-" + ((job or {}).get("sub_slug") or "")
-    off = {"ready": False, "landable": False, "blocked": False, "reason": ""}
+    wip = (job or {}).get("wip_block") or ""
+    off = {"ready": False, "landable": False, "reason": "", "wip_block": wip}
     if not (wt and main_repo and target):
         return off
     if wt._git(main_repo, "rev-parse", "--verify", "--quiet", sub_branch) is None:
@@ -59,13 +63,7 @@ def landing_state(job):
     ready = wt._git(main_repo, "merge-base", "--is-ancestor", target, sub_branch) is not None
     if not ready:
         return dict(off, reason="子卡正在把 " + target + " 合并进来")
-    cur = (wt._git(main_repo, "branch", "--show-current") or "").strip()
-    main_dirty = (cur == target and
-                  bool((wt._git(main_repo, "status", "--porcelain", "-uno") or "").strip()))
-    if main_dirty:
-        return {"ready": True, "landable": False, "blocked": True,
-                "reason": "主卡有未提交改动,先 commit/stash 再自动落地"}
-    return {"ready": True, "landable": True, "blocked": False, "reason": "可落地"}
+    return {"ready": True, "landable": True, "reason": "可落地", "wip_block": wip}
 
 
 def repo_probably_trusted(main_repo: str, projects: dict | None = None) -> bool:
@@ -609,6 +607,15 @@ class SubcardAPI:
                 S._merge.remove_job(str(S.MERGE_JOBS_JSON), sid)
                 return self._reply(500, {"error": "无法唤起子卡会话来执行合并",
                                          "hint": "打开这张子卡的终端再点合并"})
+        elif not started and job.get("state") in ("resolving",):
+            # job already running: a re-click means "re-merge" — e.g. the target
+            # advanced (you committed the WIP that was blocking the FF) and the
+            # sub must re-absorb it. Re-nudge + clear any stale wip_block.
+            S._merge.update_job(str(S.MERGE_JOBS_JSON), sid, wip_block=None)
+            self._nudge_sub_session(sid, self._merge_instruction(target)) or \
+                self._resume_sub_with(sid, self._merge_instruction(target))
+            return self._reply(200, {"ok": True, "requeued": True, "target": target,
+                                     "hint": "已让子卡重新合并 " + target})
         return self._reply(200, {"ok": True, "queued": not started, "target": target})
 
 
@@ -683,21 +690,32 @@ class SubcardAPI:
                 self._merge_instruction(target))
         cur = (S._worktree._git(main_repo, "branch", "--show-current") or "").strip()
         checked_out_here = (cur == target)
-        # -uno: only TRACKED changes count as WIP. Untracked files (e.g. the
-        # .claude/worktrees/ dir the spawn itself creates) are never touched by
-        # a fast-forward — and if one would collide, git refuses the merge
-        # itself. Without -uno every landing is forever "blocked_wip".
-        main_dirty = bool((S._worktree._git(main_repo, "status", "--porcelain", "-uno") or "").strip())
-        plan = S._merge.landing_plan(checked_out_here, main_dirty)
-        if plan == "blocked_wip" and not force:
-            return self._reply(409, {"needs_confirm": True,
-                                     "reason": "主卡有未提交改动 —— 先 commit/stash 再落地(或强制)"})
-        if plan == "ff_here" or (plan == "blocked_wip" and force):
-            out = S._worktree._git(main_repo, "merge", "--ff-only", sub_branch, timeout=40)
-        else:  # ff_ref: target not checked out here → advance the ref (FF-enforced)
-            out = S._worktree._git(main_repo, "push", ".", sub_branch + ":" + target, timeout=40)
+        # Attempt the FF and let GIT be the precise judge of WIP safety: a
+        # `merge --ff-only` only refuses when the working tree has uncommitted
+        # changes to a file the FF would update (verified 2026-06-11). Unrelated
+        # WIP fast-forwards fine and is preserved — so we DON'T pre-block on a
+        # merely-dirty checkout; we try, and treat a refusal as the genuine
+        # same-file conflict it is.
+        if checked_out_here:
+            out, err = S._worktree._git2(main_repo, "merge", "--ff-only", sub_branch, timeout=40)
+        else:  # target not checked out here → advance the ref (FF-enforced); no
+               # working tree to conflict, so this never WIP-blocks.
+            out, err = S._worktree._git2(main_repo, "push", ".", sub_branch + ":" + target, timeout=40)
         if out is None:
-            # race: target advanced between the readiness check and the FF
+            blob = (err or "")
+            # sub already contains target (readiness passed above), so a refusal
+            # here is a same-file WIP conflict in the main checkout, NOT a
+            # stale base. Record it on the job for the UI; do NOT nudge the sub.
+            if "would be overwritten" in blob or "local changes" in blob or "Please commit" in blob:
+                files = [l.strip().lstrip(". \t") for l in blob.splitlines()
+                         if l.startswith("\t")]
+                S._merge.update_job(str(S.MERGE_JOBS_JSON), job["sub_sid"],
+                                    wip_block=("、".join(files[:4]) or "若干文件"))
+                return self._reply(409, {"wip_blocked": True,
+                    "files": files,
+                    "reason": "主卡(" + target + ")有未提交改动挡住落地:" + ("、".join(files[:4]) or ""),
+                    "hint": "在主卡 git stash(落地后再 pop)即可自动落地;或 commit 那几个文件后重新点合并"})
+            # otherwise it really is a stale base → let the sub catch up
             return self._land_blocked_catchup(
                 job, "目标分支刚刚前进了,这次落地不再是 fast-forward —— 已让子卡追上",
                 self._merge_instruction(target))

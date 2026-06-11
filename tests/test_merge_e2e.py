@@ -452,8 +452,10 @@ def test_close_blocks_on_unmerged_not_on_terminal(h):
             "close should have removed the merged branch")
 
 
-@_scenario("wip")
-def test_wip_blocks_landing(h):
+@_scenario("wip-unrelated")
+def test_unrelated_main_wip_does_not_block(h):
+    """精确 WIP(实测驱动):主卡有【不相关文件】的未提交改动时,FF 照样成功并
+    保住那份改动 —— 不再像旧逻辑那样一脏就拦。"""
     sid, slug = h.spawn_subcard("epsilon", [
         "echo e > epsilon.txt", "git add -A && git commit -q -m epsilon"])
     h._wait(lambda: _git(h.repo, "rev-list", "--count",
@@ -462,16 +464,43 @@ def test_wip_blocks_landing(h):
     st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
     assert st == 200, (st, j)
     h.wait_merge_ready(slug)
-    # dirty the MAIN checkout → landing must refuse (never touch user WIP)
+    # dirty an UNRELATED file (the sub touched epsilon.txt, not shared.txt)
     with open(os.path.join(h.repo, "shared.txt"), "a") as f:
-        f.write("uncommitted-wip\n")
+        f.write("unrelated-wip\n")
     st, j = h.post("/api/subcard-land", {"sub_sid": sid})
-    assert st == 409 and j.get("needs_confirm"), (st, j)
-    # user stashes/cleans → lands fine
-    _git(h.repo, "checkout", "--", ".")
+    assert st == 200 and j.get("ok"), ("unrelated WIP must not block", st, j)
+    assert os.path.exists(os.path.join(h.repo, "epsilon.txt"))
+    assert "unrelated-wip" in open(os.path.join(h.repo, "shared.txt")).read(), \
+        "the unrelated WIP must be preserved through the FF"
+
+
+@_scenario("wip-samefile")
+def test_samefile_main_wip_blocks_then_lands(h):
+    """同文件 WIP:子卡改了 shared.txt,主卡也有 shared.txt 的未提交改动 → git
+    拒绝 FF → 落地受阻(记录到 job.wip_block);清掉主卡改动后自动可落地。"""
+    sid, slug = h.spawn_subcard("phi", [
+        "printf 'phi-line\\n' >> shared.txt",
+        "git add -A && git commit -q -m phi-edits-shared"])
+    h._wait(lambda: _git(h.repo, "rev-list", "--count",
+                         "main..worktree-" + slug)[1] == "1",
+            30, "sub-card work never committed")
+    st, j = h.post("/api/subcard-merge", {"sid": sid, "target": "main"})
+    assert st == 200, (st, j)
+    h.wait_merge_ready(slug)
+    # dirty the SAME file the FF will update → git refuses
+    with open(os.path.join(h.repo, "shared.txt"), "a") as f:
+        f.write("main-local-edit\n")
+    st, j = h.post("/api/subcard-land", {"sub_sid": sid})
+    assert st == 409 and j.get("wip_blocked") is True, (st, j)
+    assert "shared.txt" in (j.get("files") or [None])[0], j
+    # the block reason is recorded on the job for the UI
+    job = next(x for x in h.jobs() if x["sub_sid"] == sid)
+    assert "shared.txt" in (job.get("wip_block") or ""), job
+    # user discards the conflicting main edit → lands clean
+    _git(h.repo, "checkout", "--", "shared.txt")
     st, j = h.post("/api/subcard-land", {"sub_sid": sid})
     assert st == 200 and j.get("ok"), (st, j)
-    assert os.path.exists(os.path.join(h.repo, "epsilon.txt"))
+    assert "phi-line" in open(os.path.join(h.repo, "shared.txt")).read()
 
 
 if __name__ == "__main__":

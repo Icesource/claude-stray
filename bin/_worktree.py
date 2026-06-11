@@ -27,6 +27,19 @@ def _git(cwd, *args, timeout=3):
         return None
 
 
+def _git2(cwd, *args, timeout=3):
+    """Like _git but returns (stdout|None, stderr) so callers can inspect WHY a
+    command failed (e.g. tell a WIP-conflict FF refusal apart from a stale base)."""
+    try:
+        r = subprocess.run(["git", "-C", cwd, *args],
+                           capture_output=True, text=True, timeout=timeout)
+        if r.returncode == 0:
+            return r.stdout.strip(), r.stderr
+        return None, (r.stderr or "") + (r.stdout or "")
+    except Exception as e:
+        return None, str(e)
+
+
 def compute_code_location(cwd: str):
     """Mechanically derive a card's code location from a cwd. Returns
         {"worktree": <toplevel dir>, "branch": <name>,

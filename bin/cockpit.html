@@ -841,6 +841,12 @@
   function progMid(cls,r,fallback){const p=r.progress?firstSent(r.progress):'';const tip=r.progress?` title="${esc(r.progress)}"`:'';
     return `<div class="mid ${cls}"${tip}><span class="rtext">${p?esc(p):fallback}</span></div>`;}
   function midCell(r){
+    // DD-033: a sub-card is ready to land but THIS card's working tree has
+    // uncommitted edits to the same file(s) — the FF can't apply. Surface it
+    // HERE (the blocker lives on this checkout), actionable: stash → auto-lands.
+    const wk=(r.children||[]).map(c=>(MJOBS||[]).find(j=>j.sub_sid===(c.session||(c.sessions||[])[0])))
+      .find(j=>j&&(j.land||{}).wip_block);
+    if(wk)return `<div class="mid needs_you"><span class="rtext" title="子卡已合并好、就等落地,但本卡改了同一文件,git 不能安全快进">⚠ 子卡待落地 · 本卡改了 ${esc(wk.land.wip_block)} 挡着 → git stash 后自动落地</span></div>`;
     // DD-030: 准备中 is orthogonal to band — show it whenever the card has no AI
     // content yet, styled by whatever its real band is (色彩跟随真实状态).
     if(r.pending){ if(r.stuck==='trust')return `<div class="mid needs_you"><span class="rtext" title="Claude 对没打开过的目录会弹 folder-trust 确认;子卡在它后面动不了">⚠ 等 trust 确认 — 打开终端选 “Yes, I trust”</span></div>`;
@@ -1092,8 +1098,8 @@
     const mj=(MJOBS||[]).find(j=>j.sub_sid===sid);
     if(mj){
       if(mj.state==='queued') return `<span class="sr-merge busy" title="排队中 — 前面还有合并在进行(串行)">排队中…</span>`;
-      const land=mj.land||{};
-      if(land.blocked) return `<span class="sr-merge warn" title="${esc(land.reason||'落地受阻')} —— 处理后会自动落地">落地受阻</span>`;
+      const wb=(mj.land||{}).wip_block;
+      if(wb) return `<span class="sr-merge warn" title="主卡改了同一文件(${esc(wb)})挡住落地 —— 在主卡 git stash 后会自动落地">落地受阻</span>`;
       return `<span class="sr-merge busy" title="子卡正把 ${esc(mj.target_branch||'目标')} 合并进自己;合完 stray 会自动落地回去,你不用管">合并中…</span>`;
     }
     // 已合并(没有任何未合并提交,ahead=0)→ 没东西可合,不渲染按钮;徽章
@@ -1335,9 +1341,9 @@
       // DD-034 单按钮(同 dashboard 逻辑):合并 / 合并中… / 排队中… / 落地受阻
       let mrg='';
       if(isSub){ const _mj=(MJOBS||[]).find(j=>j.sub_sid===s);
-        if(_mj){ const L=_mj.land||{};
+        if(_mj){ const wb=(_mj.land||{}).wip_block;
           mrg = _mj.state==='queued' ? `<span class="ts-merge" title="排队中(串行)">排队中…</span>`
-              : L.blocked ? `<span class="ts-merge" title="${esc(L.reason||'落地受阻')} —— 处理后自动落地">落地受阻</span>`
+              : wb ? `<span class="ts-merge" title="主卡改了同一文件(${esc(wb)})挡住落地 —— 主卡 git stash 后自动落地">落地受阻</span>`
               : `<span class="ts-merge" title="子卡合并中,完成后自动落地回去">合并中…</span>`;
         } else { const _ms=r.merge_status;   // 已合并(ahead=0)→ 不渲染按钮,同 mergeOrLandBtn
           mrg = (_ms && !(_ms.ahead>0)) ? ''
