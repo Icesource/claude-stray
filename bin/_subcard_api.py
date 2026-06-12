@@ -311,7 +311,11 @@ class SubcardAPI:
                 out = S._worktree._git(wt_path, "status", "--porcelain", timeout=10)
                 if (out or "").strip():
                     dirty = True
-                    reasons.append("worktree 有未提交的改动")
+                    # 列出具体文件:用户得能判断这是真活还是测试残渣
+                    # (真实案例:一个 fftest 空目录挡住了已合并子卡的关闭)。
+                    files = [ln[3:].strip() for ln in out.splitlines() if ln.strip()][:5]
+                    more = "…" if len(out.splitlines()) > 5 else ""
+                    reasons.append("worktree 有未提交的改动:" + "、".join(files) + more)
             except Exception:
                 pass
         # unmerged: branch tip not contained in any OTHER branch → its commits
