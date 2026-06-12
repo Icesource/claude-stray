@@ -126,7 +126,10 @@ def merge_status(main_repo: str, worktree: str, branch: str, _now=time.time):
         ahead = int((ahead_out or "0").strip() or "0")
     except ValueError:
         ahead = 0
-    dirty = bool((_git(worktree, "status", "--porcelain", "-uno") or "").strip())
+    # 含未跟踪文件(不要 -uno):未保存的变更也是变更 —— worktree remove 同样会
+    # 丢掉它们,且必须和关闭守卫(同样数 ??)用同一把尺子,否则出现「徽章
+    # ✓已合并、点 × 却拦未提交」的自相矛盾(真实案例:一个 fftest 未跟踪目录)。
+    dirty = bool((_git(worktree, "status", "--porcelain") or "").strip())
     result = {"merged": bool(others) or ahead == 0, "ahead": ahead, "dirty": dirty}
     _MERGE_CACHE[worktree] = (tip, idx_mtime, now, result)
     return result

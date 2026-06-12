@@ -99,6 +99,28 @@ def test_cache_reuses(monkeypatch=None):
         _worktree._CACHE.clear()
 
 
+def test_merge_status_counts_untracked_as_dirty():
+    """徽章与关闭守卫必须同一把尺子:未跟踪文件也是未保存变更(worktree remove
+    会丢)。回归:fftest 未跟踪目录曾骗过徽章(✓已合并)却被 × 拦下。"""
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        def g(*a, cwd=d):
+            subprocess.run(["git", "-C", cwd, *a], capture_output=True, check=True)
+        g("init", "-q", "-b", "main")
+        g("config", "user.email", "t@t"); g("config", "user.name", "t")
+        open(os.path.join(d, "f"), "w").write("x")
+        g("add", "-A"); g("commit", "-qm", "init")
+        wt = os.path.join(d, ".claude", "worktrees", "sub")
+        g("worktree", "add", "-q", "-b", "worktree-sub", wt)
+        _worktree._MERGE_CACHE.clear()
+        ms = _worktree.merge_status(d, wt, "worktree-sub")
+        assert ms and ms["dirty"] is False                  # 干净
+        open(os.path.join(wt, "untracked.txt"), "w").write("draft")   # 未跟踪文件
+        _worktree._MERGE_CACHE.clear()
+        ms2 = _worktree.merge_status(d, wt, "worktree-sub")
+        assert ms2["dirty"] is True, "未跟踪文件必须算 dirty(和关闭守卫一致)"
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0
