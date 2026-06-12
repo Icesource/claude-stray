@@ -35,24 +35,24 @@ cwd: <copy verbatim>
 last_activity_at: <copy verbatim>
 user_turns: <copy verbatim>
 updated_at: <copy from context.now>
-title: HSF EagleEye 链路追踪修复          # see Rule 15. ≤ 24 chars semantic card name; STABLE across reruns
+title: HSF Tracer 链路追踪修复          # see Rule 15. ≤ 24 chars semantic card name; STABLE across reruns
 status_guess: active | paused | done | abandoned
 next_step: 跑 daily 验证 tri 路由到 12222   # see Rule 14. one concrete next action, ≤ 80 chars. omit if none.
 awaiting_user: 确认是否接受仅兼容 3 个 _ALL ACL   # see Rule 14. ONLY when blocked on the human. omit otherwise.
 artifacts:                                # see Rule 10. omit key if none.
   - type: cr                              # cr|mr|pr|issue|deployment|doc|branch|tag|worktree|other  (NO commit; doc=external URL only)
-    title: HSF EagleEye 链路追踪修复       # ≤ 60 chars; REQUIRED & semantic for external resources (not a bare id)
+    title: HSF Tracer 链路追踪修复       # ≤ 60 chars; REQUIRED & semantic for external resources (not a bare id)
     ref_id: "27369464"                    # platform-specific id, optional
-    url: https://aone.alibaba-inc.com/code/g/...?cr=27369464
+    url: https://code.example.com/group/repo/codereview/27369464
     status: pending                       # see Rule 10 enum table
     last_mentioned_at: 2026-05-13T15:10:00Z   # ISO; omit if uncertain
 blockers:                                 # see Rule 11. omit key if none.
   - 等 CodeOwner 评审通过
   - CI 失败：unit test 红
 tasks:                                    # see Rule 12. omit key if none.
-  - title: 收集 EagleEye 数据样本           # ≤ 60 chars
+  - title: 收集 Tracer 数据样本           # ≤ 60 chars
     status: done                          # pending | done | cancelled
-    evidence: 已上传至 /tmp/eagleeye-sample/ # required when status != pending
+    evidence: 已上传至 /tmp/trace-sample/ # required when status != pending
   - title: 提交 Aone ISSUE
     status: pending
 sealed_segments:                          # see Rule 13. OMIT entirely unless an earlier sub-effort sealed off. RARE.
@@ -78,7 +78,7 @@ turns will agree on this).
 
 # 当前状态
 Where the work stands AS OF THE LAST TURN. Be concrete. "已定位根因
-EagleEyeHttpHook 传错参；修复方案明确" beats "继续调试中".
+TraceHttpHook 传错参；修复方案明确" beats "继续调试中".
 
 # 已下的决定
 Bulleted decisions made and still in effect. Each line ≤ 80 chars.
@@ -217,10 +217,10 @@ weight that risks drift.)
 
     | type | URL hint or pattern |
     |---|---|
-    | `cr` | `aone.alibaba-inc.com/.../codereview/...`, `?cr=<id>`, `code.aone.alibaba.../cr/<id>` |
-    | `mr` | `gitlab.*/-/merge_requests/<id>`, `gitlab.alibaba-inc.com/.../merge_requests/<id>`, `code.alibaba-inc.com/<group>/<repo>/codereview/<id>` |
+    | `cr` | any code-host URL whose path ends in `/codereview/<id>`, or `?cr=<id>`, or `/cr/<id>` |
+    | `mr` | `gitlab.*/-/merge_requests/<id>` (any GitLab host, incl. self-hosted), `<code-host>/<group>/<repo>/codereview/<id>` |
     | `pr` | `github.com/<org>/<repo>/pull/<id>` |
-    | `issue` | `github.com/<org>/<repo>/issues/<id>`, Aone work-items: `aone.alibaba-inc.com/.../task/<id>`, `project.aone.alibaba-inc.com/.../req/<id>` (需求), `.../bug/<id>`, `.../task/<id>`, `.../story/<id>`, `.../workitem/<id>`, JIRA-style `[A-Z]+-\d+` |
+    | `issue` | `github.com/<org>/<repo>/issues/<id>`; work-item platform paths (any internal DevOps host): `/req/<id>` (需求), `/bug/<id>`, `/task/<id>`, `/story/<id>`, `/workitem/<id>`; JIRA-style `[A-Z]+-\d+` |
     | `branch` | `git checkout <name>`, `branch=<name>` mentioned in plan or PR url |
     | `worktree` | a `git worktree` directory the work lives in (an absolute dir path stated as the worktree/checkout location). NOT an arbitrary edited file — only the worktree/checkout root. Put the dir path in `ref_id` (it has no URL). |
     | `tag` | `v\d+\.\d+\.\d+` mentioned as a release |
@@ -251,8 +251,8 @@ weight that risks drift.)
     - **But ALWAYS include a verbatim URL when one IS present.** If a
       real `http(s)://…` link for this artifact appears in `<turns>`,
       put it in `url` — even if its path doesn't match any row in the
-      table above (the table is a non-exhaustive hint). E.g. an Aone
-      requirement `https://project.aone.alibaba-inc.com/v2/project/<pid>/req/<id>`
+      table above (the table is a non-exhaustive hint). E.g. a work-item
+      requirement `https://<workitem-host>/v2/project/<pid>/req/<id>`
       → `type: issue`, `ref_id: <id>`, `url: <that full link>`. Don't
       drop a link just because its shape is unfamiliar.
     - **Minimum per entry: `type` + `status` + (`url` OR `ref_id`).**
@@ -261,7 +261,7 @@ weight that risks drift.)
       the user reads in the cockpit — a bare id like "CR 27369464" or
       "MR 27752189" is useless on its own. Write a short human-readable
       description of *what this resource is* from the conversation
-      context (e.g. `HSF EagleEye 链路追踪修复`, not `27369464`). ≤ 60
+      context (e.g. `HSF Tracer 链路追踪修复`, not `27369464`). ≤ 60
       chars, in output_lang. Only if the transcript truly gives no clue
       what it's about may you fall back to id-only. Code-location types
       (`branch` `tag` `worktree`) don't need a title — their name/path
@@ -289,7 +289,7 @@ weight that risks drift.)
     Format: short free-text strings, one per blocker, ≤ 80 chars.
     Examples that count:
     - 等 CodeOwner @bowen 评审
-    - 等 CI 红：HSFEagleEyeIntegrationTest 跑不过
+    - 等 CI 红：HSFTraceIntegrationTest 跑不过
     - 等 dev_test_a 环境恢复（运维处理中）
     - 待 user 给 prod cluster 访问权限
 
@@ -422,7 +422,7 @@ weight that risks drift.)
 15. **title: the card's display name (DD-033).** A short semantic name
     for this session's work — what the user should read on the card in
     the cockpit list. ≤ 24 chars, in `output_lang`, noun-phrase style:
-    name the WORK, not the activity narration. Good: "HSF EagleEye
+    name the WORK, not the activity narration. Good: "HSF Tracer
     链路追踪修复" / "cockpit 资源面板重构". Bad: "用户正在修复一个 bug" /
     "继续开发" / a full sentence.
 

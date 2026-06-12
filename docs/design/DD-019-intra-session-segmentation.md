@@ -10,7 +10,7 @@
 
 A long Claude Code session pivots topic over time. Observed live: session
 `3be97e52` finished "linkify error-message URL" work (shipped — MR 27752189,
-branch `feat/authz-error-linkify`) then pivoted to "HSFOps 超管/ACL" work. The
+branch `feat/authz-error-linkify`) then pivoted to "OpsPortal 超管/ACL" work. The
 pipeline produces ONE summary per session and binds the whole session to ONE
 card, so the active 超管 work was invisible — pinned under the older, `done`
 linkify card. The user wants one long session to surface as MULTIPLE cards.

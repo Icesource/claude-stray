@@ -17,9 +17,9 @@ tasks. The pending list contains obvious semantic duplicates:
 - `添加测试` / `添加单测与 e2e` / `service doc 测试覆盖` / `为
   service doc 命令添加单元 + e2e 测试`
 - `同步文档` 3× plus longer forms
-- bilingual variants (`hsfops service test-record OpenAPI — design +
-  implementation` vs `hsfops 服务测试记录 OpenAPI 实现 + 单元测试`)
-- prefix-tagged variants (`[F1-body] hsfops service test-record …` vs
+- bilingual variants (`ops-portal service test-record OpenAPI — design +
+  implementation` vs `ops-portal 服务测试记录 OpenAPI 实现 + 单元测试`)
+- prefix-tagged variants (`[F1-body] ops-portal service test-record …` vs
   the same thing without `[F1-body]`)
 
 The user can't be expected to manually ✕ 47 tasks. The list does not

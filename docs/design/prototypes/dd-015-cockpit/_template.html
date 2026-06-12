@@ -231,7 +231,7 @@
   const RANK={needs_you:0,running:1,idle:2,done:3,paused:4};
   const LV={thread:'主线',card:'卡',chip:'片'};
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
-  const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
+  const MAIN_WS=['rpc-workspace','ops-portal','dev-cli','doc-generator'];
   const tierOf = ws => MAIN_WS.includes(ws)?'main':'side';
   const board=document.getElementById('board'), mini=document.getElementById('minimap');
 

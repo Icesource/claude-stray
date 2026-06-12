@@ -55,7 +55,7 @@ All five must be implemented; ANY ONE failing means runaway.
 
 ### 2.3 — Goal-achieved detection
 
-This is the hardest. "Refactor the ChangeFree logic" — when is it
+This is the hardest. "Refactor the ChangeFlow logic" — when is it
 done? "All tests pass"? "MR opened and approved"? "Approved AND
 merged"? The user must declare a *measurable* completion criterion.
 The agent must be able to check it (run tests, hit an API, inspect
@@ -120,23 +120,23 @@ flowchart TD
 Before starting, the user fills in (UI form or YAML):
 
 ```yaml
-run_id: 2026-05-15-hsfops-changefree-cleanup-001
-initiative_id: hsfops-changefree-cleanup
+run_id: 2026-05-15-ops-portal-changeflow-cleanup-001
+initiative_id: ops-portal-changeflow-cleanup
 goal: |
-  Land the ChangeFree v2 refactor: data-flow rewrite complete,
+  Land the ChangeFlow v2 refactor: data-flow rewrite complete,
   regression tests pass, MR opened and reviewer assigned.
 done_criterion:
   type: composite
   all_of:
-    - cmd: "cd ~/Code/hsf/hsfops && ./gradlew test"
+    - cmd: "cd ~/Code/hsf/ops-portal && ./gradlew test"
       expect_exit: 0
-    - file_exists: "src/main/java/.../ChangeFree2.java"
+    - file_exists: "src/main/java/.../ChangeFlow2.java"
     - mr_status:
-        url: "https://code.alibaba-inc.com/.../mr/12345"
+        url: "https://code.example.com/.../mr/12345"
         state: "open"
         reviewer: "any"
 known_blockers:
-  - "ChangeFreeV2 spec is in docs/spec.md — read it first"
+  - "ChangeFlowV2 spec is in docs/spec.md — read it first"
   - "Don't touch src/main/java/legacy/* — that's owned by another team"
 permission:
   read: any-path-in-cwd

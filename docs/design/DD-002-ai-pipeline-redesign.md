@@ -257,7 +257,7 @@ Text content (prompts / replies) is **entirely handled by Layer 1**.
 ```markdown
 ---
 session_id: cbbeb23c-b6f9-4eb4-926e-7e4046c856d4
-cwd: /Users/bby/Code/pandora/pandora-sar/hsf
+cwd: /Users/bby/Code/pandora/runtime-sar/hsf
 last_activity_at: 2026-05-13T09:19:46Z
 user_turns: 16
 updated_at: 2026-05-13T09:25:00Z
@@ -265,19 +265,19 @@ status_guess: active
 ---
 
 # Goal
-Trace why EagleEye span shows server IP as null in HSF; specifically
+Trace why Tracer span shows server IP as null in HSF; specifically
 mtop-to-HSF conversion in local-call scenarios.
 
 # Current state
-Root cause identified: EagleEyeHttpHook.beforeProcess passes wrong arg
+Root cause identified: TraceHttpHook.beforeProcess passes wrong arg
 to logRemoteIp (own host IP instead of actual remote). Fix plan clear.
 
 # Decisions made
-- Modify EagleEyeHttpHook to pull remoteIp from HSFRequestContext
+- Modify TraceHttpHook to pull remoteIp from HSFRequestContext
 - Special-case mtop-uncenter (both source and target are local)
 
 # Artifacts
-- /tmp/aone-issue-hsf-eagleeye.md (created, pending submit)
+- /tmp/aone-issue-rpc-tracing.md (created, pending submit)
 
 # Next step
 Submit Aone ISSUE assigned to self; create dev branch for fix.
@@ -286,7 +286,7 @@ Submit Aone ISSUE assigned to self; create dev branch for fix.
 None (fix is clear)
 
 # Tasks (proposed)
-- [x] Collect EagleEye data samples with @s0 prefix
+- [x] Collect Trace data samples with @s0 prefix
 - [x] arthas watch to grab on-site data
 - [x] Identify root cause (logRemoteIp wrong arg)
 - [x] Draft Aone ISSUE
@@ -564,12 +564,12 @@ active work is ~4-6/hr, so this cap rarely hits. **Don't add now**.
 ```jsonc
 {
   "session_id": "cbbeb23c-b6f9-4eb4-926e-7e4046c856d4",
-  "cwd": "/Users/bby/Code/pandora/pandora-sar/hsf",
+  "cwd": "/Users/bby/Code/pandora/runtime-sar/hsf",
   "started_at": "2026-05-13T07:30:00Z",
   "last_activity_at": "2026-05-13T09:19:46Z",
   "user_turns": 16,
   "edits": [
-    {"file": "/tmp/aone-issue-hsf-eagleeye.md", "kind": "create", "ops": 1}
+    {"file": "/tmp/aone-issue-rpc-tracing.md", "kind": "create", "ops": 1}
   ],
   "tools": {"Bash": 12, "Read": 30, "WebFetch": 2},
   "task_events": [],

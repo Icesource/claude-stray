@@ -381,9 +381,9 @@ Rebrand + SKILL-based install + tips quality pass.
   was reading the URL-pattern table as a construction template
   whenever a session mentioned an MR/CR/issue by number only.
   Result: hallucinated URLs like
-  `code.aone.alibaba-inc.com/merge_requests/<id>` for environments
-  whose real Aone host is
-  `code.alibaba-inc.com/<group>/<repo>/codereview/<id>`. Both prompts
+  `code.devops.example.com/merge_requests/<id>` for environments
+  whose real code host is
+  `code.example.com/<group>/<repo>/codereview/<id>`. Both prompts
   now lead with "NEVER synthesize a URL" and accept artifacts with
   `ref_id` but no `url`. Layer 2 dedup falls back to (`type`,
   `ref_id`) when `url` is absent on either side.

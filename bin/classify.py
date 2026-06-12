@@ -304,7 +304,7 @@ def parse_artifacts_from_fm(raw_fm: str) -> list[dict]:
           - type: mr
             title: Kryo ClassLoader-aware
             ref_id: "27471050"
-            url: https://code.alibaba-inc.com/.../27471050
+            url: https://code.example.com/.../27471050
             status: pending
             last_mentioned_at: 2026-05-19T09:21:42Z
 

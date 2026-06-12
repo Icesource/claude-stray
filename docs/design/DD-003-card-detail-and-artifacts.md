@@ -38,9 +38,9 @@
 A typical 1-hour Claude Code debug session ends with several **key
 artifacts**:
 
-- Opened a CR `https://code.alibaba-inc.com/.../codereview/27369464`
+- Opened a CR `https://code.example.com/.../codereview/27369464`
 - Linked issue `#82052410`
-- Pushed branch `bugfix/hsf/eagleeye-mtop-server-ip`
+- Pushed branch `bugfix/hsf/trace-gateway-server-ip`
 - Blocked on: CI + 1 reviewer approve + CodeOwner approve
 
 All these live in the session jsonl, but when the user works across
@@ -54,9 +54,9 @@ many sessions, they can't get back to this info. Real workflow today:
 5. (Repeat for each blocked session)
 ```
 
-### 1.2 Concrete case (EagleEye)
+### 1.2 Concrete case (Tracer)
 
-Last week's HSF EagleEye trace IP=null session:
+Last week's HSF Trace IP=null session:
 
 | Info | Where it lives | Card shows it today |
 |---|---|---|
@@ -108,7 +108,7 @@ URL, but:
 | 2 | **🔗 Artifacts** (links) | URL pattern + AI tagging | CR #27369464, Issue #82052410 |
 | 3 | **🎯 Next step** | Layer 1 summary "Next step" | "wait for CI + 1 approve, then merge" |
 | 4 | **🌿 Branch / commit** | URL pattern + extraction | branch name, commit sha, tag |
-| 5 | **📄 In-flight files** | extract.py edited_files | EagleEyeHttpHook.java |
+| 5 | **📄 In-flight files** | extract.py edited_files | TraceHttpHook.java |
 | 6 | **🧠 Key decisions** | Layer 1 summary "Decisions" | "skip local UT, commit+push+MR" |
 | 7 | **📜 Tasks** | Existing tasks field | 4/8 done |
 | 8 | **💬 Related sessions** | initiative.sessions (existing) | + pane info + resume command |
@@ -128,7 +128,7 @@ out of URL pattern matching; 6 reuses existing summary section.
 ---
 # existing fields (unchanged)
 session_id: cbbeb23c-…
-cwd: /Users/bby/Code/pandora/pandora-sar/hsf
+cwd: /Users/bby/Code/pandora/runtime-sar/hsf
 last_activity_at: 2026-05-13T11:10:20Z
 user_turns: 21
 updated_at: 2026-05-14T12:13:02Z
@@ -137,21 +137,21 @@ status_guess: paused
 # new fields
 artifacts:
   - type: cr
-    title: "EagleEye remoteIp fix"
+    title: "Tracer remoteIp fix"
     ref_id: "27369464"
-    url: "https://code.alibaba-inc.com/middleware-container/pandora-sar/codereview/27369464"
+    url: "https://code.example.com/acme/runtime-sar/codereview/27369464"
     status: pending
     inferred: true              # AI guess
     first_mentioned_at: "2026-05-13T10:50:00Z"
     last_mentioned_at: "2026-05-13T11:10:00Z"
   - type: issue
-    title: "EagleEye trace IP null"
+    title: "Trace IP null"
     ref_id: "82052410"
-    url: "https://aone.alibaba-inc.com/v2/project/.../req/82052410"
+    url: "https://devops.example.com/v2/project/.../req/82052410"
     status: open
     inferred: true
   - type: branch
-    title: "bugfix/hsf/eagleeye-mtop-server-ip"
+    title: "bugfix/hsf/trace-gateway-server-ip"
     status: pushed
     inferred: true
 
@@ -182,16 +182,16 @@ Layer 2 unions all artifacts across the initiative's sessions
 
 ```json
 {
-  "id": "hsf-eagleeye-ip-null-issue",
-  "name": "HSF EagleEye trace IP-null investigation",
+  "id": "rpc-tracing-ip-null-issue",
+  "name": "HSF Trace IP-null investigation",
   "status": "paused",
   ...,
   "artifacts": [
     {
       "type": "cr",
-      "title": "EagleEye remoteIp fix",
+      "title": "Tracer remoteIp fix",
       "ref_id": "27369464",
-      "url": "https://code.alibaba-inc.com/.../27369464",
+      "url": "https://code.example.com/.../27369464",
       "status": "pending",
       "inferred": true,
       "user_confirmed": false,
@@ -237,7 +237,7 @@ forced to produce a non-unknown status.
   "deleted_tasks": [...],
   "artifact_states": [
     {
-      "initiative_id": "hsf-eagleeye-ip-null-issue",
+      "initiative_id": "rpc-tracing-ip-null-issue",
       "artifact_key": "cr:27369464",
       "status": "merged",
       "dismissed": false,
@@ -263,9 +263,9 @@ Supported platforms (extensible):
 
 | Platform | Regex | Extracts |
 |---|---|---|
-| aone codereview | `code.alibaba-inc.com/[^/]+/[^/]+/codereview/(\d+)` | `type=cr`, `ref_id=<id>` |
-| aone request | `aone.alibaba-inc.com/v2/project/[^/]+/req/(\d+)` | `type=issue`, `ref_id=<id>` |
-| aone task | `aone.alibaba-inc.com/v2/project/[^/]+/task/(\d+)` | `type=issue`, `ref_id=<id>` |
+| aone codereview | `code.example.com/[^/]+/[^/]+/codereview/(\d+)` | `type=cr`, `ref_id=<id>` |
+| aone request | `devops.example.com/v2/project/[^/]+/req/(\d+)` | `type=issue`, `ref_id=<id>` |
+| aone task | `devops.example.com/v2/project/[^/]+/task/(\d+)` | `type=issue`, `ref_id=<id>` |
 | GitHub PR | `github.com/([^/]+/[^/]+)/pull/(\d+)` | `type=pr`, `ref_id=<id>` |
 | GitHub issue | `github.com/([^/]+/[^/]+)/issues/(\d+)` | `type=issue`, `ref_id=<id>` |
 | GitLab MR | `gitlab.com/([^/]+/[^/]+)/-/merge_requests/(\d+)` | `type=mr`, `ref_id=<id>` |
@@ -343,7 +343,7 @@ UI is in two layers:
 After the status badge in the card header, append:
 
 ```
-● HSF EagleEye trace IP null investigation  [paused]  23h ago
+● HSF Trace IP null investigation  [paused]  23h ago
   🚨 3 blockers  ·  🔗 1 pending CR
 ```
 
@@ -379,8 +379,8 @@ overlay + rounded 600px wide, max-height 80vh, scrollable):
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                                                  [✕]    │
-│  HSF EagleEye trace IP null investigation                │
-│  📁 pandora/pandora-sar/hsf · ⏸ paused · 23h ago        │
+│  HSF Trace IP null investigation                │
+│  📁 pandora/runtime-sar/hsf · ⏸ paused · 23h ago        │
 │                                                          │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
@@ -391,17 +391,17 @@ overlay + rounded 600px wide, max-height 80vh, scrollable):
 │                                                          │
 │  🔗 Key links                                            │
 │    📋 CR #27369464  pending  [view↗] [✓merged] [✗]     │
-│       EagleEye remoteIp fix                              │
+│       Tracer remoteIp fix                              │
 │    🎫 Issue #82052410  open  [view↗]  [✗]               │
-│       EagleEye trace IP null                             │
-│    🌿 bugfix/hsf/eagleeye-mtop-server-ip  pushed         │
+│       Trace IP null                             │
+│    🌿 bugfix/hsf/trace-gateway-server-ip  pushed         │
 │                                                          │
 │  🎯 Next step                                            │
 │    wait for CI + reviewer approve, then merge to master  │
 │                                                          │
 │  📄 Files in flight                                      │
-│    • EagleEyeHttpHook.java                              │
-│    • /tmp/aone-issue-hsf-eagleeye.md                    │
+│    • TraceHttpHook.java                              │
+│    • /tmp/aone-issue-rpc-tracing.md                    │
 │                                                          │
 │  🧠 Key decisions                                        │
 │    • skip local UT, direct commit+push+MR (low risk)     │
@@ -555,7 +555,7 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 - Modify `prompts/summarize-session.md`: add §8 instructions
 - Modify `bin/summarize.py`: YAML emit new fields, regex post-process
 - Don't touch HTML, don't touch Layer 2
-- Validate: re-run summarize on EagleEye session, confirm `artifacts:`
+- Validate: re-run summarize on Tracer session, confirm `artifacts:`
   populated correctly
 
 **Ship condition**: 3 real sessions produce subjectively good artifacts.
@@ -568,7 +568,7 @@ IDENTICAL to PRIOR (just like name/summary/tasks).
 - HTML unchanged (dashboard.json grows two fields; old render-html.py
   ignores them)
 
-**Ship condition**: EagleEye initiative in dashboard.json shows
+**Ship condition**: Tracer initiative in dashboard.json shows
 artifacts array.
 
 ### Phase 3 — HTML Modal (read-only)
@@ -579,7 +579,7 @@ artifacts array.
 - Artifacts are clickable external links (`<a target="_blank">`); **no
   mark buttons yet**
 
-**Ship condition**: clicking EagleEye card in browser shows CR
+**Ship condition**: clicking Tracer card in browser shows CR
 #27369464 link.
 
 ### Phase 4 — User toggle (artifact_states)

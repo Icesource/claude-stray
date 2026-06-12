@@ -587,6 +587,7 @@
   let LIVE = {};
   let MJOBS=[];
   let SYNC = {};            // first-sync health {state,reason,log_tail} from /api/data
+  let CFG = {};             // cache/config.json passthrough (lang, main_workspaces …)
   let CLAUDE_OK = true;     // is the `claude` CLI available (precondition for sync)
   const NEEDS_RE = /待用户|待 ?user|用户确认|用户决定|用户反馈|需确认|待确认|权限确认|等你/;
   function humanIdle(iso){ if(!iso) return ''; const u=Date.parse(iso); if(isNaN(u)) return '';
@@ -741,6 +742,7 @@
     ARCHIVED=(d&&d.archived)||[];
     LOCATIONS=(d&&d.locations&&d.locations.by_session_id)||{};
     SYNC=(d&&d.sync)||{}; CLAUDE_OK=!(d&&d.claude_ok===false);
+    CFG=(d&&d.config)||{};
     buildRows(); refreshUI();
   }catch(e){} }
   let _es=null;
@@ -764,8 +766,9 @@
   const FAM_RANK={needs_you:0,running:1,done_unread:2,idle:3,done:4,paused:5};
   const LV={card:'卡',chip:'片'};  // DD-033: thread level removed (card = session)
   // 主线 = 持续的工作主干;支线 = 个人/兴趣/临时(AI 可建议、用户可改)
-  const MAIN_WS=['hsf-workspace','hsfops','mw-cli','hsf-doc-generator'];
-  const tierOf = ws => MAIN_WS.includes(ws)?'main':'side';
+  // main/side tier split comes from cache/config.json `main_workspaces`
+  // (user-local, never committed). Unset/empty → everything is 'main'.
+  const tierOf = ws => {const m=(CFG||{}).main_workspaces; return (!m||!m.length||m.includes(ws))?'main':'side';};
   const board=document.getElementById('board'), mini=document.getElementById('minimap');
 
   // animated status icon (转圈=在跑 / 脉冲=等你 / 空心=闲置 / ✓=完成 / ⏸=搁置)

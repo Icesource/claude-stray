@@ -4,7 +4,7 @@ Status: **proposed** (accepted in principle; implementation deferred)
 Predecessors: DD-002 (3-layer pipeline), DD-003 (artifacts/blockers),
 DD-008 (task aggregation + archive)
 Trigger: 2026-05-15 — user observed that
-`mw-cli-hsf-qos-commands` card had:
+`dev-cli-hsf-qos-commands` card had:
 1. 13 tasks from a different initiative (`claude-stray-dashboard`)
    stuck on it permanently;
 2. 5 pairs of en/zh duplicates of the same task;
@@ -28,7 +28,7 @@ This actually happened on 2026-05-15: during chaotic concurrent
 testing, the `claude-stray-dashboard` initiative was briefly
 archived, leaving its session `940413c0` looking orphaned to AI's
 next classify run. AI placed 940413c0's tasks under
-`mw-cli-hsf-qos-commands` for one round. The dashboard was
+`dev-cli-hsf-qos-commands` for one round. The dashboard was
 unarchived a few minutes later — but the mis-attributed tasks
 remained on the QoS card forever via PRIOR carry-forward.
 

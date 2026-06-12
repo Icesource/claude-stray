@@ -20,22 +20,22 @@ of the work, sometimes by hours.
 ### Concrete case
 
 In session `cbbeb23c-b6f9-4eb4-926e-7e4046c856d4`, the user (bby) was
-debugging EagleEye trace IP=null in HSF. Real-life arc of the session:
+debugging Trace IP=null in HSF. Real-life arc of the session:
 
 ```
-T+0    "调研 EagleEye 链路追踪服务端 IP 为空的问题"
+T+0    "调研 Tracer 链路追踪服务端 IP 为空的问题"
 T+30m  "等 arthas watch 抓数据"                       ← stuck here in card
 T+90m  "为啥 logRemoteIp 要传本机 IP" (root-cause hunt)
 T+95m  AI gives full explanation of HSF_CLIENT span semantics
 T+110m "把问题记录一个 Aone ISSUE"
-T+115m AI writes /tmp/aone-issue-hsf-eagleeye.md
+T+115m AI writes /tmp/aone-issue-rpc-tracing.md
 T+120m "确认, 指派给我"
 ```
 
 After T+120, the user opened the dashboard. The card said:
 
-> 进度：发现关键线索…用户收集了带 @s0 前缀的 EagleEye data 样本，
-> 当前等待用 arthas watch 在本地跟踪 EagleEyeUtil.logRemoteAddress
+> 进度：发现关键线索…用户收集了带 @s0 前缀的 Trace data 样本，
+> 当前等待用 arthas watch 在本地跟踪 TraceUtil.logRemoteAddress
 > 抓取现场数据。
 
 That progress text is from **T+30**. The 90 minutes of root-cause
@@ -72,7 +72,7 @@ information density.**
 ### Why bumping limits won't fix it
 
 The `last_assistant_summary` constant change from "first paragraph" to
-"1500 chars" is what unblocked the EagleEye case. But it's structural
+"1500 chars" is what unblocked the Tracer case. But it's structural
 luck:
 
 - If the session's last assistant turn is a 3000-char deep technical
@@ -148,7 +148,7 @@ sections:
 ```markdown
 ---
 session_id: cbbeb23c-b6f9-4eb4-926e-7e4046c856d4
-cwd: /Users/bby/Code/pandora/pandora-sar/hsf
+cwd: /Users/bby/Code/pandora/runtime-sar/hsf
 last_activity_at: 2026-05-13T09:19:46.447Z
 status_guess: active  # active | paused | done | abandoned
 updated_at: 2026-05-13T09:25:00Z
@@ -166,8 +166,8 @@ Bulleted list of concrete decisions or conclusions that survived to the
 latest turn. (Things the user said "ok" to or AI committed to in code.)
 
 # Artifacts
-- /tmp/aone-issue-hsf-eagleeye.md (created)
-- src/main/java/.../EagleEyeHttpHook.java (planned edit, not yet written)
+- /tmp/aone-issue-rpc-tracing.md (created)
+- src/main/java/.../TraceHttpHook.java (planned edit, not yet written)
 
 # Next step
 What the user or AI said the next step is. If the session was abandoned
@@ -300,7 +300,7 @@ is near zero (both passes hit cooldown).
 ### A. Just keep bumping extract limits
 
 We did this for `last_assistant_summary` (first-paragraph → 1500 chars)
-and it unblocked the EagleEye case. But it's a heuristic ceiling, not a
+and it unblocked the Tracer case. But it's a heuristic ceiling, not a
 fix. Sessions whose relevant content lives outside the chosen window
 are still mis-classified. **Rejected.**
 
@@ -323,7 +323,7 @@ Like B, but instead of a separate classifier we have each summary
 directly produce its own initiative entry. The mindmap is just a
 collation of session-level outputs. Loses the ability to merge multiple
 sessions into one initiative — which is a core feature (e.g. one
-"ChangeFree refactor" initiative spans ~5 sessions over a week).
+"ChangeFlow refactor" initiative spans ~5 sessions over a week).
 **Rejected.**
 
 ### E. Stream-based incremental updates (SSE / websockets)

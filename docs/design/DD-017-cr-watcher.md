@@ -64,7 +64,7 @@ scheduled (cron / launchd / loop skill / hook)  every N min
                              → human reviews; approves/edits; THEN posts (never auto)
 ```
 
-- **Fetch**: the CR platform is internal (code.alibaba-inc.com). Likely
+- **Fetch**: the CR platform is internal (code.example.com). Likely
   integration path = the **`a1` CLI** (covers MR/代码评审/CR) or its
   API. Needs: list comments, get state, get diff. (Research item.)
 - **State store**: `cache/cr-watch/<ref_id>.json` holds last-seen state

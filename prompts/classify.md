@@ -129,12 +129,12 @@ workspace                  (top — usually a repo/codebase)
 ## Step 1: Group sessions into INITIATIVES
 
 An **initiative** is a coherent, single-narrative piece of work — e.g.
-"ChangeFree service refactor", "App doc version_no migration", "NCS
+"ChangeFlow service refactor", "App doc version_no migration", "NCS
 gateway auth integration". Usually multiple sessions share an initiative.
 
 Rules:
 - One `cwd` may contain MULTIPLE initiatives (split if the sessions cover
-  distinct goals — e.g. `hsfops` may have both "ChangeFree refactor" and
+  distinct goals — e.g. `ops-portal` may have both "ChangeFlow refactor" and
   "App doc iteration" in parallel).
 - An initiative MAY span multiple `cwd`s when sessions in different repos
   clearly serve one narrative (e.g. a feature touching frontend + backend
@@ -143,7 +143,7 @@ Rules:
 ## Step 2: Group initiatives into WORKSPACES
 
 A **workspace** is the conceptual home of related work — usually a repo
-folder name (e.g. `hsfops`, `mw-cli`, `hsf-doc-generator`), but it can
+folder name (e.g. `ops-portal`, `dev-cli`, `doc-generator`), but it can
 also be a logical area (e.g. `skills`, `claude-code-tooling`).
 
 Rules:
@@ -164,7 +164,7 @@ Rules:
 ## Step 3: Per-initiative fields
 
 For each initiative produce:
-- `id`: stable slug like `hsfops-changefree-refactor` (lowercase, hyphens)
+- `id`: stable slug like `ops-portal-changeflow-refactor` (lowercase, hyphens)
 - `name`: short human-readable name (in the OUTPUT_LANG below)
 - `status`: one of `active`, `paused`, `done`, `archived`. Rules:
   * `active` — last activity within the past 3 days, work clearly ongoing

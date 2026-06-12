@@ -58,11 +58,11 @@ mm = {
           ],
           "artifacts": [
             {"type": "mr", "title": "feat(checkout): Apple Pay session endpoint", "ref_id": "27512348",
-             "url": "https://code.alibaba-inc.com/payments/checkout-frontend/codereview/27512348",
+             "url": "https://code.example.com/payments/checkout-frontend/codereview/27512348",
              "status": "merged", "last_mentioned_at": iso(48)},
             {"type": "mr", "title": "feat(checkout): wire up PaymentRequest API for Apple Pay",
              "ref_id": "27514102",
-             "url": "https://code.alibaba-inc.com/payments/checkout-frontend/codereview/27514102",
+             "url": "https://code.example.com/payments/checkout-frontend/codereview/27514102",
              "status": "pending", "last_mentioned_at": iso(2)},
             {"type": "issue", "title": "Stripe staging env open up Apple Pay", "ref_id": "OPS-4471",
              "url": "https://aone.example.com/issue/OPS-4471",
@@ -124,7 +124,7 @@ mm = {
           ],
           "artifacts": [
             {"type": "mr", "title": "feat(fees): DSL parser implementation", "ref_id": "27498012",
-             "url": "https://code.alibaba-inc.com/payments/payment-service/codereview/27498012",
+             "url": "https://code.example.com/payments/payment-service/codereview/27498012",
              "status": "merged", "last_mentioned_at": iso(120)},
             {"type": "doc", "title": "费率 DSL spec v1.0",
              "url": "https://yuque.com/payments/fee-dsl-spec",
@@ -150,7 +150,7 @@ mm = {
           ],
           "artifacts": [
             {"type": "mr", "title": "feat(refund): Sentinel rate limit", "ref_id": "27465901",
-             "url": "https://code.alibaba-inc.com/payments/payment-service/codereview/27465901",
+             "url": "https://code.example.com/payments/payment-service/codereview/27465901",
              "status": "merged", "last_mentioned_at": iso(200)},
           ],
         },
@@ -182,7 +182,7 @@ mm = {
           "artifacts": [
             {"type": "mr", "title": "feat(alert): 60s window + dedup by txn+merchant",
              "ref_id": "27510445",
-             "url": "https://code.alibaba-inc.com/payments/fraud-detector/codereview/27510445",
+             "url": "https://code.example.com/payments/fraud-detector/codereview/27510445",
              "status": "pending", "last_mentioned_at": iso(8)},
           ],
           "blockers": ["等 @zhao 评审(已 ping 2 次,等明天 standup)"],
@@ -340,8 +340,8 @@ report_md = """# 周报 · 2026-W21（2026-05-18 至 2026-05-24）
 
 ## Notable artifacts
 
-- [feat(checkout): wire up PaymentRequest API for Apple Pay](https://code.alibaba-inc.com/payments/checkout-frontend/codereview/27514102) — pending review
-- [feat(alert): 60s window + dedup by txn+merchant](https://code.alibaba-inc.com/payments/fraud-detector/codereview/27510445) — pending review
+- [feat(checkout): wire up PaymentRequest API for Apple Pay](https://code.example.com/payments/checkout-frontend/codereview/27514102) — pending review
+- [feat(alert): 60s window + dedup by txn+merchant](https://code.example.com/payments/fraud-detector/codereview/27510445) — pending review
 - [OPS-4471 Stripe staging Apple Pay](https://aone.example.com/issue/OPS-4471) — open
 
 ## Sessions touched

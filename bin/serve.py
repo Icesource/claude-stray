@@ -1323,6 +1323,9 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
         data = {}
         try: data["mindmap"] = json.load(open(DASHBOARD_JSON))
         except Exception: data["mindmap"] = None
+        # user-local config passthrough (lang, main_workspaces tier split …)
+        try: data["config"] = json.load(open(CACHE_DIR / "config.json"))
+        except Exception: data["config"] = {}
         # (DD-033: the DD-016 render-time dedup safety net was removed — the
         # mechanical assembler builds exactly one card per session, so
         # same-session duplicates are structurally impossible.)

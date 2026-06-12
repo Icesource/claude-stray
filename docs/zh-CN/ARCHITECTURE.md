@@ -64,12 +64,12 @@ Layer 1 真的写了新 summary 后才跑。
 | **initiative** | 一个或多个 session 的逻辑聚合 = "一项工作" | AI 推断（在 Layer 2 classify 阶段） |
 | **workspace** | 一个仓库/目录 = initiative 的容器 | AI 推断（通常对应 cwd） |
 
-例子：你在 `~/Code/hsf/hsfops` 里有 5 个 session，分别做
-"ChangeFree 重构" 和 "应用文档迭代"，AI 会输出：
+例子：你在 `~/Code/hsf/ops-portal` 里有 5 个 session，分别做
+"ChangeFlow 重构" 和 "应用文档迭代"，AI 会输出：
 
-- **workspace** `hsfops`
-  - **initiative** `hsfops-changefree-cleanup`（5 个中的 3 个）
-  - **initiative** `hsfops-app-doc-version-no`（5 个中的 2 个）
+- **workspace** `ops-portal`
+  - **initiative** `ops-portal-changeflow-cleanup`（5 个中的 3 个）
+  - **initiative** `ops-portal-app-doc-version-no`（5 个中的 2 个）
 
 一个 initiative 横跨多个 cwd 也允许（如一个特性同时改前端+后端+
 SKILL 文件）。AI 会选**最有归属感**的 cwd 当主 workspace，其他记
@@ -356,7 +356,7 @@ erDiagram
 ```json
 {
   "session_id": "...",
-  "cwd": "/Users/bby/Code/hsf/hsfops",
+  "cwd": "/Users/bby/Code/hsf/ops-portal",
   "started_at": "2026-05-14T08:00:00Z",
   "last_activity_at": "2026-05-14T09:30:00Z",
   "message_count": 12,
@@ -376,22 +376,22 @@ erDiagram
 ```markdown
 ---
 sid: ...
-workspace: hsfops
-title: ChangeFree 重构
+workspace: ops-portal
+title: ChangeFlow 重构
 status: active
 last_activity_at: 2026-05-14T09:30:00Z
 user_turns: 6
 artifacts:
   - type: mr
-    url: https://code.alibaba-inc.com/.../mr/12345
+    url: https://code.example.com/.../mr/12345
     status: open
-    title: ChangeFree v2 实现
+    title: ChangeFlow v2 实现
 blockers:
   - source: external-review
     note: 等 CR 审核中
 ---
 
-本次会话讨论了 ChangeFree 的核心数据流改造……
+本次会话讨论了 ChangeFlow 的核心数据流改造……
 ```
 
 ### 样例：`cache/dashboard.json`
@@ -402,12 +402,12 @@ blockers:
   "generated_at": "2026-05-14T09:32:01Z",
   "workspaces": [
     {
-      "name": "hsfops",
-      "cwd": "/Users/bby/Code/hsf/hsfops",
+      "name": "ops-portal",
+      "cwd": "/Users/bby/Code/hsf/ops-portal",
       "initiatives": [
         {
-          "id": "hsfops-changefree-cleanup",
-          "name": "ChangeFree 重构",
+          "id": "ops-portal-changeflow-cleanup",
+          "name": "ChangeFlow 重构",
           "status": "active",
           "sessions": ["..."],
           "linked_cwds": [],

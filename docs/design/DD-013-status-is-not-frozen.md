@@ -12,7 +12,7 @@ resumed and continued.
 
 Concretely, on the day this was filed:
 
-- `hsf-workspace-initialization` — `init.status = done`,
+- `rpc-workspace-initialization` — `init.status = done`,
   `init.last_activity_at = 2026-05-21` (4 days ago), but the underlying
   session's `last_activity_at = 2026-05-25T07:47` (this morning) and
   `status_guess = paused`. Today's work is invisible on the card.
@@ -152,7 +152,7 @@ is also `done`) stay `done`.
 
 1. Run `python3 bin/classify.py` once. Expect DIFF output showing
    status changes for at least the cards named above
-   (`hsf-workspace-initialization`,
+   (`rpc-workspace-initialization`,
    `claude-code-stop-hook-bell`,
    `stray-artifacts-classification-bug`).
 2. Inspect dashboard.json after the run — those cards should have

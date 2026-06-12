@@ -31,8 +31,8 @@
       "reason": "Accessibility 权限确认"
     },
     {
-      "name": "HSFOps app-doc cleanup 流程完洁性 bug 修复",
-      "ws": "hsfops",
+      "name": "OpsPortal app-doc cleanup 流程完洁性 bug 修复",
+      "ws": "ops-portal",
       "status": "active",
       "level": "chip",
       "idle": "1天",
@@ -82,8 +82,8 @@
       "reason": "等待用户反馈：卧推 50×5 的实际 RPE 等级、冷链方案最终确认、食材采购可行性"
     },
     {
-      "name": "HSFOps 服务测试 Triple 协议缓存混用诊断",
-      "ws": "hsf-workspace",
+      "name": "OpsPortal 服务测试 Triple 协议缓存混用诊断",
+      "ws": "rpc-workspace",
       "status": "active",
       "level": "card",
       "idle": "7h23m",
@@ -91,14 +91,14 @@
       "blockers": [
         "待用户确认是否采纳方案 D（自建缓存）"
       ],
-      "progress": "根因已定位：HSFApiConsumerBean 的缓存 key（interface+version+generic）不包含协议维度。Issue #82622043 已提交至 Middleware RPC Aone 项目。已评估四个解决方向，倾向方案 D（hsfops 自建缓存），等用户确认。",
-      "summary": "诊断 HSFOps 在服务测试时，某接口虽配置 Triple 协议但落到 HSF 协议链路的问题。",
+      "progress": "根因已定位：HSFApiConsumerBean 的缓存 key（interface+version+generic）不包含协议维度。Issue #82622043 已提交至 Middleware RPC Aone 项目。已评估四个解决方向，倾向方案 D（ops-portal 自建缓存），等用户确认。",
+      "summary": "诊断 OpsPortal 在服务测试时，某接口虽配置 Triple 协议但落到 HSF 协议链路的问题。",
       "artifacts": [
         {
           "type": "issue",
           "ref_id": "82622043",
-          "title": "HSF ConsumerBean 缓存复用维度未包含协议，导致 HSFOps 跨协议服务测试结果错乱",
-          "url": "https://project.aone.alibaba-inc.com/v2/project/2078441/bug/82622043",
+          "title": "HSF ConsumerBean 缓存复用维度未包含协议，导致 OpsPortal 跨协议服务测试结果错乱",
+          "url": "https://project.example.com/v2/project/1000001/bug/82622043",
           "status": "open"
         }
       ],
@@ -111,7 +111,7 @@
     },
     {
       "name": "HSF maxWaitTimeForCsAddress 配置属性生效诊断",
-      "ws": "hsf-workspace",
+      "ws": "rpc-workspace",
       "status": "active",
       "level": "card",
       "idle": "7h1m",
@@ -130,28 +130,28 @@
       "reason": "待 user 执行 vmtool 诊断命令确认实例存在和接口名"
     },
     {
-      "name": "hsf-hessian JDK 高版本序列化支持评审与测试",
-      "ws": "hsf-workspace",
+      "name": "rpc-serializer JDK 高版本序列化支持评审与测试",
+      "ws": "rpc-workspace",
       "status": "active",
       "level": "card",
       "idle": "5h12m",
       "idle_secs": 18745,
       "blockers": [],
-      "progress": "已完成 hsf-hessian CR 20401122 的代码评审，hsf-e2e MR #27672466 已提交。当前讨论 Record 类型的 e2e 覆盖方案：采用 MRJAR（多版本 JAR）在 serialization/ 模块下，预计追加 ~100 行改动，待用户同意后实施。",
-      "summary": "为 HSF e2e 集成测试补齐 JDK 高版本新类型的序列化覆盖，跟随 hsf-hessian 4.0.7-bugfix17 的 JDK 21 升级。",
+      "progress": "已完成 rpc-serializer CR 20401122 的代码评审，e2e-suite MR #27672466 已提交。当前讨论 Record 类型的 e2e 覆盖方案：采用 MRJAR（多版本 JAR）在 serialization/ 模块下，预计追加 ~100 行改动，待用户同意后实施。",
+      "summary": "为 HSF e2e 集成测试补齐 JDK 高版本新类型的序列化覆盖，跟随 rpc-serializer 4.0.7-bugfix17 的 JDK 21 升级。",
       "artifacts": [
         {
           "type": "mr",
           "ref_id": "27672466",
-          "title": "配合 hsf-hessian JDK 高版本序列化 e2e 测试补齐",
-          "url": "https://code.alibaba-inc.com/mw-e2e/hsf-e2e/codereview/27672466",
+          "title": "配合 rpc-serializer JDK 高版本序列化 e2e 测试补齐",
+          "url": "https://code.example.com/acme/e2e-suite/codereview/27672466",
           "status": "pending"
         },
         {
           "type": "cr",
           "ref_id": "20401122",
-          "title": "hsf-hessian JDK 高版本序列化支持评审",
-          "url": "https://code.alibaba-inc.com/middleware-container/hsf-hessian/codereview/20401122",
+          "title": "rpc-serializer JDK 高版本序列化支持评审",
+          "url": "https://code.example.com/acme/rpc-serializer/codereview/20401122",
           "status": "pending"
         }
       ],
@@ -190,8 +190,8 @@
       "activity": "正在整理 RAG 章节笔记"
     },
     {
-      "name": "hsfops 权限重构国际化与 URL linkify",
-      "ws": "mw-cli",
+      "name": "ops-portal 权限重构国际化与 URL linkify",
+      "ws": "dev-cli",
       "status": "active",
       "level": "thread",
       "idle": "2天",
@@ -199,7 +199,7 @@
       "blockers": [
         "国际化 commit 需要部署到位",
         "前端 `fix/linkify-error-message-url` PR 需要合并 + 部署",
-        "需要超管账号 / ApiKey / daily-deployed hsfops 实例来跑测试"
+        "需要超管账号 / ApiKey / daily-deployed ops-portal 实例来跑测试"
       ],
       "progress": "后端国际化 + 前端 linkify 实现完成。35 个 curl 用例验证完成。H1-H10 国际化验证用例和 I1-I4 linkify 前端验证用例已文档化，三档 backlog 重组完成。主要阻塞点：国际化 commit 需部署、前端 PR 需合并。",
       "summary": "国际化和前端 linkify 实现。",
@@ -220,8 +220,8 @@
         },
         {
           "type": "branch",
-          "ref_id": "fix/lazy-changefree-on-rule-query",
-          "title": "fix/lazy-changefree-on-rule-query",
+          "ref_id": "fix/lazy-changeflow-on-rule-query",
+          "title": "fix/lazy-changeflow-on-rule-query",
           "url": null,
           "status": "active"
         }
@@ -235,8 +235,8 @@
       "activity": "正在 linkify MR 描述"
     },
     {
-      "name": "HSFOps 权限重构 curl 测试矩阵验证",
-      "ws": "hsfops",
+      "name": "OpsPortal 权限重构 curl 测试矩阵验证",
+      "ws": "ops-portal",
       "status": "active",
       "level": "card",
       "idle": "2天",
@@ -254,8 +254,8 @@
       "activity": "正在跑第 7/10 条 curl 用例"
     },
     {
-      "name": "HSFOps 启动失败问题诊断与优化",
-      "ws": "hsf-workspace",
+      "name": "OpsPortal 启动失败问题诊断与优化",
+      "ws": "rpc-workspace",
       "status": "active",
       "level": "card",
       "idle": "2天",
@@ -265,7 +265,7 @@
         "env lazy 化是否有 DPathRuleDataHolder 预加载的兼容性问题"
       ],
       "progress": "已定位主要问题：Spring Bean `AccessControlService` 存在 NoUniqueBeanDefinitionException，容器内有两个候选 Bean。完成启动性能根因分析：全量订阅 60+ pre 单元共 ~100s，而非配置中心超时。产出 4 个优化方案（env lazy、并行+缩短 timeout、后台预热、抑制 Timer 噪音）。诊断被打断。",
-      "summary": "排查并修复 hsfops 启动失败的问题，分析启动性能瓶颈并提出优化方案。",
+      "summary": "排查并修复 ops-portal 启动失败的问题，分析启动性能瓶颈并提出优化方案。",
       "artifacts": [],
       "tasks_total": 0,
       "tasks_pending": 0,
@@ -291,8 +291,8 @@
       "band": "idle"
     },
     {
-      "name": "hsf-doc-generator 优先级评估与设计",
-      "ws": "hsf-doc-generator",
+      "name": "doc-generator 优先级评估与设计",
+      "ws": "doc-generator",
       "status": "done",
       "level": "card",
       "idle": "2天",
@@ -304,15 +304,15 @@
         {
           "type": "mr",
           "ref_id": "27642413",
-          "title": "hsf-doc-generator 近期方向提案（三个方向）",
-          "url": "https://code.alibaba-inc.com/middleware-container/hsf-workspace/codereview/27642413",
+          "title": "doc-generator 近期方向提案（三个方向）",
+          "url": "https://code.example.com/acme/rpc-workspace/codereview/27642413",
           "status": "unknown"
         },
         {
           "type": "cr",
           "ref_id": "27385160",
-          "title": "mw-cli 集成 HSF 服务文档查询功能",
-          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/27385160",
+          "title": "dev-cli 集成 HSF 服务文档查询功能",
+          "url": "https://code.example.com/acme/dev-cli/codereview/27385160",
           "status": "approved"
         }
       ],
@@ -323,8 +323,8 @@
       "band": "done"
     },
     {
-      "name": "mw-cli HSF e2e daily URL scheme 修复",
-      "ws": "mw-cli",
+      "name": "dev-cli HSF e2e daily URL scheme 修复",
+      "ws": "dev-cli",
       "status": "done",
       "level": "card",
       "idle": "1天",
@@ -337,7 +337,7 @@
       "artifacts": [
         {
           "type": "branch",
-          "ref_id": "fix/hsf-e2e-daily-url-scheme",
+          "ref_id": "fix/e2e-suite-daily-url-scheme",
           "title": "HSF e2e daily URL scheme 修复",
           "url": null,
           "status": "active"
@@ -359,8 +359,8 @@
         {
           "type": "cr",
           "ref_id": null,
-          "title": "对齐 e2e daily URL scheme 与 hsfopsDailyURL",
-          "url": "https://code.alibaba-inc.com/middleware/mw-cli/codereview/new?from=refactor/ncs-integration&to=fix/hsf-e2e-daily-url-scheme",
+          "title": "对齐 e2e daily URL scheme 与 ops-portalDailyURL",
+          "url": "https://code.example.com/acme/dev-cli/codereview/new?from=refactor/ncs-integration&to=fix/e2e-suite-daily-url-scheme",
           "status": "pending"
         },
         {
@@ -380,7 +380,7 @@
         {
           "type": "branch",
           "ref_id": null,
-          "title": "fix/hsf-e2e-daily-url-scheme",
+          "title": "fix/e2e-suite-daily-url-scheme",
           "url": null,
           "status": "active"
         },
@@ -399,28 +399,28 @@
       "band": "done"
     },
     {
-      "name": "HSFOps 应用结构化服务文档生成与发布",
-      "ws": "hsfops",
+      "name": "OpsPortal 应用结构化服务文档生成与发布",
+      "ws": "ops-portal",
       "status": "done",
       "level": "thread",
       "idle": "1天",
       "idle_secs": 113423,
       "blockers": [],
       "progress": "工作全部完成。文档已成功上传至两个环境：线上（v159），日常（v9）。包含 3 个 providers、9 个 methods、7 个 types、9 个 domains、3 个 todos。",
-      "summary": "为 HSFOps 应用生成结构化服务文档（providers、consumers、types、domains、methods），并上传至线上和日常两个环境。",
+      "summary": "为 OpsPortal 应用生成结构化服务文档（providers、consumers、types、domains、methods），并上传至线上和日常两个环境。",
       "artifacts": [
         {
           "type": "doc",
           "ref_id": null,
-          "title": "HSFops 应用文档（日常环境）",
-          "url": "https://hsf.alibaba.net/hsfops/v2/app/detail/hsfops?envType=daily&tab=app-doc",
+          "title": "OpsPortal 应用文档（日常环境）",
+          "url": "https://ops.example.net/ops-portal/v2/app/detail/ops-portal?envType=daily&tab=app-doc",
           "status": "live"
         },
         {
           "type": "doc",
           "ref_id": null,
-          "title": "HSFops 应用文档（线上环境）",
-          "url": "https://hsf.alibaba-inc.com/hsfops/v2/app/detail/hsfops?envType=online&tab=app-doc",
+          "title": "OpsPortal 应用文档（线上环境）",
+          "url": "https://ops.example.com/ops-portal/v2/app/detail/ops-portal?envType=online&tab=app-doc",
           "status": "live"
         }
       ],
@@ -432,7 +432,7 @@
     },
     {
       "name": "HSF JdkUnsafeUtils JDK 兼容性重写",
-      "ws": "hsf-workspace",
+      "ws": "rpc-workspace",
       "status": "done",
       "level": "card",
       "idle": "1天",
@@ -481,7 +481,7 @@
     },
     {
       "name": "Claude Code 跨会话运行与恢复机制理解",
-      "ws": "hsf-workspace",
+      "ws": "rpc-workspace",
       "status": "done",
       "level": "chip",
       "idle": "4h52m",
@@ -497,8 +497,8 @@
       "band": "done"
     },
     {
-      "name": "mw-cli env SDK v0.1.1 升级代码评审与决策",
-      "ws": "mw-cli",
+      "name": "dev-cli env SDK v0.1.1 升级代码评审与决策",
+      "ws": "dev-cli",
       "status": "paused",
       "level": "card",
       "idle": "4天",
@@ -543,7 +543,7 @@
     },
     {
       "name": "HSF healthcheck 结构化指标发布前安全评审",
-      "ws": "hsf-workspace",
+      "ws": "rpc-workspace",
       "status": "paused",
       "level": "card",
       "idle": "1天",
@@ -558,7 +558,7 @@
           "type": "mr",
           "ref_id": "27619332",
           "title": "HSF healthcheck 结构化指标发布前安全评审",
-          "url": "https://code.alibaba-inc.com/middleware-container/pandora-sar/codereview/27619332",
+          "url": "https://code.example.com/acme/runtime-sar/codereview/27619332",
           "status": "pending"
         }
       ],
@@ -569,8 +569,8 @@
       "band": "paused"
     },
     {
-      "name": "HSFOps TRI 生产环境回归诊断",
-      "ws": "hsf-workspace",
+      "name": "OpsPortal TRI 生产环境回归诊断",
+      "ws": "rpc-workspace",
       "status": "paused",
       "level": "card",
       "idle": "11h44m",
@@ -578,8 +578,8 @@
       "blockers": [
         "需确认生产环境与预发环境该服务的配置差异"
       ],
-      "progress": "初步假设（假 group \"HSFOPS\" 阻断订阅）被推翻，两年来大量 TRI 服务在生产正常工作。问题症状为单一服务单一环境异常，调查陷入僵局，需收集生产 vs 预发配置对比或调用链路数据。",
-      "summary": "定位 HSFOps TRI 直连在生产环境的回归原因。",
+      "progress": "初步假设（假 group \"OPS-PORTAL\" 阻断订阅）被推翻，两年来大量 TRI 服务在生产正常工作。问题症状为单一服务单一环境异常，调查陷入僵局，需收集生产 vs 预发配置对比或调用链路数据。",
+      "summary": "定位 OpsPortal TRI 直连在生产环境的回归原因。",
       "artifacts": [],
       "tasks_total": 0,
       "tasks_pending": 0,
@@ -612,11 +612,11 @@
       "idle": "2h44m",
       "idle_secs": 9877,
       "blockers": [
-        "等 hsf-hessian 原作者确认修复 Blocker 问题",
-        "hsfops CR 34405239 待重新触发构建",
-        "hsf-e2e 流水线 JDK 11/17/21 矩阵跑测结果待出"
+        "等 rpc-serializer 原作者确认修复 Blocker 问题",
+        "ops-portal CR 34405239 待重新触发构建",
+        "e2e-suite 流水线 JDK 11/17/21 矩阵跑测结果待出"
       ],
-      "progress": "确认 HSF JDK21/Hessian 升级为主线，其中 hsf-hessian CR 20401122 包含不可变集合支持。hsfops CR 34405239 待重新构建，Record e2e 覆盖方案（MRJAR vs 多 source root）已确定为 MRJAR，等用户确认投入开发。",
+      "progress": "确认 HSF JDK21/Hessian 升级为主线，其中 rpc-serializer CR 20401122 包含不可变集合支持。ops-portal CR 34405239 待重新构建，Record e2e 覆盖方案（MRJAR vs 多 source root）已确定为 MRJAR，等用户确认投入开发。",
       "summary": "梳理 HSF JDK21/Hessian 升级近期进展，协调多个关联 CR/MR 的审批与构建状态。",
       "artifacts": [
         {
@@ -636,21 +636,21 @@
         {
           "type": "cr",
           "ref_id": "34405239",
-          "title": "hsfops 发布单",
+          "title": "ops-portal 发布单",
           "url": null,
           "status": "pending"
         },
         {
           "type": "mr",
           "ref_id": "27665330",
-          "title": "hsfops service_ref 数据清洗",
+          "title": "ops-portal service_ref 数据清洗",
           "url": null,
           "status": "pending"
         },
         {
           "type": "mr",
           "ref_id": "27665467",
-          "title": "hsf-doc-generator serviceRef 约定修复",
+          "title": "doc-generator serviceRef 约定修复",
           "url": null,
           "status": "pending"
         }

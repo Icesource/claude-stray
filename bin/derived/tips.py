@@ -177,7 +177,7 @@ def _build_prompt(work_patterns: list[dict], recent_history: list[dict],
         )
         kind_examples = """
 - work (3 条): 数据驱动的工作建议 (引用具体 initiative 名/数字)。无需 source_url。
-  e.g. "hsf-hanging-mrs 已卡 3 天,瓶颈是 aone 发布。建议今天约一下排期。"
+  e.g. "checkout-hanging-mrs 已卡 3 天,瓶颈是发布流水线。建议今天约一下排期。"
 
 - wisdom (6 条): 真实存在的诗句、闲适风格的人生感悟。**重点是放松/写景/生活意境,
   不要励志说教。**

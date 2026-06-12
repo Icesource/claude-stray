@@ -70,12 +70,12 @@ card-vanishing/renaming race bugs.
 | **initiative (card)** | Exactly one session = "one piece of work" (DD-033; id = `card::<sid>`) | mechanical assembly (Layer 2) |
 | **workspace** | One repo/dir = container of initiatives | mechanical (session cwd; a worktree folds into its main repo) |
 
-Example: 5 Claude Code sessions in `~/Code/hsf/hsfops`, working on
-"ChangeFree refactor" and "App doc iteration":
+Example: 5 Claude Code sessions in `~/Code/hsf/ops-portal`, working on
+"ChangeFlow refactor" and "App doc iteration":
 
-- **workspace** `hsfops`
-  - **initiative** `hsfops-changefree-cleanup` (3 of 5 sessions)
-  - **initiative** `hsfops-app-doc-version-no` (2 of 5 sessions)
+- **workspace** `ops-portal`
+  - **initiative** `ops-portal-changeflow-cleanup` (3 of 5 sessions)
+  - **initiative** `ops-portal-app-doc-version-no` (2 of 5 sessions)
 
 An initiative can span multiple cwds (e.g. one feature touching
 frontend + backend + skill files). AI picks the **most semantically

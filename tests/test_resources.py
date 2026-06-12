@@ -10,9 +10,9 @@ import _resources  # noqa: E402
 
 
 def test_build_url_index():
-    text = ("see https://code.alibaba-inc.com/grp/repo/codereview/27724957 and\n"
-            "bug https://project.aone.alibaba-inc.com/v2/project/2078441/bug/82622043\n"
-            "req https://project.aone.alibaba-inc.com/x/req/55 noise 99999")
+    text = ("see https://code.example.com/grp/repo/codereview/27724957 and\n"
+            "bug https://project.example.com/v2/project/1000001/bug/82622043\n"
+            "req https://project.example.com/x/req/55 noise 99999")
     idx = _resources.build_url_index(text)
     assert idx["27724957"].endswith("/codereview/27724957"), idx
     assert idx["82622043"].endswith("/bug/82622043"), idx
@@ -29,18 +29,18 @@ def test_build_url_index_last_mention_wins():
 
 def test_web_base_from_remote():
     f = _resources.web_base_from_remote
-    assert f("git@code.alibaba-inc.com:middleware-container/pandora-sar.git") \
-        == "https://code.alibaba-inc.com/middleware-container/pandora-sar"
-    assert f("https://code.alibaba-inc.com/grp/repo.git") \
-        == "https://code.alibaba-inc.com/grp/repo"
+    assert f("git@code.example.com:acme/runtime-sar.git") \
+        == "https://code.example.com/acme/runtime-sar"
+    assert f("https://code.example.com/grp/repo.git") \
+        == "https://code.example.com/grp/repo"
     assert f("https://user@host/grp/repo") == "https://host/grp/repo"
     assert f("") == "" and f("file:///local/thing") == ""
 
 
 def test_reconstruct_url():
     r = _resources.reconstruct_url
-    remote = "git@code.alibaba-inc.com:grp/repo.git"
-    assert r("mr", "27724957", remote) == "https://code.alibaba-inc.com/grp/repo/codereview/27724957"
+    remote = "git@code.example.com:grp/repo.git"
+    assert r("mr", "27724957", remote) == "https://code.example.com/grp/repo/codereview/27724957"
     assert r("cr", "5", remote).endswith("/codereview/5")
     assert r("issue", "5", remote) == ""        # aone issue grammar needs a project id
     assert r("mr", "not-a-number", remote) == ""
@@ -49,11 +49,11 @@ def test_reconstruct_url():
 
 def test_resolve_urls_backfill_beats_reconstruct():
     arts = [{"type": "mr", "ref_id": "27724957", "title": "x"}]          # no url
-    text = "ran a1 ... https://code.alibaba-inc.com/REALrepo/codereview/27724957 ..."
-    remote = "git@code.alibaba-inc.com:OTHERrepo/repo.git"
+    text = "ran a1 ... https://code.example.com/REALrepo/codereview/27724957 ..."
+    remote = "git@code.example.com:OTHERrepo/repo.git"
     n = _resources.resolve_urls(arts, jsonl_text=text, remote=remote)
     assert n == 1
-    assert arts[0]["url"] == "https://code.alibaba-inc.com/REALrepo/codereview/27724957"
+    assert arts[0]["url"] == "https://code.example.com/REALrepo/codereview/27724957"
     assert arts[0]["url_source"] == "harvested"   # exact transcript url, NOT the remote guess
 
 

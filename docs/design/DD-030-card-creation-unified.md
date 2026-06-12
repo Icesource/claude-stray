@@ -54,7 +54,7 @@ tab 同步 `1fcdd9a`、live 新鲜窗口 `f655ef6`)
 
 ### 4. 触发(单机制)
 - **单 hook 机制**;**根治 tmux-spawn**,让子卡会话像常规会话一样持续触发 Stop hook。
-  **不加 serve 对账循环**(避免双份复杂度)。证据:常规新会话(hsfops 主卡)hook 正常触发并被总结;
+  **不加 serve 对账循环**(避免双份复杂度)。证据:常规新会话(ops-portal 主卡)hook 正常触发并被总结;
   仅 detached-tmux spawn 的子卡只触发一次 → 是 spawn substrate 的问题,不是 hook 本身。
 
 ### 5. 子卡

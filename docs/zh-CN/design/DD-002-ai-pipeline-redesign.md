@@ -252,7 +252,7 @@ flowchart TD
 ```markdown
 ---
 session_id: cbbeb23c-b6f9-4eb4-926e-7e4046c856d4
-cwd: /Users/bby/Code/pandora/pandora-sar/hsf
+cwd: /Users/bby/Code/pandora/runtime-sar/hsf
 last_activity_at: 2026-05-13T09:19:46Z
 user_turns: 16
 updated_at: 2026-05-13T09:25:00Z
@@ -260,30 +260,30 @@ status_guess: active
 ---
 
 # 目标
-排查 EagleEye 链路追踪服务端 IP 为空的问题。涉及 mtop 入口转 HSF
+排查 Tracer 链路追踪服务端 IP 为空的问题。涉及 mtop 入口转 HSF
 调用场景下的 span 归属。
 
 # 当前状态
-已定位根因：EagleEyeHttpHook.beforeProcess 中 logRemoteIp 传错了
+已定位根因：TraceHttpHook.beforeProcess 中 logRemoteIp 传错了
 参数（传了本机 IP 而非真正的远端 IP）。修复方案明确。
 
 # 已下的决定
-- 修改 EagleEyeHttpHook，从 HSFRequestContext 取真正的 remoteIp
+- 修改 TraceHttpHook，从 HSFRequestContext 取真正的 remoteIp
 - 对 mtop-uncenter 场景特殊处理（本机调用，源和目标都是本机 IP）
 
 # 产物
-- /tmp/aone-issue-hsf-eagleeye.md（已创建，待提交）
+- /tmp/aone-issue-rpc-tracing.md（已创建，待提交）
 
 # 下一步
-提交 Aone ISSUE，指派给自己；开发分支修复 EagleEyeHttpHook。
+提交 Aone ISSUE，指派给自己；开发分支修复 TraceHttpHook。
 
 # 待解决
 无（修复方案已明确）
 
 # 任务（建议）
-- [x] 收集带 @s0 前缀的 EagleEye data 样本
+- [x] 收集带 @s0 前缀的 Trace data 样本
 - [x] 用 arthas watch 抓取现场数据
-- [x] 定位根因（EagleEyeHttpHook 传错参）
+- [x] 定位根因（TraceHttpHook 传错参）
 - [x] 撰写 Aone ISSUE 草稿
 - [ ] 提交 ISSUE 到 Middleware RPC 项目
 - [ ] 开发修复分支
@@ -554,12 +554,12 @@ flowchart TD
 ```jsonc
 {
   "session_id": "cbbeb23c-b6f9-4eb4-926e-7e4046c856d4",
-  "cwd": "/Users/bby/Code/pandora/pandora-sar/hsf",
+  "cwd": "/Users/bby/Code/pandora/runtime-sar/hsf",
   "started_at": "2026-05-13T07:30:00Z",
   "last_activity_at": "2026-05-13T09:19:46Z",
   "user_turns": 16,
   "edits": [
-    {"file": "/tmp/aone-issue-hsf-eagleeye.md", "kind": "create", "ops": 1}
+    {"file": "/tmp/aone-issue-rpc-tracing.md", "kind": "create", "ops": 1}
   ],
   "tools": {"Bash": 12, "Read": 30, "WebFetch": 2},
   "task_events": [],
