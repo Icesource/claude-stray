@@ -90,6 +90,22 @@ def repo_probably_trusted(main_repo: str, projects: dict | None = None) -> bool:
 
 
 class SubcardAPI:
+    @staticmethod
+    def _subcard_cwd(sid: str) -> str:
+        """A sub-card's working dir. The created-cards registry is authoritative
+        (worktree_path recorded at spawn — exists even BEFORE the child's first
+        message writes a jsonl, which matters now that sids are pre-minted via
+        --session-id). The session jsonl cwd is the fallback for older cards."""
+        try:
+            if S._created is not None:
+                ent = S._created.by_sid(S._created.load(str(S.CREATED_JSON))).get(sid) or {}
+                wt = ent.get("worktree_path")
+                if wt and os.path.isdir(wt):
+                    return wt
+        except Exception:
+            pass
+        return S._resume_cwd_for(sid)
+
     def _handle_subtasks(self):
         from urllib.parse import parse_qs
         parent = (parse_qs(urlparse(self.path).query).get("parent") or [""])[0]
@@ -154,6 +170,10 @@ class SubcardAPI:
             return (503, {"error": "tmux not found", "hint": "子卡交互式底层需要 tmux"})
         ttyd = shutil.which("ttyd")
         token = "new-" + _uuid.uuid4().hex[:8]
+        # 根治 sid 捕获竞态:stray 自己铸 session id 传给 claude(--session-id),
+        # t=0 确定身份,不再按 cwd 轮询猜 jsonl(子卡有种子任务通常很快出 jsonl,
+        # 但 trust 对话框/慢启动仍可能让 60s 窗口空转 → 卡没 sid)。
+        child_sid = str(_uuid.uuid4())
         holder = "stray-" + token[:8]
         main_repo = cl0.get("main_repo") or cwd
         branch = branch or ("worktree-" + wt_name)
@@ -163,6 +183,7 @@ class SubcardAPI:
                  + " " + shlex.quote(wt_path) + base_arg + " 2>/dev/null || git -C " + shlex.quote(main_repo)
                  + " worktree add " + shlex.quote(wt_path) + " 2>/dev/null ; cd "
                  + shlex.quote(wt_path) + " && exec " + shlex.quote(claude)
+                 + " --session-id " + shlex.quote(child_sid)
                  + " --dangerously-skip-permissions " + shlex.quote(prompt))
         try:
             if not S._TMUX_CONF.exists():
@@ -200,68 +221,58 @@ class SubcardAPI:
                 S._save_terminals()
             except Exception:
                 port = None
-        # DD-027/030: placeholder card the INSTANT it's created (shows "准备中" nested under parent)
+        # DD-027/030: placeholder card the INSTANT it's created (shows "准备中" nested
+        # under parent). sid 是我们铸的(--session-id),t=0 即确定 —— 注册、父链接、
+        # 终端键、merge 回调全部立即接线,旧的「按 cwd 轮询猜 jsonl」捕获线程退役。
         if S._created is not None:
             try:
                 S._created.register(str(S.CREATED_JSON), token, name=name, cwd=cwd,
                                   worktree_path=wt_path, worktree_name=wt_name,
                                   parent=parent or None, initial_task=prompt or "")
+                S._created.capture_sid(str(S.CREATED_JSON), token, child_sid)
             except Exception:
                 pass
-        # capture the child sid → record parent link + align placeholder + re-key terminal
-        if S._subcards is not None:
-            since = time.time() - 2
+        if parent and S._subcards is not None:
+            try:
+                S._subcards.record(str(S.SUBCARDS_JSON), child_sid, parent, wt_name)
+            except Exception:
+                pass
+        try:
+            ent = S._TERMINALS.pop(token, None)
+            if ent:
+                S._TERMINALS[child_sid] = ent
+                S._save_terminals()
+        except Exception:
+            pass
+        if on_capture:                                  # DD-031: record merge_sid
+            try:
+                on_capture(child_sid)
+            except Exception:
+                pass
+        # 父←子信息同步是惰性的(bin/subcard-context.py 在父卡下一轮 UserPromptSubmit
+        # 时把子卡动态作为上下文带入),不在这里 push。
 
-            def _probe_trust_dialog():
-                """No sid after 15s → look at what the spawned claude is showing.
-                A folder-trust dialog means it will NEVER produce a session —
-                annotate the placeholder so the cockpit says so, actionably."""
-                try:
-                    cap = subprocess.run(
-                        [tmux, "-L", S._TMUX_SOCKET, "capture-pane", "-p", "-t", holder],
-                        capture_output=True, text=True, timeout=5).stdout
-                    if any(m in cap for m in _TRUST_MARKERS):
-                        print(f"[spawn] {wt_name}: child claude is stuck at the "
-                              "folder-trust dialog", file=sys.stderr)
-                        if S._created is not None:
-                            S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=True)
-                except Exception:
-                    pass
-
-            def _capture():
-                for i in range(60):
-                    time.sleep(1)
-                    sid = S._subcards.find_session_by_cwd(str(S.PROJECTS_DIR), wt_path, since)
-                    if sid:
-                        if S._created is not None:
-                            try:
-                                S._created.capture_sid(str(S.CREATED_JSON), token, sid)
-                                S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=False)
-                            except Exception:
-                                pass
-                        try:
-                            ent = S._TERMINALS.pop(token, None)
-                            if ent:
-                                S._TERMINALS[sid] = ent
-                                S._save_terminals()
-                        except Exception:
-                            pass
-                        if on_capture:                 # DD-031: record merge_sid
-                            try:
-                                on_capture(sid)
-                            except Exception:
-                                pass
-                        # 父←子信息同步不在这里 push(send-keys 会触发父卡跑一轮、
-                        # 污染 jsonl/live 状态、还可能在权限对话框上误触 Enter)——
-                        # 改为惰性:bin/subcard-context.py 在父卡下一轮 UserPromptSubmit
-                        # 时把子卡动态作为上下文带入(hook stdout)。
-                        return
-                    if i == 15:
-                        _probe_trust_dialog()
-            threading.Thread(target=_capture, daemon=True).start()
+        def _probe_trust_dialog():
+            """15s 后看子 claude 的屏:停在 folder-trust 对话框 = 它永远不会真正开始
+            干活 —— 标注占位卡,驾驶舱据此给出可操作提示。"""
+            time.sleep(15)
+            try:
+                cap = subprocess.run(
+                    [tmux, "-L", S._TMUX_SOCKET, "capture-pane", "-p", "-t", holder],
+                    capture_output=True, text=True, timeout=5).stdout
+                if any(m in cap for m in _TRUST_MARKERS):
+                    print(f"[spawn] {wt_name}: child claude is stuck at the "
+                          "folder-trust dialog", file=sys.stderr)
+                    if S._created is not None:
+                        S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=True)
+                elif S._created is not None:
+                    S._created.annotate(str(S.CREATED_JSON), token, stuck_trust=False)
+            except Exception:
+                pass
+        threading.Thread(target=_probe_trust_dialog, daemon=True).start()
         url = ("http://127.0.0.1:" + str(port) + "/") if port else None
         payload = {"ok": True, "worktree_name": wt_name, "worktree": True,
-                   "parent": parent, "url": url, "token": token}
+                   "parent": parent, "url": url, "token": token, "sid": child_sid}
         if not repo_probably_trusted(main_repo):
             payload["trust_warning"] = ("该仓库似乎还没被 Claude 信任过 —— 子卡可能停在 "
                                         "folder-trust 确认;若无进展,打开它的终端按一下回车")
@@ -342,7 +353,7 @@ class SubcardAPI:
         # guard can inspect it and the removal below can reuse it.
         main_repo = wt_path = wt_branch = None
         try:
-            cwd = S._resume_cwd_for(sid)
+            cwd = self._subcard_cwd(sid)
             cl = S._worktree.compute_code_location(cwd) if (cwd and S._worktree) else None
             if cl and cl.get("is_worktree") and cl.get("main_repo") and cl.get("worktree"):
                 main_repo, wt_path = cl["main_repo"], cl["worktree"]
@@ -465,7 +476,7 @@ class SubcardAPI:
             pass
         cl = None
         try:
-            cwd = S._resume_cwd_for(sid)
+            cwd = self._subcard_cwd(sid)
             cl = S._worktree.compute_code_location(cwd) if (cwd and S._worktree) else None
         except Exception:
             cl = None
@@ -529,7 +540,7 @@ class SubcardAPI:
         context (it wrote the code — better at resolving its own conflicts than
         any fresh agent). The cockpit terminal later attaches to this SAME
         holder, so it stays single-driver."""
-        cwd = S._resume_cwd_for(sid)
+        cwd = self._subcard_cwd(sid)
         if not cwd or not os.path.isdir(cwd):
             return False
         claude, tmux = shutil.which("claude"), shutil.which("tmux")
@@ -575,7 +586,7 @@ class SubcardAPI:
         force = bool(body.get("force"))
         if not sid:
             return self._reply(400, {"error": "sid required"})
-        cwd = S._resume_cwd_for(sid)
+        cwd = self._subcard_cwd(sid)
         cl = S._worktree.compute_code_location(cwd) if cwd else None
         if not cl or not cl.get("is_worktree"):
             return self._reply(400, {"error": "不是子卡 worktree", "hint": "只有 worktree 子卡能合并"})

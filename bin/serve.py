@@ -1730,6 +1730,10 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
             return self._reply(503, {"error": "ttyd not installed", "hint": "brew install ttyd"})
         import uuid as _uuid
         token = "new-" + _uuid.uuid4().hex[:8]
+        # 根治 sid 捕获竞态:stray 自己铸 session id 传给 claude(--session-id),
+        # 从 t=0 就确定身份 —— 不再「等第一条消息出 jsonl 再按 cwd 猜」(用户不马上
+        # 说话 → 20s 窗口空转 → 卡永远没 sid、点不开、落闲置)。
+        child_sid = str(_uuid.uuid4())
         wt_path = ""   # the worktree dir we expect claude to create (for sid capture)
         if want_wt:
             cl0 = _worktree.compute_code_location(cwd) if _worktree else None
@@ -1753,11 +1757,13 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                   + shlex.quote(branch) + " " + shlex.quote(wt_path)
                   + " || git -C " + shlex.quote(main_repo) + " worktree add "
                   + shlex.quote(wt_path))
-            parts = ["claude", "--dangerously-skip-permissions"] + ([prompt] if prompt else [])
+            parts = (["claude", "--session-id", child_sid, "--dangerously-skip-permissions"]
+                     + ([prompt] if prompt else []))
             inner = (mk + " ; cd " + shlex.quote(wt_path) + " && "
                      + " ".join(shlex.quote(p) for p in parts))
         else:
-            parts = ["claude", "--dangerously-skip-permissions"] + ([prompt] if prompt else [])
+            parts = (["claude", "--session-id", child_sid, "--dangerously-skip-permissions"]
+                     + ([prompt] if prompt else []))
             inner = "cd " + shlex.quote(cwd) + " && " + " ".join(shlex.quote(p) for p in parts)
         inner, holder_name = _wrap_in_holder(token, inner)
         import socket as _socket
@@ -1786,60 +1792,27 @@ class Handler(_subcard_api.SubcardAPI, BaseHTTPRequestHandler):
                                   worktree_name=wt_name if want_wt else None,
                                   parent=parent or None,
                                   initial_task=(body.get("prompt") or "").strip())
+                # sid 是我们铸的(--session-id),t=0 就确定 —— 不存在捕获竞态。
+                _created.capture_sid(str(CREATED_JSON), token, child_sid)
             except Exception:
                 pass
-        since = time.time() - 2
-        # DD-022-B / DD-025: a worktree session's sid is unknown at launch (claude
-        # mints it). Capture it from the worktree's project dir, then re-key the ttyd
-        # token→sid so the cockpit's "open terminal" REUSES this live ttyd instead of
-        # `claude --resume <sid>` (a second driver → forks the jsonl, DD-018). If it's
-        # a parent-spawned sub-card, also record the parent↔child link. DD-027: the
-        # captured sid is also the placeholder's alignment key, so backfill it.
-        if want_wt and wt_path and _subcards is not None:
-
-            def _capture():
-                for _ in range(20):
-                    time.sleep(1)
-                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), wt_path, since)
-                    if sid:
-                        if parent:
-                            try:
-                                _subcards.record(str(SUBCARDS_JSON), sid, parent, wt_name)
-                            except Exception:
-                                pass
-                        if _created is not None:
-                            try:
-                                _created.capture_sid(str(CREATED_JSON), token, sid)
-                            except Exception:
-                                pass
-                        # re-key token→sid so "open terminal" reuses this live ttyd.
-                        try:
-                            ent = _TERMINALS.pop(token, None)
-                            if ent:
-                                _TERMINALS[sid] = ent
-                                _save_terminals()
-                        except Exception:
-                            pass
-                        return
-            threading.Thread(target=_capture, daemon=True).start()
-        elif _subcards is not None:
-            # DD-027: a no-worktree new session has no wt_path to align on, so capture
-            # its sid (newest session whose first cwd is this cwd) as the alignment key.
-            def _capture_plain():
-                for _ in range(20):
-                    time.sleep(1)
-                    sid = _subcards.find_session_by_cwd(str(PROJECTS_DIR), cwd, since)
-                    if sid:
-                        if _created is not None:
-                            try:
-                                _created.capture_sid(str(CREATED_JSON), token, sid)
-                            except Exception:
-                                pass
-                        return
-            threading.Thread(target=_capture_plain, daemon=True).start()
+        if parent and _subcards is not None:
+            try:
+                _subcards.record(str(SUBCARDS_JSON), child_sid, parent, wt_name)
+            except Exception:
+                pass
+        # key the terminal by sid directly (the old token→sid re-key thread is gone:
+        # "open terminal" on the new card reuses this live ttyd from second one).
+        try:
+            ent = _TERMINALS.pop(token, None)
+            if ent:
+                _TERMINALS[child_sid] = ent
+                _save_terminals()
+        except Exception:
+            pass
         time.sleep(0.4)
         return self._reply(200, {"url": f"http://127.0.0.1:{port}/", "token": token,
-                                 "cwd": cwd, "worktree": want_wt,
+                                 "sid": child_sid, "cwd": cwd, "worktree": want_wt,
                                  "worktree_name": wt_name if want_wt else None,
                                  "parent": parent or None})
 
