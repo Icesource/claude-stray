@@ -618,6 +618,10 @@
     // classify marked status==='done' from the last turn's status_guess.
     if(need) return {band:'needs_you', reason:reason||init.awaiting_user||'等你确认下一步', since};
     if(run) return {band:'running', activity:'AI 进行中', since};
+    // 待开工(零对话的新建卡):它确实在等你 —— 等你去说第一句。落等你带,
+    // 你一输入 live 转 running 自动离开;一直不开工就一直提醒(要么开工要么关)。
+    // 放在 run 之后:开始说话的瞬间 running 优先。(grilled 2026-06-12 Q2=A)
+    if(init._not_started) return {band:'needs_you', reason:'新卡 · 等你开工(进终端输入第一句)', since};
     // DD-020: awaiting_user is the strongest non-live signal — the last turn
     // ended blocked on you. It outranks done_unread ("待查看") and the old
     // blocker-text regex.
@@ -650,7 +654,7 @@
         sessions:init.sessions||[], n_sessions:(init.sessions||[]).length,
         session:(init.sessions||[])[0]||init.origin_session||null,
         sealed:!!init.sealed, origin_session:init.origin_session||null, fresh:!!init._fresh,
-        parent_session_id:init.parent_session_id||null, pending:!!init._pending, stuck:init._stuck||null,
+        parent_session_id:init.parent_session_id||null, pending:!!init._pending, not_started:!!init._not_started, stuck:init._stuck||null,
         next_step:init.next_step||null, awaiting_user:init.awaiting_user||null,
         progress:init.progress, summary:init.summary });
     }}
@@ -850,6 +854,8 @@
     // DD-030: 准备中 is orthogonal to band — show it whenever the card has no AI
     // content yet, styled by whatever its real band is (色彩跟随真实状态).
     if(r.pending){ if(r.stuck==='trust')return `<div class="mid needs_you"><span class="rtext" title="Claude 对没打开过的目录会弹 folder-trust 确认;子卡在它后面动不了">⚠ 等 trust 确认 — 打开终端选 “Yes, I trust”</span></div>`;
+      // 待开工(零对话)≠ 准备中(有对话,总结在路上)—— 语义分流。
+      if(r.not_started)return `<div class="mid needs_you"><span class="rtext" title="claude 已就绪,等你的第一句话;点行尾 ▸ 进终端">🆕 待开工 · 进终端说第一句</span></div>`;
       return `<div class="mid ${esc(r.band)}"><span class="rtext" title="卡片已创建,AI 总结(进度/资源/语义名)稍后自动补充">准备中…</span></div>`; }
     if(r.band==='needs_you')return `<div class="mid needs_you"><span class="rtext">${esc(r.reason||'等你确认下一步')}</span></div>`;
     if(r.band==='running'){const p=r.pct||0;const bar=p>0?`<span class="bar"><i style="width:${p}%"></i></span><span class="pct">${p}%</span>`:'';return `<div class="mid running">${bar}<span class="rtext">${esc(r.activity||'进行中')}</span></div>`;}
@@ -904,7 +910,7 @@
     return `<span class="mbadge merged${k}" title="提交都已合并回主干 — 关闭安全">${compact?'✓':'✓已合并'}</span>`;}
   function subRowsEl(ch){ if(!ch||!ch.length)return '';
     const rows=ch.slice().sort((a,b)=>RANK[a.band]-RANK[b.band]).map(c=>{
-      const sid=esc(c.session||''); const prog=c.pending?'准备中…':(c.progress?firstSent(c.progress):(c.reason||''));
+      const sid=esc(c.session||''); const prog=c.pending?(c.not_started?'🆕 待开工 · 进终端说第一句':'准备中…'):(c.progress?firstSent(c.progress):(c.reason||''));
       return `<div class="subwrap"><div class="subrow" data-sid="${sid}" title="${esc(c.name)}">${statusIcon(c.band,10)}`+
         `<span class="sr-name">${esc(c.name)}</span>${mergeBadge(c)}<span class="sr-prog">${esc(prog)}</span>`+
         `<button class="sr-exp" title="展开详情" onclick="event.stopPropagation();this.closest('.subwrap').classList.toggle('open')">⌄</button>`+
@@ -1413,7 +1419,7 @@
     if(document.getElementById('scDlg'))return;
     const dlg=document.createElement('div'); dlg.className='nsdlg'; dlg.id='scDlg';
     dlg.innerHTML=`<div class="nsbox"><h3>＋ 子卡</h3><div class="nssub">在「${esc(pname)}」下起一个独立 worktree 的子任务(后台 <code>claude -p</code> 跑,跑完在左侧 resume 接管)。</div>`+
-      `<label>任务</label><textarea id="scTask" class="nstext" rows="3" placeholder="要这个子卡去做的事,例:把鉴权超时改成可配置并补测试" spellcheck="false"></textarea>`+
+      `<label>任务(可留空)</label><textarea id="scTask" class="nstext" rows="3" placeholder="要这个子卡去做的事,例:把鉴权超时改成可配置并补测试。留空 = 起一张空白子卡,进终端说第一句即开工" spellcheck="false"></textarea>`+
       `<label style="margin-top:13px">名字 · worktree 名(可留空自动命名)</label><input type="text" id="scName" placeholder="如 authz-timeout(留空则 task-xxxx)" spellcheck="false">`+
       `<div style="margin-top:11px;font-size:11px;color:var(--ink-faint);line-height:1.5">提示:也可以直接在这张卡的会话里说「拆子卡:任务A、任务B」,Claude 会列出拆分方案,确认后自动 fan out(stray-subcards skill)</div>`+
       `<div class="nsacts"><button class="btn" id="scCancel">取消</button><button class="btn primary" id="scGo">起子卡 ▸</button></div></div>`;
@@ -1422,8 +1428,8 @@
     const close=()=>dlg.remove();
     dlg.addEventListener('click',ev=>{ if(ev.target===dlg)close(); });
     dlg.querySelector('#scCancel').addEventListener('click',close);
-    const go=async()=>{ const task=ta.value.trim(); if(!task){ta.focus();return;}
-      const name=dlg.querySelector('#scName').value.trim(); close(); toast('正在起子卡…');
+    const go=async()=>{ const task=ta.value.trim();   // 任务可空:起空白子卡,进终端说第一句即开工
+      const name=dlg.querySelector('#scName').value.trim(); close(); toast(task?'正在起子卡…':'正在起空白子卡…');
       try{
         const r=await fetch(ORIGIN+'/api/new-session',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({parent:rootSid,cwd,worktree:true,name,prompt:task})});

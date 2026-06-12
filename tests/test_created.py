@@ -74,10 +74,10 @@ def test_provisional_name_falls_back():
     mm = {"workspaces": []}
     _created.merge_into_mindmap(mm, doc, _now=2)
     assert mm["workspaces"][0]["initiatives"][0]["name"] == "排查超时"
-    doc2 = {"t2": {"sid": "s2", "created_at": 1}}            # no name/task
+    doc2 = {"t2": {"sid": "s2", "created_at": 1}}            # no name/task/cwd
     mm2 = {"workspaces": []}
     _created.merge_into_mindmap(mm2, doc2, _now=2)
-    assert mm2["workspaces"][0]["initiatives"][0]["name"] == "准备中…"
+    assert mm2["workspaces"][0]["initiatives"][0]["name"] == "新卡"   # 2026-06-12 语义:新卡·<repo>,无 repo 则「新卡」
 
 
 def test_merge_honors_tombstone_so_delete_sticks():
@@ -96,6 +96,24 @@ def test_merge_honors_tombstone_so_delete_sticks():
     added2, stale2 = _created.merge_into_mindmap(mm2, doc2, _now=2,
                                                  tombstoned_ids={"card::s9"})
     assert added2 == 0 and stale2 == ["t2"]
+
+
+def test_not_started_flag_and_provisional_name():
+    """grilled 2026-06-12:零对话的新建卡 = 待开工(_not_started,cockpit 映射等你带);
+    有 jsonl 的 = 准备中。没名没任务 → 「新卡 · <仓库名>」。"""
+    doc = {"t1": {"sid": "s1", "cwd": "/r/myrepo", "created_at": 1},
+           "t2": {"sid": "s2", "cwd": "/r/other", "name": "改鉴权", "created_at": 1}}
+    mm = {"workspaces": []}
+    _created.merge_into_mindmap(mm, doc, _now=2, started_sids={"s2"})   # s1 没开工
+    cards = {c["id"]: c for w in mm["workspaces"] for c in w["initiatives"]}
+    c1, c2 = cards["card::s1"], cards["card::s2"]
+    assert c1["_not_started"] is True and c1["name"] == "新卡 · myrepo"
+    assert "第一句" in c1["progress"]
+    assert not c2.get("_not_started") and c2["name"] == "改鉴权"
+    # started_sids 不传(旧调用方)→ 一律视为已开工,行为不变
+    mm2 = {"workspaces": []}
+    _created.merge_into_mindmap(mm2, doc, _now=2)
+    assert all(not c.get("_not_started") for w in mm2["workspaces"] for c in w["initiatives"])
 
 
 def test_merge_honors_archive_so_no_ghost():

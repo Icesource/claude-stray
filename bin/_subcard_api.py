@@ -150,8 +150,8 @@ class SubcardAPI:
         if not cl0:
             return (400, {"error": "not a git repo",
                                      "hint": "子卡要在一个 git 仓库目录里 spawn"})
-        if not prompt:
-            return (400, {"error": "empty task", "hint": "子卡需要一个任务描述"})
+        # 空任务允许(grilled 2026-06-12 Q1=A):照常建 worktree+分支,起裸 claude;
+        # 用户进终端说的第一句话就是它的任务。卡照常注册为公民(待开工)。
         claude = shutil.which("claude")
         if not claude:
             return (503, {"error": "claude not found", "hint": "claude 不在 PATH 上"})
@@ -184,7 +184,8 @@ class SubcardAPI:
                  + " worktree add " + shlex.quote(wt_path) + " 2>/dev/null ; cd "
                  + shlex.quote(wt_path) + " && exec " + shlex.quote(claude)
                  + " --session-id " + shlex.quote(child_sid)
-                 + " --dangerously-skip-permissions " + shlex.quote(prompt))
+                 + " --dangerously-skip-permissions"
+                 + ((" " + shlex.quote(prompt)) if prompt else ""))
         try:
             if not S._TMUX_CONF.exists():
                 S._TMUX_CONF.write_text("set -g status off\nset -g mouse off\nset -g escape-time 10\n")

@@ -231,10 +231,14 @@ def _has_real_card(ent, real_sids, real_wts):
     return False
 
 
-def _placeholder_card(token, ent, now):
-    """Synthesize a 准备中 card from a registry entry (shown until its real card
-    exists). DD-030: NOT a band — `_pending` is an orthogonal badge; band is left
-    to the normal live→classify logic. Name = initial task (provisional) else 准备中."""
+def _placeholder_card(token, ent, now, started=True):
+    """Synthesize a 准备中/待开工 card from a registry entry (shown until its real
+    card exists). DD-030: NOT a band — `_pending` is an orthogonal badge; band is
+    left to the normal live→classify logic — EXCEPT `_not_started` (zero
+    conversation yet), which the cockpit maps to 等你「等你开工」(grilled
+    2026-06-12 Q2=A: a created-but-unstarted card is literally waiting on the
+    user's first message; it self-resolves to running the moment they type).
+    Provisional name: name → initial task → 「新卡 · <仓库名>」."""
     wt = ent.get("worktree_path")
     cl = None
     if wt:
@@ -243,14 +247,18 @@ def _placeholder_card(token, ent, now):
               "is_worktree": True,
               "main_repo": os.path.dirname(os.path.dirname(os.path.dirname(wt))) or ent.get("cwd") or ""}
     sid = ent.get("sid")
-    prov = ent.get("name") or ent.get("initial_task") or ""
+    prov = ent.get("name") or _firstline(ent.get("initial_task")) or ""
+    if not prov:
+        repo = os.path.basename((ent.get("cwd") or "").rstrip("/"))
+        prov = ("新卡 · " + repo) if repo else "新卡"
     return {
         "id": "card::" + sid if sid else "pending::" + token,
-        "name": prov[:60] if prov else "准备中…",
+        "name": prov[:60],
         "status": "active",
         "level": "card",
         "summary": "",
-        "progress": "卡片已创建,正在准备(AI 总结稍后补充)…",
+        "progress": ("新卡已就绪 —— 进终端输入第一句即开工" if not started
+                     else "卡片已创建,正在准备(AI 总结稍后补充)…"),
         "tasks": [],
         "sessions": [sid] if sid else [],
         "linked_cwds": [ent.get("cwd")] if ent.get("cwd") else [],
@@ -258,6 +266,7 @@ def _placeholder_card(token, ent, now):
         "code_location": cl,
         "parent_session_id": ent.get("parent"),
         "_pending": True,
+        "_not_started": (not started) or None,
         # the spawned claude is sitting at Claude Code's folder-trust dialog —
         # the cockpit renders an actionable hint instead of an eternal 准备中
         "_stuck": "trust" if ent.get("stuck_trust") else None,
@@ -271,7 +280,8 @@ def placeholder_id(token, ent):
     return ("card::" + sid) if sid else ("pending::" + token)
 
 
-def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None, archived_sids=None):
+def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None, archived_sids=None,
+                       started_sids=None):
     """Append a 准备中 placeholder for each registry entry not yet backed by a real
     card. Returns (added, stale_tokens). DURABLE: an entry is stale ONLY if it's a
     failed launch (no sid past TTL) OR the user tombstoned its placeholder; a
@@ -309,7 +319,9 @@ def merge_into_mindmap(mindmap, doc, _now=None, tombstoned_ids=None, archived_si
             continue
         if _has_real_card(ent, real_sids, real_wts):
             continue                     # real card exists → don't show placeholder (but KEEP entry)
-        _place(workspaces, _placeholder_card(token, ent, now), ent)
+        started = (started_sids is None) or (not ent.get("sid")) \
+            or (ent["sid"] in started_sids)
+        _place(workspaces, _placeholder_card(token, ent, now, started=started), ent)
         added += 1
     return added, stale
 

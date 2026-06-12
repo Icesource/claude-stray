@@ -622,8 +622,16 @@ def _merge_pending_cards(mindmap: dict) -> int:
         tomb = {x.get("id") for x in (dd.get("initiatives") or []) if x.get("id")}
     except Exception:
         pass
+    # 待开工检测:sid 预铸后,claude 的 jsonl 要到第一条消息才出现 —— jsonl 不存在
+    # = 用户还没开工,占位卡标 _not_started(cockpit 渲染成等你「等你开工」)。
+    started = set()
+    for ent in doc.values():
+        s = ent.get("sid") if isinstance(ent, dict) else None
+        if s and list(PROJECTS_DIR.glob(f"*/{s}.jsonl")):
+            started.add(s)
     added, stale = _created.merge_into_mindmap(mindmap, doc, tombstoned_ids=tomb,
-                                               archived_sids=_archived_sids())
+                                               archived_sids=_archived_sids(),
+                                               started_sids=started)
     if stale:
         try:
             for k in stale:
